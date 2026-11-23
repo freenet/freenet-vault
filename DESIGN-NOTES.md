@@ -73,7 +73,9 @@ Caller marks:
 - **A mark that is lost, corrupt beyond parsing, or no longer verifies**
   imposes no floor and is rewritten by the next raise. The alternative,
   refusing the caller forever, would make one corrupted entry disable River's
-  background signing.
+  background signing. Accepted residual (team lead, 2026-11-23): storage
+  corruption of a mark removes rollback protection for that caller until its
+  next raise.
 
 Operations:
 
@@ -114,5 +116,15 @@ match River's code line for line.
 - `RIVER_VAULT_AUTHOR_VK` is a placeholder (the public key of seed
   `[0x52; 32]`). The `release` feature of `river-vault` refuses to compile
   until it is replaced by the offline River vault author key.
-- Native River's app grant (#6130) has no defined origin yet, so
-  `extra_page_ids` is empty: native River cannot call this build.
+- Native River needs no origin of its own: under freenet-core #6130 a native
+  app with a user-approved grant connects with the same origin as River's
+  page, `WebApp(<River container instance id>)`, so the container-id check
+  accepts it. `extra_page_ids` stays empty.
+
+## Pending alignment with revision 7 (after review)
+
+- HandoverStatus and Poke still follow revision 6. Revision 7 drops attempt
+  numbers (no attempt field), adds `receiving_from` and a "receiver at a
+  higher build" problem bit, and reserves Poke bits 2 and 3.
+- Export on a slot flagged corrupt must be allowed (revision 7), so the page
+  can repair it. This build still answers Unusable(2).
