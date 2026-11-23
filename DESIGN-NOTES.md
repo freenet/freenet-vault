@@ -1,10 +1,36 @@
 # Design notes
 
 Where the implementation had to choose between readings of the design
-documents (`freenet-vault-spec.html` revision 6 and
-`freenet-vault-handover-protocol.html` revision 6, both 2026-11-23), or adds
-something they do not yet say. Each entry names the choice and why. The
-documents should be updated to match, or the code changed.
+documents (`freenet-vault-spec.html` and `freenet-vault-handover-protocol.html`,
+revision 7, 2026-11-23), or adds something they do not yet say. Each entry
+names the choice and why. The documents should be updated to match, or the
+code changed.
+
+## Decided 2026-11-23 by the design session, spec update pending
+
+Taken after the first review round. All four are in the code; the spec text
+still has to say them.
+
+- **Entry kind 0x00 is reserved.** Decoders treat it as malformed (protocol
+  7.1 and section 11 say nothing about 0x00; 0x03 to 0xFF stay carried
+  verbatim). The partition index applies the same rule.
+- **KeyAgreement returns the raw X25519 output, zeros included**, for a
+  low-order peer. It matches River's own code, so there is no new status.
+  The spec should say so.
+- **Each domain compiles in a minimum version per caller app**
+  (`CallerDelegate::min_version`). A request whose record is below it is
+  refused (Refused 2) whether or not a mark is stored, so a fresh vault, or
+  one that lost its mark, still refuses a known-bad old caller. River uses
+  the chat delegate's current pointer version at build time, 11 (river
+  `pointer-records.toml` at 4d137e66); raise it when the vault is released.
+- **Caller-mark rules go into spec 4.4.** A record at the mark's version is
+  accepted only if byte-identical; a different record at that version is
+  refused (spec 5 says "at least"). A stored caller withdrawal at version W
+  blocks every caller record up to and including W. A mark that is lost,
+  corrupt beyond parsing, or no longer verifies imposes no floor beyond
+  `min_version`, and the next raise rewrites it. Storage corruption of a mark
+  therefore removes rollback protection for that caller above `min_version`
+  until its next raise (accepted residual, team lead, 2026-11-23).
 
 ## Changes not yet in the documents
 
@@ -13,6 +39,16 @@ documents should be updated to match, or the code changed.
   refuses the whole Batch when the slot's public key differs, with a new
   Refused reason **14, public key mismatch**. The documents name neither the
   field's position nor the refusal reason.
+- **HandoverStatus follows revision 7**: `receiving_from` after `peer_record`,
+  no attempt fields (body 196 bytes), problems bit 5 "receiver at a higher
+  build". Poke flag bits 2 and 3 are reserved and have no names; Refused 13
+  and the `RETIRE_TO` frame name are gone (0x87 is reserved).
+- **Encoders enforce the decoders' bounds.** Every encoder returns an error
+  where a decoder would refuse (slot 1..=64, app_id 1..=64, `after` at most 64,
+  List max 1..=256, Batch 1..=256 items, Derive context 1..=256, data at most
+  65,536, an extension at most 65,535, a request body at most 1 MiB), and a
+  reply frame is limited to 65,536 bytes in total. Nothing truncates or
+  panics. A reply that would break a bound is answered Refused(12).
 
 ## Scope of this build
 
@@ -26,6 +62,10 @@ documents should be updated to match, or the code changed.
 - The partition index has an opaque `handover` field and the states SEALED,
   RECEIVING and RETIRED, so the operation path already answers as protocol
   5.1 says for those states. Nothing in this build enters them.
+- Not implemented here, so not tested: the handover frames, and the
+  WASM entry point's `CtxHost`. CI compiles and lints `CtxHost` (wasm32
+  build and clippy) but no test runs a WASM module; every behaviour is
+  tested through `process` over the in-memory host.
 
 ## Readings chosen where the documents are silent or ambiguous
 
@@ -36,7 +76,35 @@ Storage and formats:
 - **The partition index and `vault:succ` are build-private.** Builds exchange
   entries, never indexes (a different build is a different secret namespace),
   so their layouts are not frozen formats. Both carry a magic and a format
-  byte so a build refuses bytes it did not write.
+  byte so a build refuses bytes it did not write. The index decoder enforces
+  the frozen bounds (at most 4096 entries, kind not 0, key 1..=256, entry
+  length at most 65,399).
+- **The index is stored twice**, `vault:idx:<P>` then `vault:idx2:<P>`, the
+  second written after the first. A read uses the first and falls back to the
+  second when the first is absent or does not parse; both unusable is an
+  error, never NONE. A crash between the two writes leaves the second one
+  commit behind, which is consistent: gc runs only after both writes, so the
+  entry copies it names still exist. Residual: if the second copy's write
+  keeps failing while the first is later lost, the fallback is older than one
+  commit and may name a copy gc has since removed; that entry then reads as
+  Missing (below). A failed second write is not reported.
+- **A secret that does not read is Missing, never corrupt.** When the index
+  names an entry but `get_secret` returns nothing, the vault changes and
+  deletes nothing, and answers storage failure (Refused 12). List shows the
+  slot as corrupt with a zero key; Import without `replace` is refused, and
+  with `replace` overwrites it; Delete works. Only bytes that are present and
+  do not parse are dropped and counted. Residual: an entry whose secret is
+  gone for good stays Missing until the page imports over it.
+- **gc retries.** `remove_secret` failures are checked by reading the secret
+  back; a name still present stays listed in `vault:gc` and is retried by the
+  next call. Every entry copy is added to `vault:gc` before it is written, so
+  a crash between the write and the index commit leaves a name the next call
+  removes (gc never removes a name the committed index references).
+- **Stored successor records are verified on load.** `vault:succ` whose
+  `current` or withdrawal no longer verifies under the domain key, is in the
+  wrong role, or has `current` at or below OWN_VERSION is read as malformed:
+  Poke reports `STORED_MALFORMED`, Moved is never returned with an invalid
+  record, and record handling is refused (Refused 7).
 - **gc never deletes a referenced entry.** Protocol 4.2 writes `vault:gc`
   before the index. If that index write then fails, `vault:gc` names a copy
   the index still references; processing it as written would delete a live
@@ -64,33 +132,41 @@ Records and routing:
 
 Caller marks:
 
-- **Equal version, different record**: spec 5 says a caller is accepted when
-  "its version is at least the stored caller mark". At an equal version the
-  vault accepts only the byte-identical record and refuses a different one,
-  as protocol 3 treats equivocation.
-- **A stored caller withdrawal at version W** blocks every caller record up to
-  and including W.
-- **A mark that is lost, corrupt beyond parsing, or no longer verifies**
-  imposes no floor and is rewritten by the next raise. The alternative,
-  refusing the caller forever, would make one corrupted entry disable River's
-  background signing. Accepted residual (team lead, 2026-11-23): storage
-  corruption of a mark removes rollback protection for that caller until its
-  next raise.
+- **Equal version, different record, withdrawals, lost marks**: decided; see
+  "Decided 2026-11-23" above.
+- **A mark whose secret does not read** (transient or not) is served at the
+  compiled-in `min_version` and is never overwritten on that evidence, so a
+  momentary read failure cannot lower a stored mark. While it lasts, a caller
+  below the stored mark but at or above `min_version` is served. SubmitRecord
+  of a caller record refuses (Refused 12) instead, because it would overwrite.
+- **SubmitRecord from a delegate is held to its caller mark** exactly like an
+  operation: a stale caller is refused (Refused 2), a newer one raises its
+  mark (Busy while sealed or awaiting retirement, Refused 3 or 12 if the raise
+  cannot be written), one needing no raise is served. A vault that is not
+  serving (NONE, RECEIVING, RETIRED) has nowhere to keep a raised mark, so a
+  delegate whose request would need a raise gets the same NotHere or Moved
+  an operation gets; one needing none is served. Pages are not held to marks.
 
 Operations:
 
-- **Delete of an absent slot** answers Ok. Leaving a room is idempotent.
+- **Delete of an absent slot** answers Ok. Leaving a room is idempotent. On a
+  partition that is NONE and unarmed it answers NotHere (the route runs first).
 - **PublicKey of a publisher key** answers Unusable(1), like every other use.
   Delete of it is allowed.
 - **Import over a corrupt slot**: "same key" compares with the flagged bytes.
   The original seed, if the corruption changed it, is a different key and
-  needs `replace`.
+  needs `replace`. The repair path is Export (allowed on a corrupt slot whose
+  bytes still parse as a 32-byte seed), compare the derived key with the
+  expected identity, then Import the right seed with `replace`.
 - **Generate when the node's random source returns all zeros** (twice) answers
   Refused(12). No reason code fits better.
 - **Export from a delegate** is refused (8) even if a domain lists it.
 - **The consent prompt** keeps the pending request in the delegate context, not
-  in secrets, so Export still works when storage is full (spec 11). It is
-  bound to a random prompt id and the page's origin. Responses are `Allow`
+  in secrets, so Export still works when storage is full (spec 11). The answer
+  reads the slot again: what is there when the user answers is what is
+  exported (Absent if it was deleted, the new key if replaced, the flagged
+  bytes' seed if it went corrupt; a slot that no longer parses is Unusable 2).
+  It is bound to a random prompt id and the page's origin. Responses are `Allow`
   and `Deny`; anything else, including the node's empty answer on a timeout,
   is a denial (Refused(6)). An answer that matches no pending prompt fails the
   call.
@@ -114,17 +190,15 @@ match River's code line for line.
 ## River constants
 
 - `RIVER_VAULT_AUTHOR_VK` is a placeholder (the public key of seed
-  `[0x52; 32]`). The `release` feature of `river-vault` refuses to compile
-  until it is replaced by the offline River vault author key.
+  `[0x52; 32]`). `river-vault` refuses to compile in every profile while the
+  key is the placeholder, unless the `placeholder-key` feature is named: the
+  guard is a const assertion on the key's value, so replacing the key with the
+  offline River vault author key lifts it with no other change. (The first
+  version of the guard sat behind a `release` feature, so a plain release
+  build shipped a key anyone can sign with.) Tests, clippy and development
+  builds pass `--features river-vault/placeholder-key`; CI builds the default
+  profile and fails if it succeeds (the `placeholder-guard` job).
 - Native River needs no origin of its own: under freenet-core #6130 a native
   app with a user-approved grant connects with the same origin as River's
   page, `WebApp(<River container instance id>)`, so the container-id check
   accepts it. `extra_page_ids` stays empty.
-
-## Pending alignment with revision 7 (after review)
-
-- HandoverStatus and Poke still follow revision 6. Revision 7 drops attempt
-  numbers (no attempt field), adds `receiving_from` and a "receiver at a
-  higher build" problem bit, and reserves Poke bits 2 and 3.
-- Export on a slot flagged corrupt must be allowed (revision 7), so the page
-  can repair it. This build still answers Unusable(2).

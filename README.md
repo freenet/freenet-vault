@@ -13,5 +13,12 @@ it.
 - `domains/river`: the River vault, which compiles River's domain constants
   into the library.
 
+`river-vault` refuses to compile while its author key is the placeholder, so
+tests and development builds name the feature that allows it:
+
+    cargo test --workspace --features river-vault/placeholder-key
+
+`fuzz/` holds cargo-fuzz targets (nightly, outside the workspace).
+
 `DESIGN-NOTES.md` records where the implementation had to choose between
 readings of the design documents.

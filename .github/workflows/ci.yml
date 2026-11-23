@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # river-vault refuses to compile while its author key is the placeholder,
+  # unless this feature is named. Every job except `placeholder-guard` names it.
+  PLACEHOLDER: river-vault/placeholder-key
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # rust-toolchain.toml pins the compiler and the wasm32 target.
+      - uses: Swatinem/rust-cache@v2
+      - name: fmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --features "$PLACEHOLDER" -- -D warnings
+      - name: clippy on wasm32 (compiles CtxHost, which is wasm-only)
+        run: cargo clippy -p freenet-vault -p river-vault --target wasm32-unknown-unknown --features "$PLACEHOLDER" -- -D warnings
+      - name: tests
+        run: cargo test --workspace --features "$PLACEHOLDER"
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: build river-vault to wasm32 (release profile)
+        run: cargo build -p river-vault --release --target wasm32-unknown-unknown --features "$PLACEHOLDER"
+      - name: the build produced a module
+        run: test -s target/wasm32-unknown-unknown/release/river_vault.wasm
+
+  # The default build, with no feature, must refuse to compile while
+  # RIVER_VAULT_AUTHOR_VK is the placeholder: a plain release build can never
+  # ship a key anyone can sign with. A pass of the build is the failure.
+  placeholder-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: default native build is refused
+        run: |
+          set -u
+          if cargo build -p river-vault 2> refused.txt; then
+            echo "the default build SUCCEEDED with the placeholder author key"; exit 1
+          fi
+          grep -q 'RIVER_VAULT_AUTHOR_VK is the PLACEHOLDER key' refused.txt
+      - name: default release wasm build is refused
+        run: |
+          set -u
+          if cargo build -p river-vault --release --target wasm32-unknown-unknown 2> refused.txt; then
+            echo "the default release wasm build SUCCEEDED with the placeholder author key"; exit 1
+          fi
+          grep -q 'RIVER_VAULT_AUTHOR_VK is the PLACEHOLDER key' refused.txt
+      - name: the feature, named, builds (positive control)
+        run: cargo build -p river-vault --features "$PLACEHOLDER"
+
+  # The fuzz crate is outside the workspace and needs nightly; this keeps it
+  # compiling. fuzz.yml runs it.
+  fuzz-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build the fuzz targets
+        working-directory: fuzz
+        run: cargo +nightly build --release
