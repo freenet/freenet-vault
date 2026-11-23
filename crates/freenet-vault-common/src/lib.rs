@@ -11,8 +11,8 @@
 //! formats can still change, and `DESIGN-NOTES.md` lists the open points.
 //!
 //! The vault-to-vault handover frames (Chunk, Ack, Complete, CompleteAck,
-//! Abort, Retired, Query) are deliberately absent: their design is still
-//! being decided. Only their frame-type numbers are reserved here.
+//! Abort, Retired, Query; protocol 12.3) are absent: this build does not
+//! implement the handover. Only their frame-type numbers are reserved here.
 
 pub mod codec;
 pub mod entry;

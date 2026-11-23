@@ -110,9 +110,9 @@ pub fn handle_page<H: Host>(
                 Err(reason) => refusal(rid, reason),
             }
         }
-        // Includes RetireTo and the handover frames, which this build does
-        // not implement: callers treat Refused(10) as "retry after the
-        // handover".
+        // Includes 0x87 (reserved since revision 7 removed RetireTo) and the
+        // handover frames, which this build does not implement: callers treat
+        // Refused(10) as "retry after the handover".
         _ => refusal(rid, refused::UNKNOWN_FRAME),
     }
 }

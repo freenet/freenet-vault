@@ -1,6 +1,10 @@
-//! Decoders never panic, and what a decoder accepts re-encodes to the same
-//! bytes (the formats are canonical). Inputs are random bytes and damaged
-//! valid frames from a fixed-seed generator, so a failure reproduces.
+//! Decoders never panic, and what a decoder accepts is canonical. For the
+//! envelope, requests, SubmitRecord, Poke and entries that means re-encoding to
+//! the same bytes. Result and status frames accept a peer's extension at any
+//! length and do not keep it (forward compatibility), so for those the check is
+//! that decoding the re-encoding gives the same value. Inputs are random bytes
+//! and damaged valid frames from a fixed-seed generator, so a failure
+//! reproduces.
 
 use freenet_vault_common::entry::Entry;
 use freenet_vault_common::frame::{self, types, Frame};
@@ -238,7 +242,14 @@ fn envelope_result_status_poke_entry_decoders_never_panic() {
             // Accepted envelopes re-encode exactly.
             assert_eq!(frame::encode(f.frame_type, f.body).unwrap(), raw);
             if let Ok(s) = Status::decode(f.frame_type, f.body) {
-                assert_eq!(s.encode().unwrap(), raw, "status {:#x}", f.frame_type);
+                let again = s.encode().unwrap();
+                let g = Frame::decode(&again).unwrap();
+                assert_eq!(
+                    Status::decode(g.frame_type, g.body).unwrap(),
+                    s,
+                    "status {:#x}",
+                    f.frame_type
+                );
             }
             if f.frame_type == types::POKE {
                 if let Ok(p) = Poke::decode(f.body) {
@@ -247,7 +258,14 @@ fn envelope_result_status_poke_entry_decoders_never_panic() {
             }
             if f.frame_type >= types::KEY_RESULT {
                 if let Ok((rid, r)) = OpResult::decode(f.frame_type, f.body) {
-                    assert_eq!(r.encode(rid).unwrap(), raw, "result {:#x}", f.frame_type);
+                    let again = r.encode(rid).unwrap();
+                    let g = Frame::decode(&again).unwrap();
+                    assert_eq!(
+                        OpResult::decode(g.frame_type, g.body).unwrap(),
+                        (rid, r),
+                        "result {:#x}",
+                        f.frame_type
+                    );
                 }
             }
         }

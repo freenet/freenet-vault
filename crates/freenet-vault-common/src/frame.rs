@@ -17,8 +17,9 @@ pub const HEADER_LEN: usize = 10;
 
 /// Frame types (protocol 12.1).
 pub mod types {
-    // Vault-to-vault handover frames. Reserved; their layouts are not frozen
-    // here because the handover design is still open.
+    // Vault-to-vault handover frames (protocol 12.3). Only their numbers are
+    // reserved here: this build does not implement the handover, so it has no
+    // encoder or decoder for them.
     pub const CHUNK: u8 = 0x01;
     pub const ACK: u8 = 0x02;
     pub const COMPLETE: u8 = 0x03;

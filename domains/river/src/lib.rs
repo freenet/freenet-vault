@@ -136,6 +136,9 @@ mod tests {
         assert_eq!(RIVER.validate(), Ok(()));
     }
 
+    // Only while the author key is the placeholder (the crate compiles without
+    // the feature once the real key is set, and this test then goes).
+    #[cfg(feature = "placeholder-key")]
     #[test]
     fn placeholder_author_key_is_what_it_claims() {
         let vk = ed25519_dalek::SigningKey::from_bytes(&[0x52; 32]).verifying_key();

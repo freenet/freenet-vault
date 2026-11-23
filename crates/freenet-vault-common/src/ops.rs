@@ -1,10 +1,8 @@
 //! Operation requests and results (protocol 12.5), and SubmitRecord (12.4),
 //! which shares the request header.
 //!
-//! Batch differs from protocol revision 6: it carries `expected_public_key`
-//! after the slot, and the vault refuses the Batch when the slot holds a
-//! different key (approved 2026-11-23, not yet in the documents; see
-//! DESIGN-NOTES.md).
+//! Batch carries `expected_public_key` after the slot, and the vault refuses
+//! the Batch (Refused 14) when the slot holds a different key (protocol 12.5).
 
 use crate::bounds::*;
 use crate::codec::{Malformed, Reader, Result, Writer};
@@ -770,7 +768,8 @@ mod tests {
 
     /// Both edges of every frozen bound, through the encoder and the decoder:
     /// the last accepted value round-trips, the first refused value fails to
-    /// encode (never truncates) and fails to decode.
+    /// encode (never truncates). The DECODING side of each bound, which
+    /// faces hostile input, is tested in `tests/decoder_bounds.rs`.
     #[test]
     fn frozen_bounds_have_both_edges() {
         let both = |ok: Request, bad: Request| {

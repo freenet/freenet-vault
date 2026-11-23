@@ -12,7 +12,6 @@ libfuzzer-sys = "0.4"
 ed25519-dalek = { version = "2.1.1", default-features = false, features = ["fast", "zeroize"] }
 freenet-vault = { path = "../crates/freenet-vault", features = ["testing"] }
 freenet-vault-common = { path = "../crates/freenet-vault-common" }
-river-vault = { path = "../domains/river", features = ["placeholder-key"] }
 freenet-stdlib = { version = "0.12.1", features = ["contract"] }
 
 # Not part of the main workspace: it needs a nightly toolchain and cargo-fuzz.

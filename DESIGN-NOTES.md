@@ -32,13 +32,11 @@ still has to say them.
   therefore removes rollback protection for that caller above `min_version`
   until its next raise (accepted residual, team lead, 2026-11-23).
 
-## Changes not yet in the documents
+## Layouts as revision 7 has them
 
-- **Batch carries `expected_public_key`** (approved 2026-11-23). Layout:
-  `slot_len 1 ; slot ; expected_public_key 32 ; count 2 ; items`. The vault
-  refuses the whole Batch when the slot's public key differs, with a new
-  Refused reason **14, public key mismatch**. The documents name neither the
-  field's position nor the refusal reason.
+- **Batch carries `expected_public_key`** (protocol 12.5): `slot_len 1 ; slot ;
+  expected_public_key 32 ; count 2 ; items`. The vault refuses the whole Batch
+  when the slot's public key differs, with Refused **14, public key mismatch**.
 - **HandoverStatus follows revision 7**: `receiving_from` after `peer_record`,
   no attempt fields (body 196 bytes), problems bit 5 "receiver at a higher
   build". Poke flag bits 2 and 3 are reserved and have no names; Refused 13
@@ -53,12 +51,13 @@ still has to say them.
 ## Scope of this build
 
 - The handover (copy, seal, take-over, retire; Chunk, Ack, Complete,
-  CompleteAck, Abort, Retired, Query; attempt numbers; recovery and RetireTo)
-  is not implemented. Its frame-type numbers are reserved in
-  `freenet-vault-common::frame::types` and nothing else. A handover frame from
-  a delegate is ignored, as protocol 6 says for frames a build does not
-  handle. RetireTo (0x87) from a page answers Refused(10), which callers treat
-  as "retry after the handover" (protocol 5.2).
+  CompleteAck, Abort, Retired, Query) is not implemented. Its frame-type
+  numbers are reserved in `freenet-vault-common::frame::types` and nothing
+  else (protocol 12.3 has the layouts). A handover frame from a delegate is
+  ignored, as protocol 6 says for frames a build does not handle. A handover
+  frame, or the reserved 0x87 (RetireTo was removed in revision 7), from a page
+  answers Refused(10), which callers treat as "retry after the handover"
+  (protocol 5.2).
 - The partition index has an opaque `handover` field and the states SEALED,
   RECEIVING and RETIRED, so the operation path already answers as protocol
   5.1 says for those states. Nothing in this build enters them.
@@ -79,15 +78,22 @@ Storage and formats:
   byte so a build refuses bytes it did not write. The index decoder enforces
   the frozen bounds (at most 4096 entries, kind not 0, key 1..=256, entry
   length at most 65,399).
-- **The index is stored twice**, `vault:idx:<P>` then `vault:idx2:<P>`, the
-  second written after the first. A read uses the first and falls back to the
-  second when the first is absent or does not parse; both unusable is an
-  error, never NONE. A crash between the two writes leaves the second one
-  commit behind, which is consistent: gc runs only after both writes, so the
-  entry copies it names still exist. Residual: if the second copy's write
-  keeps failing while the first is later lost, the fallback is older than one
-  commit and may name a copy gc has since removed; that entry then reads as
-  Missing (below). A failed second write is not reported.
+- **The index is stored twice, each copy with a BLAKE3 checksum**,
+  `vault:idx:<P>` then `vault:idx2:<P>`. Every call reconciles them in `open`,
+  before anything else runs: a valid first copy wins and rewrites the second
+  if it is absent, damaged or different; a first copy that is present but
+  damaged is restored from the second; a first copy that is ABSENT with a valid
+  second is ambiguous (lost, or a transient miss), so the store is read-only
+  for that call (no write, no gc, no repair of an entry); both damaged is an
+  error, and both absent is a new partition unless `vault:parts` lists it,
+  which is an error. The checksum is what makes the second copy cover bit rot:
+  a flipped bit that still parses (a digest, a parity, the state) is rejected.
+  **gc runs only when both copies are verified identical**, so it never removes
+  a copy that either index names; if the second copy cannot be written, gc
+  waits (garbage accumulates, nothing is lost) until it can. The layout is
+  build-private. Residual: a first copy that is permanently absent leaves the
+  vault read-only until the page imports over affected slots or the secret is
+  restored.
 - **A secret that does not read is Missing, never corrupt.** When the index
   names an entry but `get_secret` returns nothing, the vault changes and
   deletes nothing, and answers storage failure (Refused 12). List shows the
@@ -95,16 +101,25 @@ Storage and formats:
   with `replace` overwrites it; Delete works. Only bytes that are present and
   do not parse are dropped and counted. Residual: an entry whose secret is
   gone for good stays Missing until the page imports over it.
-- **gc retries.** `remove_secret` failures are checked by reading the secret
-  back; a name still present stays listed in `vault:gc` and is retried by the
-  next call. Every entry copy is added to `vault:gc` before it is written, so
-  a crash between the write and the index commit leaves a name the next call
-  removes (gc never removes a name the committed index references).
+- **gc is durable and bounded.** Every entry copy is listed in the gc list
+  before it is written, so a crash leaves a name the next call removes. The
+  list is kept twice (`vault:gc`, `vault:gc2`) and read as a union, so one copy
+  failing to read does not lose a pending removal. A removal is confirmed by
+  reading the secret back; a name still present stays listed. A name that
+  neither removes nor reads back is retried once more and then dropped (a copy
+  that never landed). The list holds at most 4096 names: a write that would
+  exceed it fails with storage failure and leaves the list alone, so it can
+  never wrap and erase itself. Residual: both copies of the list failing to
+  read in one call loses the pending names (they cost host quota, never a key,
+  because gc only removes unreferenced names).
 - **Stored successor records are verified on load.** `vault:succ` whose
   `current` or withdrawal no longer verifies under the domain key, is in the
   wrong role, or has `current` at or below OWN_VERSION is read as malformed:
   Poke reports `STORED_MALFORMED`, Moved is never returned with an invalid
-  record, and record handling is refused (Refused 7).
+  record, and record handling is refused (Refused 7). It is not permanent: a
+  submitted or poked record that verifies and is newer than this build replaces
+  it. Whatever the unreadable store held is lost, so the floor it carried is
+  too (corruption already cost that knowledge).
 - **gc never deletes a referenced entry.** Protocol 4.2 writes `vault:gc`
   before the index. If that index write then fails, `vault:gc` names a copy
   the index still references; processing it as written would delete a live
@@ -135,10 +150,12 @@ Caller marks:
 - **Equal version, different record, withdrawals, lost marks**: decided; see
   "Decided 2026-11-23" above.
 - **A mark whose secret does not read** (transient or not) is served at the
-  compiled-in `min_version` and is never overwritten on that evidence, so a
+  compiled-in `min_version` and is never overwritten by an operation, so a
   momentary read failure cannot lower a stored mark. While it lasts, a caller
-  below the stored mark but at or above `min_version` is served. SubmitRecord
-  of a caller record refuses (Refused 12) instead, because it would overwrite.
+  below the stored mark but at or above `min_version` is served. A SubmitRecord
+  of a caller record reads it again; if it is still unreadable, a record at or
+  above `min_version` replaces it (it lowers the floor to that version), so a
+  mark lost for good is not stuck for ever.
 - **SubmitRecord from a delegate is held to its caller mark** exactly like an
   operation: a stale caller is refused (Refused 2), a newer one raises its
   mark (Busy while sealed or awaiting retirement, Refused 3 or 12 if the raise
@@ -153,6 +170,11 @@ Operations:
   partition that is NONE and unarmed it answers NotHere (the route runs first).
 - **PublicKey of a publisher key** answers Unusable(1), like every other use.
   Delete of it is allowed.
+- **A digest-valid entry this build cannot decode** (kind 0, a defined kind
+  with the wrong content length, a newer format) is Corrupt without a parse: it
+  is never dropped, rewritten or counted lost, and no operation can use it.
+- **Export's lookup never changes storage**: an unparseable slot is not
+  dropped when Export asks about it, so a user who answers Deny loses nothing.
 - **Import over a corrupt slot**: "same key" compares with the flagged bytes.
   The original seed, if the corruption changed it, is a different key and
   needs `replace`. The repair path is Export (allowed on a corrupt slot whose

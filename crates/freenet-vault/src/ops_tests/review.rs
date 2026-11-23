@@ -1341,6 +1341,78 @@ fn check_one(
     }
 }
 
+/// The decoders of persisted state run on every call, so a panic in one is a
+/// trap that bricks the vault: none may panic on damaged bytes, including
+/// damaged bodies with a correct checksum (which reach the parser), and an
+/// index that decodes round-trips.
+#[test]
+fn persisted_state_decoders_never_panic() {
+    use crate::consent::Pending;
+    use crate::succ::Succ;
+    let mut rnd = prng("persisted decoders");
+    let mut h = MemHost::new();
+    writer_with_key(&mut h);
+    let slot = seed_slot_of(&h);
+    chat_pk(&mut h, 5, &slot);
+    page(&mut h, poke(0, Some(domain_record(2, [0x22; 32]))));
+    let index = h.secrets[&names::index(&domain().partition())].clone();
+    let succ = h.secrets[names::SUCC].clone();
+    let pending = Pending {
+        prompt_id: 7,
+        origin: [3; 32],
+        request_id: 9,
+        slot: vec![1; 32],
+    }
+    .encode();
+    assert_eq!(Pending::decode(&pending).unwrap().prompt_id, 7);
+    for i in 0..20_000 {
+        let mut damaged = |valid: &[u8], rechecksum: bool| {
+            let mut v = valid.to_vec();
+            for _ in 0..1 + rnd(1)[0] % 3 {
+                let at = rnd(2).iter().fold(0usize, |a, b| a * 256 + *b as usize) % v.len();
+                v[at] ^= rnd(1)[0] | 1;
+            }
+            if rechecksum && v.len() > 32 {
+                let n = v.len() - 32;
+                let sum = *blake3::hash(&v[..n]).as_bytes();
+                v[n..].copy_from_slice(&sum);
+            }
+            match rnd(1)[0] % 4 {
+                0 => v.truncate(rnd(1)[0] as usize % (v.len() + 1)),
+                1 => v.extend(rnd(2)),
+                _ => {}
+            }
+            v
+        };
+        let ix = damaged(&index, i % 2 == 0);
+        if let Ok(decoded) = Index::decode(&ix) {
+            assert_eq!(Index::decode(&decoded.encode()).unwrap(), decoded);
+        }
+        let _ = Succ::decode(&damaged(&succ, false));
+        let _ = Pending::decode(&damaged(&pending, false));
+        let n = rnd(1)[0] as usize % 150;
+        let junk = rnd(n);
+        let _ = (
+            Index::decode(&junk),
+            Succ::decode(&junk),
+            Pending::decode(&junk),
+        );
+    }
+}
+
+/// The one slot of a vault holding one key (test helper).
+fn seed_slot_of(h: &MemHost) -> Vec<u8> {
+    let p = domain().partition();
+    Index::decode(&h.secrets[&names::index(&p)])
+        .unwrap()
+        .entries
+        .iter()
+        .find(|e| e.kind == KIND_KEY)
+        .unwrap()
+        .key
+        .clone()
+}
+
 /// The undamaged frames, including ones from a stale caller (below its mark,
 /// the caller-mark gate's refusal), from every origin the vault can see.
 #[test]

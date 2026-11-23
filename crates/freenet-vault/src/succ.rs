@@ -63,7 +63,8 @@ impl Succ {
         Ok(())
     }
 
-    fn decode(b: &[u8]) -> Result<Self, Malformed> {
+    /// Parses the stored layout (no verification). Public so it can be fuzzed.
+    pub fn decode(b: &[u8]) -> Result<Self, Malformed> {
         let mut r = Reader::new(b);
         if r.take(4, "magic")? != b"FVSU" || r.u8("format")? != 1 {
             return Err(Malformed("succ header"));

@@ -21,8 +21,8 @@ pub mod refused {
     pub const UNKNOWN_FRAME: u8 = 10;
     pub const FORBIDDEN_SIGNING_DOMAIN: u8 = 11;
     pub const STORAGE_FAILURE: u8 = 12;
-    /// Batch's `expected_public_key` differs from the key the slot holds.
-    /// New in this implementation; not yet in the documents (DESIGN-NOTES.md).
+    /// Batch's `expected_public_key` differs from the key the slot holds
+    /// (protocol 12.4, reason 14).
     pub const PUBLIC_KEY_MISMATCH: u8 = 14;
 }
 
