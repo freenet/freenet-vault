@@ -28,6 +28,11 @@ impl PageContainer {
 pub struct CallerDelegate {
     pub author_vk: [u8; 32],
     pub app_id: &'static [u8],
+    /// The lowest record version this build accepts from the caller, compiled
+    /// in (decided 2026-11-23, DESIGN-NOTES.md). It is the floor whenever the
+    /// stored caller mark is absent, lost or unreadable, so a fresh vault
+    /// still refuses a known-bad old build.
+    pub min_version: u32,
 }
 
 #[derive(Debug, Clone, Copy)]

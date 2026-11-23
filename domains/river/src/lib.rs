@@ -5,19 +5,38 @@ use freenet_stdlib::prelude::*;
 use freenet_vault::{CallerDelegate, Domain, PageContainer};
 use freenet_vault_common::frame::types;
 
-#[cfg(feature = "release")]
-compile_error!(
-    "RIVER_VAULT_AUTHOR_VK is a placeholder. A release needs the offline River vault author key \
-     (DESIGN-NOTES.md, \"River constants\")."
-);
-
-/// PLACEHOLDER: the River vault's offline author key does not exist yet.
-/// This is the public key of the seed `[0x52; 32]`, which anyone can sign
-/// with, so the `release` feature refuses to build while it is here.
-pub const RIVER_VAULT_AUTHOR_VK: [u8; 32] = [
+/// The public key of the seed `[0x52; 32]`, which anyone can sign with.
+const PLACEHOLDER_AUTHOR_VK: [u8; 32] = [
     0x20, 0x12, 0xcb, 0x90, 0xca, 0x60, 0xe8, 0xe5, 0xd8, 0xda, 0xf6, 0x6e, 0x22, 0x72, 0xd2, 0x23,
     0x3e, 0x04, 0x86, 0xd5, 0x57, 0xe8, 0xc6, 0x61, 0x41, 0xed, 0x89, 0x20, 0x17, 0x7d, 0x7e, 0xb7,
 ];
+
+/// PLACEHOLDER: the River vault's offline author key does not exist yet.
+/// While it is the placeholder, the crate refuses to compile unless the
+/// `placeholder-key` feature is set (see the const check below). Replace it
+/// with the offline key and the check passes without the feature.
+pub const RIVER_VAULT_AUTHOR_VK: [u8; 32] = PLACEHOLDER_AUTHOR_VK;
+
+const fn same_key(a: &[u8; 32], b: &[u8; 32]) -> bool {
+    let mut i = 0;
+    while i < 32 {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+// Fails the build, in every profile, when the author key is the placeholder
+// and nobody asked for it by name. Inverted on purpose: the old
+// `release`-feature guard let a plain release build ship a key anyone can
+// sign with.
+const _: () = assert!(
+    cfg!(feature = "placeholder-key") || !same_key(&RIVER_VAULT_AUTHOR_VK, &PLACEHOLDER_AUTHOR_VK),
+    "RIVER_VAULT_AUTHOR_VK is the PLACEHOLDER key, which anyone can sign with. Set the offline \
+     River vault author key, or build with `--features placeholder-key` for development only"
+);
 
 /// River's online publishing key: it parameterizes River's web container and
 /// signs River's pointer records (river `published-contract/webapp.parameters`
@@ -44,6 +63,11 @@ pub const RIVER_PAGE_CONTAINERS: &[PageContainer] = &[PageContainer {
 pub const RIVER_CALLER_DELEGATES: &[CallerDelegate] = &[CallerDelegate {
     author_vk: RIVER_PUBLISHER_VK,
     app_id: b"river.chat-delegate",
+    // The chat delegate's current pointer version at build time (river
+    // `pointer-records.toml`, origin/main 4d137e66: version 11). A fresh vault
+    // or one that lost its caller mark still refuses older builds. Raise it
+    // to the chat delegate's current version when this vault is released.
+    min_version: 11,
 }];
 
 fn export_prompt(slot: &[u8]) -> String {

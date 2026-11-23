@@ -26,6 +26,8 @@ pub use codec::Malformed;
 
 /// Frozen bounds (protocol 11) and library maximums (protocol 8.1).
 pub mod bounds {
+    /// A whole reply frame, envelope included (protocol 11).
+    pub const MAX_REPLY: usize = 65_536;
     /// A frame body.
     pub const MAX_FRAME_BODY: usize = 16 * 1024 * 1024;
     /// An operation request's frame body.

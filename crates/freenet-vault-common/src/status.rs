@@ -1,10 +1,9 @@
 //! Status frames (protocol 12.4): Moved, NotHere, HandoverStatus, Absent,
 //! Busy, Unusable, Refused; and the caller frame Poke.
 //!
-//! HandoverStatus and Poke belong to the handover protocol, whose design is
-//! still open. This crate encodes them as revision 6 lays them out so the
-//! operation path can create a partition (Poke flag bit 1) and report its
-//! state, and DESIGN-NOTES.md marks both layouts provisional.
+//! HandoverStatus and Poke follow handover protocol revision 7, section 12.4.
+//! The operation path uses them to create a partition (Poke flag bit 1) and to
+//! report its state; the handover itself is not built.
 
 use crate::codec::{Malformed, Reader, Result, Writer};
 use crate::frame::{self, types};
@@ -22,7 +21,6 @@ pub mod refused {
     pub const UNKNOWN_FRAME: u8 = 10;
     pub const FORBIDDEN_SIGNING_DOMAIN: u8 = 11;
     pub const STORAGE_FAILURE: u8 = 12;
-    pub const NOT_PERMITTED_IN_STATE: u8 = 13;
     /// Batch's `expected_public_key` differs from the key the slot holds.
     /// New in this implementation; not yet in the documents (DESIGN-NOTES.md).
     pub const PUBLIC_KEY_MISMATCH: u8 = 14;
@@ -70,15 +68,14 @@ pub mod problems {
     pub const ANOTHER_WRITER: u8 = 1 << 2;
     pub const STAGING_FULL: u8 = 1 << 3;
     pub const COPYING_PAUSED: u8 = 1 << 4;
+    pub const RECEIVER_HIGHER_BUILD: u8 = 1 << 5;
 }
 
-/// Poke flag bits. Only bit 1 is acted on by this implementation; the others
-/// belong to the deferred handover.
+/// Poke flag bits. Only bit 1 is acted on by this implementation; bits 2 and 3
+/// are reserved and not used in v1 (revision 7), so they have no names here.
 pub mod poke_flags {
     pub const PAUSE_COPYING: u8 = 1 << 0;
     pub const ARM: u8 = 1 << 1;
-    pub const REDELIVER: u8 = 1 << 2;
-    pub const TARGET_DID_NOT_TAKE_OVER: u8 = 1 << 3;
     pub const DISCARD_PARTIAL: u8 = 1 << 4;
 }
 
@@ -91,10 +88,10 @@ pub struct HandoverStatus {
     pub step_result: u8,
     pub partition_state: u8,
     pub peer_record: [u8; 100],
+    /// The sender's version while receiving, else 0.
+    pub receiving_from: u32,
     pub taken_over_from: u32,
-    pub taken_over_attempt: u32,
     pub taken_over_manifest: [u8; 32],
-    pub attempt: u32,
     pub manifest_digest: [u8; 32],
     pub problems: u8,
     pub lost_entries: u16,
@@ -112,10 +109,9 @@ impl HandoverStatus {
             step_result: self.step_result,
             partition_state: 0,
             peer_record: [0; 100],
+            receiving_from: 0,
             taken_over_from: 0,
-            taken_over_attempt: 0,
             taken_over_manifest: [0; 32],
-            attempt: 0,
             manifest_digest: [0; 32],
             problems: 0,
             lost_entries: 0,
@@ -157,6 +153,15 @@ pub enum Status {
     },
 }
 
+fn write_slot(w: &mut Writer, slot: &[u8]) {
+    w.require(
+        (1..=crate::bounds::MAX_SLOT).contains(&slot.len()),
+        "slot_len",
+    )
+    .len_u8(slot.len(), "slot_len")
+    .bytes(slot);
+}
+
 fn read_slot(r: &mut Reader) -> Result<Vec<u8>> {
     let len = r.u8("slot_len")? as usize;
     if len == 0 || len > crate::bounds::MAX_SLOT {
@@ -190,7 +195,7 @@ impl Status {
         }
     }
 
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>> {
         let mut w = Writer::new();
         w.u64(self.request_id());
         match self {
@@ -209,10 +214,9 @@ impl Status {
                     .u8(h.step_result)
                     .u8(h.partition_state)
                     .bytes(&h.peer_record)
+                    .u32(h.receiving_from)
                     .u32(h.taken_over_from)
-                    .u32(h.taken_over_attempt)
                     .bytes(&h.taken_over_manifest)
-                    .u32(h.attempt)
                     .bytes(&h.manifest_digest)
                     .u8(h.problems)
                     .u16(h.lost_entries);
@@ -220,7 +224,8 @@ impl Status {
             Self::Absent {
                 partition, slot, ..
             } => {
-                w.bytes(partition).u8(slot.len() as u8).bytes(slot);
+                w.bytes(partition);
+                write_slot(&mut w, slot);
             }
             Self::Unusable {
                 partition,
@@ -228,17 +233,16 @@ impl Status {
                 reason,
                 ..
             } => {
-                w.bytes(partition)
-                    .u8(slot.len() as u8)
-                    .bytes(slot)
-                    .u8(*reason);
+                w.bytes(partition);
+                write_slot(&mut w, slot);
+                w.u8(*reason);
             }
             Self::Refused { reason, .. } => {
                 w.u8(*reason);
             }
         }
         w.ext(&[]);
-        frame::encode(self.frame_type(), &w.into_vec())
+        frame::encode_reply(self.frame_type(), &w.finish()?)
     }
 
     pub fn decode(frame_type: u8, body: &[u8]) -> Result<Self> {
@@ -262,10 +266,9 @@ impl Status {
                 step_result: r.u8("step_result")?,
                 partition_state: r.u8("partition_state")?,
                 peer_record: r.array("peer_record")?,
+                receiving_from: r.u32("receiving_from")?,
                 taken_over_from: r.u32("taken_over_from")?,
-                taken_over_attempt: r.u32("taken_over_attempt")?,
                 taken_over_manifest: r.array("taken_over_manifest")?,
-                attempt: r.u32("attempt")?,
                 manifest_digest: r.array("manifest_digest")?,
                 problems: r.u8("problems")?,
                 lost_entries: r.u16("lost_entries")?,
@@ -327,14 +330,14 @@ impl Poke {
         })
     }
 
-    pub fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Result<Vec<u8>> {
         let mut w = Writer::new();
         w.u8(self.flags)
             .bytes(&self.partition)
             .u8(self.record.is_some() as u8)
             .bytes(&self.record.unwrap_or([0; 100]))
             .ext(&self.ext);
-        frame::encode(types::POKE, &w.into_vec())
+        frame::encode(types::POKE, &w.finish()?)
     }
 }
 
@@ -383,17 +386,16 @@ mod tests {
                 step_result: step_result::RECORD_ACCEPTED,
                 partition_state: partition_state::WRITER,
                 peer_record: [9; 100],
-                taken_over_from: 0,
-                taken_over_attempt: 0,
-                taken_over_manifest: [0; 32],
-                attempt: 0,
-                manifest_digest: [0; 32],
+                receiving_from: 3,
+                taken_over_from: 4,
+                taken_over_manifest: [5; 32],
+                manifest_digest: [6; 32],
                 problems: problems::CORRUPT_OR_LOST,
                 lost_entries: 2,
             }),
         ];
         for c in cases {
-            let bytes = c.encode();
+            let bytes = c.encode().unwrap();
             let f = Frame::decode(&bytes).unwrap();
             assert_eq!(Status::decode(f.frame_type, f.body).unwrap(), c);
         }
@@ -405,30 +407,159 @@ mod tests {
             request_id: 9,
             reason: refused::ORIGIN_REQUIRED,
         }
-        .encode();
+        .encode()
+        .unwrap();
         assert_eq!(
             r,
             [b'F', b'V', b'L', b'T', 1, 0x46, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 9, 1, 0, 0]
         );
-        // HandoverStatus body: 8 + 4 + 4 + 1 + 1 + 1 + 100 + 4 + 4 + 32 + 4 + 32 + 1 + 2 + 2.
+        // HandoverStatus, written out from revision 7 section 12.4 and not
+        // from the encoder: request_id 8, own_version 4, floor_version 4,
+        // record_state 1, step_result 1, partition_state 1, peer_record 100,
+        // receiving_from 4, taken_over_from 4, taken_over_manifest 32,
+        // manifest_digest 32, problems 1, lost_entries 2, ext_len 2.
         let h = Status::Handover(HandoverStatus {
-            request_id: 0,
-            own_version: 0,
-            floor_version: 0,
-            record_state: 0,
-            step_result: 0,
-            partition_state: 0,
-            peer_record: [0; 100],
-            taken_over_from: 0,
-            taken_over_attempt: 0,
-            taken_over_manifest: [0; 32],
-            attempt: 0,
-            manifest_digest: [0; 32],
-            problems: 0,
-            lost_entries: 0,
+            request_id: 0x0102030405060708,
+            own_version: 0x11,
+            floor_version: 0x12,
+            record_state: 1,
+            step_result: 2,
+            partition_state: 6,
+            peer_record: [0xAA; 100],
+            receiving_from: 0x13,
+            taken_over_from: 0x14,
+            taken_over_manifest: [0xBB; 32],
+            manifest_digest: [0xCC; 32],
+            problems: 0b10_0001,
+            lost_entries: 0x0102,
         })
-        .encode();
-        assert_eq!(h.len(), 10 + 200);
+        .encode()
+        .unwrap();
+        let mut want = vec![b'F', b'V', b'L', b'T', 1, 0x42, 0, 0, 0, 196];
+        want.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        want.extend_from_slice(&[0, 0, 0, 0x11, 0, 0, 0, 0x12]);
+        want.extend_from_slice(&[1, 2, 6]);
+        want.extend_from_slice(&[0xAA; 100]);
+        want.extend_from_slice(&[0, 0, 0, 0x13, 0, 0, 0, 0x14]);
+        want.extend_from_slice(&[0xBB; 32]);
+        want.extend_from_slice(&[0xCC; 32]);
+        want.extend_from_slice(&[0b10_0001, 1, 2]);
+        want.extend_from_slice(&[0, 0]);
+        assert_eq!(h, want);
+    }
+
+    /// Every other status frame, written out byte by byte.
+    #[test]
+    fn status_golden_vectors() {
+        let p = [0x07u8; 32];
+        let head = |ty: u8, body_len: u8| vec![b'F', b'V', b'L', b'T', 1, ty, 0, 0, 0, body_len];
+        let rid = [0, 0, 0, 0, 0, 0, 0, 5u8];
+
+        let mut w = head(0x40, 8 + 32 + 100 + 2);
+        w.extend_from_slice(&rid);
+        w.extend_from_slice(&p);
+        w.extend_from_slice(&[0x09; 100]);
+        w.extend_from_slice(&[0, 0]);
+        let moved = Status::Moved {
+            request_id: 5,
+            partition: p,
+            record: [9; 100],
+        };
+        assert_eq!(moved.encode().unwrap(), w);
+
+        let mut w = head(0x41, 8 + 32 + 2);
+        w.extend_from_slice(&rid);
+        w.extend_from_slice(&p);
+        w.extend_from_slice(&[0, 0]);
+        let not_here = Status::NotHere {
+            request_id: 5,
+            partition: p,
+        };
+        assert_eq!(not_here.encode().unwrap(), w);
+
+        let mut w = head(0x43, 8 + 32 + 1 + 2 + 2);
+        w.extend_from_slice(&rid);
+        w.extend_from_slice(&p);
+        w.extend_from_slice(&[2, 0xEE, 0xEF]);
+        w.extend_from_slice(&[0, 0]);
+        let absent = Status::Absent {
+            request_id: 5,
+            partition: p,
+            slot: vec![0xEE, 0xEF],
+        };
+        assert_eq!(absent.encode().unwrap(), w);
+
+        let mut w = head(0x44, 8 + 32 + 2);
+        w.extend_from_slice(&rid);
+        w.extend_from_slice(&p);
+        w.extend_from_slice(&[0, 0]);
+        let busy = Status::Busy {
+            request_id: 5,
+            partition: p,
+        };
+        assert_eq!(busy.encode().unwrap(), w);
+
+        let mut w = head(0x45, 8 + 32 + 1 + 1 + 1 + 2);
+        w.extend_from_slice(&rid);
+        w.extend_from_slice(&p);
+        w.extend_from_slice(&[1, 0xEE, 2]);
+        w.extend_from_slice(&[0, 0]);
+        let unusable = Status::Unusable {
+            request_id: 5,
+            partition: p,
+            slot: vec![0xEE],
+            reason: unusable::CORRUPT,
+        };
+        assert_eq!(unusable.encode().unwrap(), w);
+    }
+
+    #[test]
+    fn poke_golden_vector() {
+        let p = Poke {
+            flags: poke_flags::ARM,
+            partition: [0x33; 32],
+            record: Some([0x44; 100]),
+            ext: vec![],
+        };
+        let mut w = vec![
+            b'F',
+            b'V',
+            b'L',
+            b'T',
+            1,
+            0x20,
+            0,
+            0,
+            0,
+            1 + 32 + 1 + 100 + 2,
+        ];
+        w.push(0b10);
+        w.extend_from_slice(&[0x33; 32]);
+        w.push(1);
+        w.extend_from_slice(&[0x44; 100]);
+        w.extend_from_slice(&[0, 0]);
+        assert_eq!(p.encode().unwrap(), w);
+    }
+
+    #[test]
+    fn status_encoders_enforce_bounds() {
+        let p = [0u8; 32];
+        for len in [0usize, 65, 300] {
+            assert!(Status::Absent {
+                request_id: 0,
+                partition: p,
+                slot: vec![1; len],
+            }
+            .encode()
+            .is_err());
+        }
+        assert!(Status::Absent {
+            request_id: 0,
+            partition: p,
+            slot: vec![1; 64],
+        }
+        .encode()
+        .is_ok());
     }
 
     #[test]
@@ -440,7 +571,7 @@ mod tests {
                 record,
                 ext: vec![],
             };
-            let bytes = p.encode();
+            let bytes = p.encode().unwrap();
             let f = Frame::decode(&bytes).unwrap();
             assert_eq!(f.frame_type, types::POKE);
             assert_eq!(Poke::decode(f.body).unwrap(), p);

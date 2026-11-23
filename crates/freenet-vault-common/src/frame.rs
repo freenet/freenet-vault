@@ -45,7 +45,8 @@ pub mod types {
     pub const LIST: u8 = 0x84;
     pub const BATCH: u8 = 0x85;
     pub const EXPORT: u8 = 0x86;
-    pub const RETIRE_TO: u8 = 0x87;
+    // 0x87 is reserved: RetireTo was removed in revision 7. A page sending it
+    // gets Refused(10), like any other unknown frame.
 
     pub const KEY_RESULT: u8 = 0xA0;
     pub const OK: u8 = 0xA1;
@@ -92,16 +93,28 @@ impl<'a> Frame<'a> {
     }
 }
 
-/// Wraps a body in the envelope.
-pub fn encode(frame_type: u8, body: &[u8]) -> Vec<u8> {
-    assert!(body.len() <= MAX_FRAME_BODY, "frame body over 16 MiB");
+/// Wraps a body in the envelope. A body over 16 MiB is an error.
+pub fn encode(frame_type: u8, body: &[u8]) -> Result<Vec<u8>, Malformed> {
+    if body.len() > MAX_FRAME_BODY {
+        return Err(Malformed("frame body over 16 MiB"));
+    }
     let mut out = Vec::with_capacity(HEADER_LEN + body.len());
     out.extend_from_slice(&MAGIC);
     out.push(PROTO_VERSION);
     out.push(frame_type);
     out.extend_from_slice(&(body.len() as u32).to_be_bytes());
     out.extend_from_slice(body);
-    out
+    Ok(out)
+}
+
+/// Wraps a reply body in the envelope, enforcing the 65,536-byte bound on a
+/// whole reply frame (protocol 11).
+pub fn encode_reply(frame_type: u8, body: &[u8]) -> Result<Vec<u8>, Malformed> {
+    let out = encode(frame_type, body)?;
+    if out.len() > crate::bounds::MAX_REPLY {
+        return Err(Malformed("reply over 65536 bytes"));
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -110,7 +123,7 @@ mod tests {
 
     #[test]
     fn envelope_vector() {
-        let f = encode(0x83, &[1, 2, 3]);
+        let f = encode(0x83, &[1, 2, 3]).unwrap();
         assert_eq!(f, [0x46, 0x56, 0x4C, 0x54, 0x01, 0x83, 0, 0, 0, 3, 1, 2, 3]);
         let d = Frame::decode(&f).unwrap();
         assert_eq!(d.frame_type, 0x83);
@@ -119,7 +132,7 @@ mod tests {
 
     #[test]
     fn envelope_malformed() {
-        let f = encode(0x83, &[1, 2, 3]);
+        let f = encode(0x83, &[1, 2, 3]).unwrap();
         assert_eq!(Frame::decode(b"nope"), Err(FrameError::NotVault));
         assert_eq!(Frame::decode(&[]), Err(FrameError::NotVault));
         // Short and long against body_len.

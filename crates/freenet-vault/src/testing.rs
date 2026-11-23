@@ -1,7 +1,7 @@
 //! An in-memory [`Host`] with fault injection, for tests.
 
 use crate::host::Host;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// What a `set_secret` call does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +25,14 @@ pub struct MemHost {
     pub zero_rng: bool,
     fault: Option<FaultFn>,
     pub writes: usize,
+    /// Secret names `get_secret` reports as absent although they are stored:
+    /// a transient read failure.
+    pub hidden: BTreeSet<Vec<u8>>,
+    /// Secret names `remove_secret` fails to remove.
+    pub undeletable: BTreeSet<Vec<u8>>,
+    /// Counts every `set_secret` and `remove_secret`, applied or not.
+    pub mutations: usize,
+    crash_after: Option<usize>,
 }
 
 impl Default for MemHost {
@@ -42,7 +50,30 @@ impl MemHost {
             zero_rng: false,
             fault: None,
             writes: 0,
+            hidden: BTreeSet::new(),
+            undeletable: BTreeSet::new(),
+            mutations: 0,
+            crash_after: None,
         }
+    }
+
+    /// Simulates the process dying after `n` more mutations (`set_secret` or
+    /// `remove_secret` calls): the first `n` apply, every later one does
+    /// nothing and reports failure, as if the delegate had stopped there.
+    pub fn crash_after(&mut self, n: usize) {
+        self.crash_after = Some(self.mutations + n);
+    }
+
+    /// The disk a restarted process would find: the secrets only.
+    pub fn restart(&self) -> Self {
+        let mut h = Self::new();
+        h.secrets = self.secrets.clone();
+        h
+    }
+
+    fn crashed(&self) -> bool {
+        self.crash_after
+            .is_some_and(|limit| self.mutations >= limit)
     }
 
     /// Decides the outcome of every following write by secret name.
@@ -66,10 +97,18 @@ impl MemHost {
 
 impl Host for MemHost {
     fn get_secret(&self, key: &[u8]) -> Option<Vec<u8>> {
+        if self.hidden.contains(key) {
+            return None;
+        }
         self.secrets.get(key).cloned()
     }
 
     fn set_secret(&mut self, key: &[u8], value: &[u8]) -> bool {
+        if self.crashed() {
+            self.mutations += 1;
+            return false;
+        }
+        self.mutations += 1;
         self.writes += 1;
         let outcome = match &mut self.fault {
             Some(f) => f(key),
@@ -89,6 +128,14 @@ impl Host for MemHost {
     }
 
     fn remove_secret(&mut self, key: &[u8]) -> bool {
+        if self.crashed() {
+            self.mutations += 1;
+            return false;
+        }
+        self.mutations += 1;
+        if self.undeletable.contains(key) {
+            return false;
+        }
         self.secrets.remove(key).is_some()
     }
 

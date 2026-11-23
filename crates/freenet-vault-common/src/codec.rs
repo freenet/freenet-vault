@@ -93,14 +93,35 @@ impl<'a> Reader<'a> {
 }
 
 /// Appends v1 fields to a buffer.
+///
+/// A length that does not fit its field, or an extension over 65,535 bytes,
+/// does not truncate and does not panic: the writer remembers the first such
+/// error and [`Writer::finish`] returns it, so an encoder can never produce a
+/// frame whose length fields disagree with its bytes.
 #[derive(Default)]
 pub struct Writer {
     pub buf: Vec<u8>,
+    err: Option<Malformed>,
 }
 
 impl Writer {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn fail(&mut self, what: &'static str) {
+        if self.err.is_none() {
+            self.err = Some(Malformed(what));
+        }
+    }
+
+    /// Records an error when `ok` is false, for a bound the decoder enforces
+    /// that an encoder must enforce too.
+    pub fn require(&mut self, ok: bool, what: &'static str) -> &mut Self {
+        if !ok {
+            self.fail(what);
+        }
+        self
     }
 
     pub fn u8(&mut self, v: u8) -> &mut Self {
@@ -123,19 +144,62 @@ impl Writer {
         self
     }
 
+    /// A length written as `u8`; an error if it does not fit.
+    pub fn len_u8(&mut self, n: usize, what: &'static str) -> &mut Self {
+        match u8::try_from(n) {
+            Ok(v) => self.u8(v),
+            Err(_) => {
+                self.fail(what);
+                self.u8(0)
+            }
+        }
+    }
+
+    /// A length written as `u16`; an error if it does not fit.
+    pub fn len_u16(&mut self, n: usize, what: &'static str) -> &mut Self {
+        match u16::try_from(n) {
+            Ok(v) => self.u16(v),
+            Err(_) => {
+                self.fail(what);
+                self.u16(0)
+            }
+        }
+    }
+
+    /// A length written as `u32`; an error if it does not fit.
+    pub fn len_u32(&mut self, n: usize, what: &'static str) -> &mut Self {
+        match u32::try_from(n) {
+            Ok(v) => self.u32(v),
+            Err(_) => {
+                self.fail(what);
+                self.u32(0)
+            }
+        }
+    }
+
     pub fn bytes(&mut self, v: &[u8]) -> &mut Self {
         self.buf.extend_from_slice(v);
         self
     }
 
-    /// `ext_len 2 ; ext`. Panics if `ext` exceeds 65,535 bytes, which no
-    /// encoder in this crate produces.
+    /// `ext_len 2 ; ext`. An extension over 65,535 bytes is an error.
     pub fn ext(&mut self, ext: &[u8]) -> &mut Self {
-        let len = u16::try_from(ext.len()).expect("extension longer than 65535 bytes");
-        self.u16(len).bytes(ext)
+        self.len_u16(ext.len(), "extension longer than 65535 bytes")
+            .bytes(ext)
     }
 
+    /// The encoded bytes, or the first error.
+    pub fn finish(self) -> Result<Vec<u8>> {
+        match self.err {
+            None => Ok(self.buf),
+            Some(e) => Err(e),
+        }
+    }
+
+    /// For build-private layouts whose sizes the quotas bound: the bytes, or
+    /// an empty vector after an error. No decoder accepts an empty vector, so
+    /// a failure reads as malformed and never as a wrong value.
     pub fn into_vec(self) -> Vec<u8> {
-        self.buf
+        self.finish().unwrap_or_default()
     }
 }

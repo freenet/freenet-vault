@@ -16,9 +16,12 @@ default = ["freenet-main-delegate"]
 freenet-main-delegate = []
 # Named by the `#[delegate]` macro's generated code; unused here.
 trace = []
-# Set for a release build. Refuses to compile while any domain constant is a
-# placeholder (DESIGN-NOTES.md, "River constants").
-release = []
+# Allows building with the PLACEHOLDER author key (`RIVER_VAULT_AUTHOR_VK`),
+# which anyone can sign with. Without this feature the crate refuses to compile
+# while the placeholder is in place, so a plain `cargo build --release` can
+# never produce a vault whose records anyone can forge. Tests, clippy and
+# development builds name it explicitly; a release never does.
+placeholder-key = []
 
 [dependencies]
 freenet-vault.workspace = true

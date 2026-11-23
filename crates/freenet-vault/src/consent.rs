@@ -30,7 +30,7 @@ impl Pending {
             .u32(self.prompt_id)
             .bytes(&self.origin)
             .u64(self.request_id)
-            .u8(self.slot.len() as u8)
+            .len_u8(self.slot.len(), "slot_len")
             .bytes(&self.slot);
         w.into_vec()
     }

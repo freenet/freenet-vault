@@ -49,6 +49,7 @@ fn domain() -> Domain {
             [CallerDelegate {
                 author_vk: publisher,
                 app_id: CHAT_APP,
+                min_version: 1,
             }]
         }),
         delegate_frames: &[types::BATCH, types::PUBLIC_KEY, types::SUBMIT_RECORD],
@@ -198,6 +199,7 @@ fn req(header: RequestHeader, op: Operation) -> Vec<u8> {
         ext: vec![],
     }
     .encode()
+    .unwrap()
 }
 
 fn op(rid: u64, op: Operation) -> Vec<u8> {
@@ -212,6 +214,7 @@ fn poke(flags: u8, record: Option<[u8; 100]>) -> Vec<u8> {
         ext: vec![],
     }
     .encode()
+    .unwrap()
 }
 
 fn refused(rid: u64, reason: u8) -> Reply {
@@ -460,15 +463,16 @@ fn delegate_messages_the_vault_does_not_handle_are_ignored() {
     .is_empty());
     // Handover frames, unknown frame types, non-vault bytes, status frames.
     for payload in [
-        frame::encode(types::CHUNK, &[0; 10]),
-        frame::encode(types::COMPLETE, &[]),
-        frame::encode(0x30, &[]),
+        frame::encode(types::CHUNK, &[0; 10]).unwrap(),
+        frame::encode(types::COMPLETE, &[]).unwrap(),
+        frame::encode(0x30, &[]).unwrap(),
         b"hello".to_vec(),
         Status::Busy {
             request_id: 0,
             partition: [0; 32],
         }
-        .encode(),
+        .encode()
+        .unwrap(),
         poke(poke_flags::ARM, None),
     ] {
         assert!(from_delegate_raw(&mut h, c.key, c.key, payload).is_empty());
@@ -492,15 +496,15 @@ fn delegate_messages_the_vault_does_not_handle_are_ignored() {
 fn unknown_frames_and_retire_to_from_a_page_answer_refused_10() {
     let mut h = MemHost::new();
     assert_eq!(
-        page(&mut h, frame::encode(0x30, &[])),
+        page(&mut h, frame::encode(0x30, &[]).unwrap()),
         refused(0, refused::UNKNOWN_FRAME)
     );
     assert_eq!(
-        page(&mut h, frame::encode(types::RETIRE_TO, &[0; 100])),
+        page(&mut h, frame::encode(0x87, &[0; 100]).unwrap()),
         refused(0, refused::UNKNOWN_FRAME)
     );
     assert_eq!(
-        page(&mut h, frame::encode(types::CHUNK, &[])),
+        page(&mut h, frame::encode(types::CHUNK, &[]).unwrap()),
         refused(0, refused::UNKNOWN_FRAME)
     );
     assert_eq!(
@@ -657,7 +661,7 @@ fn submit_record_from_another_page_is_refused() {
     };
     let other = hash::contract_instance_id(&CONTAINER, &[9; 32]);
     assert_eq!(
-        single_app_reply(from_page_as(&mut h, other, s.encode())),
+        single_app_reply(from_page_as(&mut h, other, s.encode().unwrap())),
         refused(6, refused::CALLER_NOT_AUTHORIZED)
     );
     // The withdrawal was not stored: version 5 still serves.
@@ -723,7 +727,7 @@ fn a_malformed_stored_record_refuses_record_handling() {
         ext: vec![],
     };
     assert_eq!(
-        page(&mut h, sub.encode()),
+        page(&mut h, sub.encode().unwrap()),
         refused(4, refused::STORED_RECORD_MALFORMED)
     );
 }
@@ -1444,7 +1448,7 @@ fn submit_caller_record(h: &mut MemHost, rec: [u8; 100]) -> Reply {
         record: rec,
         ext: vec![],
     };
-    page(h, s.encode())
+    page(h, s.encode().unwrap())
 }
 
 #[test]
@@ -1520,7 +1524,7 @@ fn submit_record_for_callers() {
         ext: vec![],
     };
     assert_eq!(
-        page(&mut h, s.encode()),
+        page(&mut h, s.encode().unwrap()),
         refused(6, refused::CALLER_NOT_AUTHORIZED)
     );
     // From the chat delegate: allowed, and the status is redacted.
@@ -1532,7 +1536,7 @@ fn submit_record_for_callers() {
         record: record(&PUBLISHER_SEED, CHAT_APP, 9, [9; 32]),
         ext: vec![],
     };
-    let hs = handover(from_delegate(&mut h, c.key, s.encode()));
+    let hs = handover(from_delegate(&mut h, c.key, s.encode().unwrap()));
     assert_eq!(hs.step_result, step_result::RECORD_ACCEPTED);
     assert_eq!(hs.request_id, 77);
     assert_eq!(hs.partition_state, 0, "redacted for a delegate");

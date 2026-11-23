@@ -16,6 +16,7 @@
 //! flags: bit 0 armed, bit 1 awaiting_retirement, bit 2 peer record present.
 //! Entries are sorted by `(kind, key)` with no duplicates.
 
+use freenet_vault_common::bounds::{MAX_ENTRY, MAX_KEY, MAX_PARTITION_ENTRIES};
 use freenet_vault_common::codec::{Malformed, Reader, Writer};
 
 const MAGIC: &[u8; 4] = b"FVIX";
@@ -127,12 +128,12 @@ impl Index {
         }
         w.u8(self.problems)
             .u16(self.lost_entries)
-            .u32(self.handover.len() as u32)
+            .len_u32(self.handover.len(), "handover length")
             .bytes(&self.handover)
-            .u16(self.entries.len() as u16);
+            .len_u16(self.entries.len(), "entry count");
         for e in &self.entries {
             w.u8(e.kind)
-                .u16(e.key.len() as u16)
+                .len_u16(e.key.len(), "key length")
                 .bytes(&e.key)
                 .u8(e.parity)
                 .u16(e.len)
@@ -166,16 +167,28 @@ impl Index {
         let hlen = r.u32("handover_len")? as usize;
         let handover = r.take(hlen, "handover")?.to_vec();
         let count = r.u16("count")? as usize;
-        let mut entries: Vec<IndexEntry> = Vec::with_capacity(count);
+        if count > MAX_PARTITION_ENTRIES {
+            return Err(Malformed("entry count"));
+        }
+        let mut entries: Vec<IndexEntry> = Vec::with_capacity(count.min(64));
         for _ in 0..count {
             let kind = r.u8("kind")?;
+            if kind == 0 {
+                return Err(Malformed("kind 0"));
+            }
             let klen = r.u16("key_len")? as usize;
+            if klen == 0 || klen > MAX_KEY {
+                return Err(Malformed("key_len"));
+            }
             let key = r.take(klen, "key")?.to_vec();
             let parity = r.u8("parity")?;
             if parity > 1 {
                 return Err(Malformed("parity"));
             }
             let len = r.u16("len")?;
+            if len as usize > MAX_ENTRY {
+                return Err(Malformed("entry len"));
+            }
             let digest = r.array("digest")?;
             if let Some(prev) = entries.last() {
                 if (prev.kind, prev.key.as_slice()) >= (kind, key.as_slice()) {

@@ -51,15 +51,18 @@ pub fn delegate(domain: &Domain, key: &[u8; 32], header: &RequestHeader) -> Resu
         return deny;
     };
     // Records under the domain's own author key are never caller records.
-    if proof.author_vk == domain.author_vk
-        || domain
-            .caller_delegate(&proof.author_vk, &proof.app_id)
-            .is_none()
-    {
+    if proof.author_vk == domain.author_vk {
         return deny;
     }
+    let Some(accepted) = domain.caller_delegate(&proof.author_vk, &proof.app_id) else {
+        return deny;
+    };
     let record = PointerRecord::decode(&proof.record);
     if record.verify(&proof.author_vk, &proof.app_id).is_err() || record.is_withdrawal() {
+        return deny;
+    }
+    // The compiled-in floor holds even when no caller mark is stored.
+    if record.version < accepted.min_version {
         return deny;
     }
     if &delegate_key_empty_params(&record.code_hash) != key {

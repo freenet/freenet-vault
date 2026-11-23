@@ -146,6 +146,36 @@ mod tests {
         );
     }
 
+    fn signed(version: u32) -> ([u8; 32], PointerRecord) {
+        use ed25519_dalek::Signer;
+        let sk = ed25519_dalek::SigningKey::from_bytes(&[0x42; 32]);
+        let vk = sk.verifying_key().to_bytes();
+        let code_hash = [9u8; 32];
+        let msg = signing_message(&vk, b"x", version, &code_hash);
+        (
+            vk,
+            PointerRecord {
+                version,
+                code_hash,
+                signature: sk.sign(&msg).to_bytes(),
+            },
+        )
+    }
+
+    /// Both edges of the version bound: `MAX_VERSION` (u32::MAX - 1) verifies,
+    /// `u32::MAX` is reserved; 1 verifies, 0 does not.
+    #[test]
+    fn version_bound_has_both_edges() {
+        let (vk, r) = signed(MAX_VERSION);
+        assert_eq!(r.verify(&vk, b"x"), Ok(()));
+        let (vk, r) = signed(u32::MAX);
+        assert_eq!(r.verify(&vk, b"x"), Err(RecordError::ReservedVersion));
+        let (vk, r) = signed(1);
+        assert_eq!(r.verify(&vk, b"x"), Ok(()));
+        let (vk, r) = signed(0);
+        assert_eq!(r.verify(&vk, b"x"), Err(RecordError::ZeroVersion));
+    }
+
     #[test]
     fn refuses_reserved_forms() {
         let vk = hex32(RIVER_AUTHOR_VK);

@@ -61,12 +61,12 @@ impl Entry {
         let mut w = Writer::new();
         w.u8(self.kind)
             .u8(self.eflags)
-            .u16(self.key.len() as u16)
+            .len_u16(self.key.len(), "key_len")
             .bytes(&self.key)
-            .u16(self.content.len() as u16)
+            .len_u16(self.content.len(), "content_len")
             .bytes(&self.content)
             .ext(&self.ext);
-        let out = w.into_vec();
+        let out = w.finish()?;
         if out.len() > MAX_ENTRY {
             return Err(Malformed("entry too long"));
         }
@@ -99,8 +99,8 @@ impl Entry {
 
     fn check(&self) -> Result<()> {
         // Kinds 0x01 and 0x02 are defined, 0x03..=0xFF reserved and carried.
-        // 0x00 is not assigned by the protocol; DESIGN-NOTES records reading
-        // it as malformed.
+        // 0x00 is reserved and read as malformed (decided 2026-11-23 by the
+        // design session; DESIGN-NOTES.md, spec update pending).
         if self.kind == 0 {
             return Err(Malformed("kind 0"));
         }

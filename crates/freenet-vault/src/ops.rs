@@ -11,6 +11,7 @@ use crate::storage::index::State;
 use crate::storage::{ensure_part_listed, PutError, Quota, Read, Store};
 use crate::succ::{accept_record, Succ};
 use freenet_vault_common::bounds::FORBIDDEN_SIGNING_PREFIX;
+use freenet_vault_common::codec::Malformed;
 use freenet_vault_common::entry::{Entry, KIND_CALLER_MARK, KIND_KEY};
 use freenet_vault_common::frame::{types, Frame};
 use freenet_vault_common::ops::{
@@ -36,12 +37,29 @@ pub enum Outcome {
     Nothing,
 }
 
+/// A reply from an encoder result. An encoder fails only when a reply would
+/// break a frozen bound, which the operations below never build; if it does,
+/// the caller gets storage failure rather than a truncated frame.
+fn reply(encoded: Result<Vec<u8>, Malformed>, request_id: u64) -> Outcome {
+    match encoded {
+        Ok(bytes) => Outcome::Reply(bytes),
+        Err(_) => refusal(request_id, refused::STORAGE_FAILURE),
+    }
+}
+
 fn refusal(request_id: u64, reason: u8) -> Outcome {
-    Outcome::Reply(Status::Refused { request_id, reason }.encode())
+    // A Refused frame has a fixed 21-byte shape and cannot fail to encode.
+    Outcome::Reply(
+        Status::Refused { request_id, reason }
+            .encode()
+            .unwrap_or_default(),
+    )
 }
 
 fn status(s: impl Into<Box<Status>>) -> Outcome {
-    Outcome::Reply(s.into().encode())
+    let s = s.into();
+    let rid = s.request_id();
+    reply(s.encode(), rid)
 }
 
 /// The request id of a frame body that carries one, for answering a request
@@ -231,23 +249,43 @@ fn put_error(rid: u64, e: PutError) -> Outcome {
     }
 }
 
-/// The stored caller mark for a delegate caller, if it is one the vault can
-/// read and verify. A mark that is absent, lost, or no longer verifies
-/// imposes no floor and is rewritten by the next raise (DESIGN-NOTES.md).
+/// What the store holds for a delegate caller's mark.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StoredMark {
+    /// A mark the vault can read and verify.
+    Mark([u8; 100]),
+    /// None stored, or one that is lost or no longer verifies: the
+    /// compiled-in `min_version` is the floor, and the next raise rewrites it
+    /// (DESIGN-NOTES.md).
+    NoFloor,
+    /// The index names a mark but the host returned nothing for it, which can
+    /// be a transient read failure. The compiled-in floor applies, and the
+    /// entry is never overwritten on this evidence.
+    Unreadable,
+}
+
 fn stored_mark<H: Host>(
     store: &mut Store<H>,
     key: &[u8],
     author: &[u8; 32],
     app_id: &[u8],
     sealed: bool,
-) -> Option<[u8; 100]> {
+) -> StoredMark {
     let e = match store.read(KIND_CALLER_MARK, key, sealed) {
         Read::Ok(e) | Read::Corrupt(Some(e)) => e,
-        _ => return None,
+        Read::Missing => return StoredMark::Unreadable,
+        _ => return StoredMark::NoFloor,
     };
-    let bytes: [u8; 100] = e.content.as_slice().try_into().ok()?;
-    PointerRecord::decode(&bytes).verify(author, app_id).ok()?;
-    Some(bytes)
+    let Ok(bytes) = <[u8; 100]>::try_from(e.content.as_slice()) else {
+        return StoredMark::NoFloor;
+    };
+    if PointerRecord::decode(&bytes)
+        .verify(author, app_id)
+        .is_err()
+    {
+        return StoredMark::NoFloor;
+    }
+    StoredMark::Mark(bytes)
 }
 
 /// Compares an offered caller record with the stored mark.
@@ -262,10 +300,14 @@ enum MarkCmp {
     Refuse,
 }
 
-fn compare_mark(offered: &[u8; 100], mark: Option<&[u8; 100]>) -> MarkCmp {
-    let Some(mark) = mark else {
-        return MarkCmp::Raise;
+fn compare_mark(offered: &[u8; 100], mark: StoredMark) -> MarkCmp {
+    let mark = match mark {
+        StoredMark::Mark(m) => m,
+        StoredMark::NoFloor => return MarkCmp::Raise,
+        // Served at the compiled-in floor; the stored entry is left alone.
+        StoredMark::Unreadable => return MarkCmp::Same,
     };
+    let mark = &mark;
     let (o, m) = (PointerRecord::decode(offered), PointerRecord::decode(mark));
     if o.version > m.version {
         MarkCmp::Raise
@@ -290,53 +332,118 @@ fn raise_mark<H: Host>(
 /// A seed and its public key.
 type UsableKey = (Zeroizing<[u8; 32]>, [u8; 32]);
 
-/// A usable key in `slot`, or the status that answers instead.
+/// A usable key in `slot`, or the outcome that answers instead.
+///
+/// `allow_corrupt` is Export's: a slot flagged corrupt whose bytes still parse
+/// as a 32-byte seed may be exported after consent, so the page can compare
+/// the derived key with the identity it expects and re-Import it (protocol
+/// 4.3, 12.5). Every other operation answers Unusable(2) for such a slot.
 fn usable_seed<H: Host>(
     domain: &Domain,
     store: &mut Store<H>,
     slot: &[u8],
     sealed: bool,
+    allow_corrupt: bool,
     rid: u64,
-) -> Result<UsableKey, Box<Status>> {
+) -> Result<UsableKey, Outcome> {
     let partition = domain.partition();
-    let unusable = |reason| -> Box<Status> {
-        Box::new(Status::Unusable {
+    let unusable = |reason| -> Outcome {
+        status(Status::Unusable {
             request_id: rid,
             partition,
             slot: slot.to_vec(),
             reason,
         })
     };
-    match store.read(KIND_KEY, slot, sealed) {
-        Read::Absent => Err(Box::new(Status::Absent {
-            request_id: rid,
-            partition,
-            slot: slot.to_vec(),
-        })),
-        Read::Corrupt(_) => Err(unusable(unusable::CORRUPT)),
-        Read::Ok(e) => {
-            let seed: Zeroizing<[u8; 32]> = Zeroizing::new(
-                e.content
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| unusable(unusable::CORRUPT))?,
-            );
-            let pk = crypto::public_key(&seed);
-            if domain.is_publisher_key(&pk) {
-                return Err(unusable(unusable::PUBLISHER_KEY));
+    let entry = match store.read(KIND_KEY, slot, sealed) {
+        Read::Absent => {
+            return Err(status(Status::Absent {
+                request_id: rid,
+                partition,
+                slot: slot.to_vec(),
+            }))
+        }
+        Read::Missing => return Err(refusal(rid, refused::STORAGE_FAILURE)),
+        Read::Corrupt(Some(e)) if allow_corrupt => e,
+        Read::Corrupt(_) => return Err(unusable(unusable::CORRUPT)),
+        Read::Ok(e) => e,
+    };
+    let seed: Zeroizing<[u8; 32]> = Zeroizing::new(
+        entry
+            .content
+            .as_slice()
+            .try_into()
+            .map_err(|_| unusable(unusable::CORRUPT))?,
+    );
+    let pk = crypto::public_key(&seed);
+    if domain.is_publisher_key(&pk) {
+        return Err(unusable(unusable::PUBLISHER_KEY));
+    }
+    Ok((seed, pk))
+}
+
+/// The caller-mark rules (spec 5, protocol 9) for a delegate caller: its
+/// record must be at least the stored mark (the compiled-in `min_version` is
+/// checked with the proof), a higher one raises the mark, and the raise is
+/// Busy while changes are. `answer` is set when the partition is not served
+/// here (Moved or NotHere): then a request that would need a raise gets that
+/// answer, and one that needs none proceeds. `Some` is the outcome that
+/// replaces the request.
+#[allow(clippy::too_many_arguments)]
+fn gate_caller<H: Host>(
+    domain: &Domain,
+    store: &mut Store<H>,
+    caller: &Caller,
+    sealed: bool,
+    changes_busy: bool,
+    creating: bool,
+    create: impl FnOnce(&mut crate::storage::index::Index),
+    answer: Option<Box<Status>>,
+    rid: u64,
+) -> Option<Outcome> {
+    let Caller::Delegate {
+        author_vk,
+        app_id,
+        record,
+        ..
+    } = caller
+    else {
+        return None;
+    };
+    let key = caller.mark_key()?;
+    let mark = stored_mark(store, &key, author_vk, app_id, sealed);
+    match compare_mark(record, mark) {
+        MarkCmp::Refuse => Some(refusal(rid, refused::CALLER_NOT_AUTHORIZED)),
+        MarkCmp::Same => None,
+        MarkCmp::Raise => {
+            if let Some(s) = answer {
+                return Some(status(s));
             }
-            Ok((seed, pk))
+            if changes_busy {
+                return Some(status(Status::Busy {
+                    request_id: rid,
+                    partition: domain.partition(),
+                }));
+            }
+            if creating && ensure_part_listed(store.host(), &domain.partition()).is_err() {
+                return Some(refusal(rid, refused::STORAGE_FAILURE));
+            }
+            // The floor is never silently lost: a failed raise refuses.
+            raise_mark(store, domain, key, record, create)
+                .err()
+                .map(|e| put_error(rid, e))
         }
     }
 }
 
 fn key_result(rid: u64, slot: &[u8], public_key: [u8; 32]) -> Outcome {
-    Outcome::Reply(
+    reply(
         OpResult::Key {
             slot: slot.to_vec(),
             public_key,
         }
         .encode(rid),
+        rid,
     )
 }
 
@@ -351,7 +458,7 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
         req.op,
         Operation::Generate { .. } | Operation::Import { .. } | Operation::Delete { .. }
     );
-    let succ = Succ::load(host).ok();
+    let succ = Succ::load(domain, host).ok();
     let Ok(mut store) = Store::open(host, domain.partition()) else {
         return refusal(rid, refused::STORAGE_FAILURE);
     };
@@ -372,38 +479,18 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
         }
     };
 
-    // A delegate's record must be at least its caller mark; a higher one
-    // raises the mark, which is Busy while changes are (protocol 9).
-    if let (
-        Caller::Delegate {
-            author_vk,
-            app_id,
-            record,
-            ..
-        },
-        Some(key),
-    ) = (caller, caller.mark_key())
-    {
-        let mark = stored_mark(&mut store, &key, author_vk, app_id, sealed);
-        match compare_mark(record, mark.as_ref()) {
-            MarkCmp::Refuse => return refusal(rid, refused::CALLER_NOT_AUTHORIZED),
-            MarkCmp::Same => {}
-            MarkCmp::Raise => {
-                if changes_busy {
-                    return status(Status::Busy {
-                        request_id: rid,
-                        partition: domain.partition(),
-                    });
-                }
-                if creating && ensure_part_listed(store.host(), &domain.partition()).is_err() {
-                    return refusal(rid, refused::STORAGE_FAILURE);
-                }
-                if let Err(e) = raise_mark(&mut store, domain, key, record, create) {
-                    // The floor is never silently lost: refuse.
-                    return put_error(rid, e);
-                }
-            }
-        }
+    if let Some(o) = gate_caller(
+        domain,
+        &mut store,
+        caller,
+        sealed,
+        changes_busy,
+        creating,
+        create,
+        None,
+        rid,
+    ) {
+        return o;
     }
 
     if is_change && changes_busy {
@@ -474,6 +561,11 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
                 // Same key: a no-op, except that it rewrites a slot marked corrupt.
                 Read::Ok(e) if e.content == seed.as_slice() => false,
                 Read::Corrupt(Some(e)) if e.content == seed.as_slice() => true,
+                // The index names the slot but its secret did not read. That
+                // may be transient, so only an explicit replace overwrites it.
+                Read::Missing if !replace => {
+                    return refusal(rid, refused::STORAGE_FAILURE);
+                }
                 // A different key needs replace.
                 _ if replace => true,
                 _ => return refusal(rid, refused::SLOT_OCCUPIED),
@@ -487,13 +579,13 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
             key_result(rid, &slot, pk)
         }
         Operation::Delete { slot } => match store.delete(KIND_KEY, &slot) {
-            Ok(()) => Outcome::Reply(OpResult::Ok.encode(rid)),
+            Ok(()) => reply(OpResult::Ok.encode(rid), rid),
             Err(_) => refusal(rid, refused::STORAGE_FAILURE),
         },
         Operation::PublicKey { slot } => {
-            match usable_seed(domain, &mut store, &slot, sealed, rid) {
+            match usable_seed(domain, &mut store, &slot, sealed, false, rid) {
                 Ok((_, pk)) => key_result(rid, &slot, pk),
-                Err(s) => status(s),
+                Err(o) => o,
             }
         }
         Operation::List { after, max } => {
@@ -504,9 +596,9 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
             expected_public_key,
             items,
         } => {
-            let (seed, pk) = match usable_seed(domain, &mut store, &slot, sealed, rid) {
+            let (seed, pk) = match usable_seed(domain, &mut store, &slot, sealed, false, rid) {
                 Ok(v) => v,
-                Err(s) => return status(s),
+                Err(o) => return o,
             };
             if pk != expected_public_key {
                 return refusal(rid, refused::PUBLIC_KEY_MISMATCH);
@@ -534,14 +626,14 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
                     },
                 })
                 .collect();
-            Outcome::Reply(OpResult::Batch(results).encode(rid))
+            reply(OpResult::Batch(results).encode(rid), rid)
         }
         Operation::Export { slot } => {
             let Caller::Page { id } = caller else {
                 return refusal(rid, refused::OPERATION_NOT_ALLOWED);
             };
-            if let Err(s) = usable_seed(domain, &mut store, &slot, sealed, rid) {
-                return status(s);
+            if let Err(o) = usable_seed(domain, &mut store, &slot, sealed, true, rid) {
+                return o;
             }
             let mut idb = [0u8; 4];
             let mut prompt_id = 0u32;
@@ -592,6 +684,13 @@ fn list<H: Host>(
     for slot in slots.into_iter().take(max) {
         let item = match store.read(KIND_KEY, &slot, sealed) {
             Read::Absent => continue,
+            // Named by the index, unreadable now: listed as corrupt with no
+            // key. A page repairs it with Import (replace) or retries.
+            Read::Missing => ListItem {
+                slot,
+                public_key: [0; 32],
+                status: LIST_CORRUPT,
+            },
             Read::Ok(e) => {
                 let seed: Option<[u8; 32]> = e.content.as_slice().try_into().ok();
                 let pk = seed.map(|s| crypto::public_key(&s)).unwrap_or([0; 32]);
@@ -618,7 +717,7 @@ fn list<H: Host>(
         };
         items.push(item);
     }
-    Outcome::Reply(OpResult::List { items, more }.encode(rid))
+    reply(OpResult::List { items, more }.encode(rid), rid)
 }
 
 /// The answer to the consent prompt (spec 6). `Ok(None)` when the answer
@@ -639,7 +738,7 @@ pub fn export_answer<H: Host>(
     if response != consent::ALLOW || !domain.is_own_page(origin) {
         return Some(refusal(rid, refused::CONSENT_DENIED));
     }
-    let succ = Succ::load(host).ok();
+    let succ = Succ::load(domain, host).ok();
     let Ok(mut store) = Store::open(host, domain.partition()) else {
         return Some(refusal(rid, refused::STORAGE_FAILURE));
     };
@@ -648,10 +747,12 @@ pub fn export_answer<H: Host>(
         Route::Serve { sealed, .. } => sealed,
         Route::Create => false,
     };
+    // Read again: the slot may have changed, or been flagged corrupt, since
+    // the prompt (corrupt is exportable, spec 6).
     Some(
-        match usable_seed(domain, &mut store, &pending.slot, sealed, rid) {
-            Ok((seed, _)) => Outcome::Reply(OpResult::Export { seed: *seed }.encode(rid)),
-            Err(s) => status(s),
+        match usable_seed(domain, &mut store, &pending.slot, sealed, true, rid) {
+            Ok((seed, _)) => reply(OpResult::Export { seed: *seed }.encode(rid), rid),
+            Err(o) => o,
         },
     )
 }
@@ -691,10 +792,9 @@ fn handover_status<H: Host>(
         step_result: step,
         partition_state: 0,
         peer_record: [0; 100],
+        receiving_from: 0,
         taken_over_from: 0,
-        taken_over_attempt: 0,
         taken_over_manifest: [0; 32],
-        attempt: 0,
         manifest_digest: [0; 32],
         problems: extra_problems,
         lost_entries: 0,
@@ -726,7 +826,7 @@ fn poke<H: Host>(domain: &Domain, host: &mut H, own_page: bool, body: &[u8]) -> 
     if p.partition != domain.partition() {
         return refusal(0, refused::MALFORMED);
     }
-    let Ok(mut succ) = Succ::load(host) else {
+    let Ok(mut succ) = Succ::load(domain, host) else {
         // A malformed stored record: no record handling and no flags.
         let store = Store::open(host, domain.partition()).ok();
         return handover_status(
@@ -782,19 +882,52 @@ fn submit_record<H: Host>(
     let with_rid = |o: Outcome| match o {
         Outcome::Reply(bytes) => {
             // Stamp the request id into the HandoverStatus reply.
-            let f = Frame::decode(&bytes).expect("own encoding");
-            match Status::decode(f.frame_type, f.body) {
-                Ok(Status::Handover(mut h)) => {
+            let decoded = Frame::decode(&bytes)
+                .ok()
+                .and_then(|f| Status::decode(f.frame_type, f.body).ok());
+            match decoded {
+                Some(Status::Handover(mut h)) => {
                     h.request_id = rid;
-                    Outcome::Reply(Status::Handover(h).encode())
+                    status(Status::Handover(h))
                 }
                 _ => Outcome::Reply(bytes),
             }
         }
         o => o,
     };
+    // A delegate caller is held to its caller mark for SubmitRecord exactly as
+    // for an operation (spec 5): a stale build cannot submit, and a newer one
+    // raises the mark (Busy while changes are).
+    if let Caller::Delegate { .. } = caller {
+        let succ = Succ::load(domain, host).ok();
+        let Ok(mut store) = Store::open(host, domain.partition()) else {
+            return refusal(rid, refused::STORAGE_FAILURE);
+        };
+        let (sealed, changes_busy, answer) = match route(domain, &store, &succ, false, rid) {
+            Route::Serve {
+                sealed,
+                changes_busy,
+            } => (sealed, changes_busy, None),
+            Route::Create => (false, false, None),
+            // Not served here: read without rewriting anything.
+            Route::Answer(st) => (true, true, Some(st)),
+        };
+        if let Some(o) = gate_caller(
+            domain,
+            &mut store,
+            caller,
+            sealed,
+            changes_busy,
+            false,
+            |_| {},
+            answer,
+            rid,
+        ) {
+            return o;
+        }
+    }
     if s.author_vk == domain.author_vk && s.app_id == domain.app_id {
-        let Ok(mut succ) = Succ::load(host) else {
+        let Ok(mut succ) = Succ::load(domain, host) else {
             return refusal(rid, refused::STORED_RECORD_MALFORMED);
         };
         let a = accept_record(domain, host, &mut succ, &s.record);
@@ -830,7 +963,7 @@ fn submit_record<H: Host>(
         return refusal(rid, refused::CALLER_NOT_AUTHORIZED);
     }
     let offered = PointerRecord::decode(&s.record);
-    let succ = Succ::load(host).ok();
+    let succ = Succ::load(domain, host).ok();
     let Ok(mut store) = Store::open(host, domain.partition()) else {
         return refusal(rid, refused::STORAGE_FAILURE);
     };
@@ -844,7 +977,13 @@ fn submit_record<H: Host>(
         };
         let key = [s.author_vk.as_slice(), &s.app_id].concat();
         let sealed = store.index.state == State::Sealed;
-        let mark = stored_mark(&mut store, &key, &s.author_vk, &s.app_id, sealed);
+        let mark = match stored_mark(&mut store, &key, &s.author_vk, &s.app_id, sealed) {
+            StoredMark::Mark(m) => Some(m),
+            StoredMark::NoFloor => None,
+            // A raise would overwrite an entry that may only be unreadable
+            // for a moment: refuse, and the caller retries.
+            StoredMark::Unreadable => return refusal(rid, refused::STORAGE_FAILURE),
+        };
         let mark_version = mark.map(|m| PointerRecord::decode(&m).version);
         match mark_version {
             Some(v) if offered.version < v => step_result::NOT_NEWER,

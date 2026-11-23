@@ -9,7 +9,16 @@
 //!
 //! Garbage collection removes only names under this partition's entry prefix
 //! that the current index does not reference, so a `vault:gc` left behind by
-//! a failed commit can never delete a live entry.
+//! a failed commit can never delete a live entry. A removal that fails keeps
+//! its name listed until it succeeds. Every entry copy is listed in
+//! `vault:gc` BEFORE it is written, so a crash between the write and the
+//! index commit leaves a name the next call removes.
+//!
+//! The index is written twice, `vault:idx` then `vault:idx2`. A read uses the
+//! first and falls back to the second when the first is absent or does not
+//! parse. A crash between the two writes leaves the second one commit behind,
+//! which is a consistent older state: the entry copies it names are still
+//! there, because gc runs only after both writes.
 
 pub mod index;
 pub mod names;
@@ -59,30 +68,44 @@ pub enum Read {
     /// Failed its integrity check, now or earlier (eflags bit 0). The entry is
     /// what the stored bytes parse to, when they parse; informational only.
     Corrupt(Option<Entry>),
+    /// The index names the entry but the host returned no secret for it. That
+    /// can be a transient read failure, so nothing is changed or deleted and
+    /// the entry is never treated as corrupt. Callers answer storage failure.
+    Missing,
 }
 
 pub struct Store<'a, H: Host> {
     host: &'a mut H,
     partition: [u8; 32],
     pub index: Index,
-    /// The index bytes known to be on disk, `None` when there is no index.
+    /// The first index copy's bytes known to be on disk, `None` when absent.
     on_disk: Option<Vec<u8>>,
+    /// An index was found, in either copy.
+    exists: bool,
 }
 
 impl<'a, H: Host> Store<'a, H> {
     /// Loads the partition. A missing index is NONE; a malformed one is an
     /// error the caller must not treat as NONE.
     pub fn open(host: &'a mut H, partition: [u8; 32]) -> Result<Self, StoredIndexMalformed> {
-        let on_disk = host.get_secret(&names::index(&partition));
-        let index = match &on_disk {
-            None => Index::none(),
-            Some(b) => Index::decode(b).map_err(|_| StoredIndexMalformed)?,
+        let first = host.get_secret(&names::index(&partition));
+        let second = host.get_secret(&names::index2(&partition));
+        let (index, exists) = match first.as_deref().map(Index::decode) {
+            Some(Ok(i)) => (i, true),
+            // The first copy is absent or does not parse: use the second.
+            Some(Err(_)) | None => match second.as_deref().map(Index::decode) {
+                Some(Ok(i)) => (i, true),
+                Some(Err(_)) => return Err(StoredIndexMalformed),
+                None if first.is_some() => return Err(StoredIndexMalformed),
+                None => (Index::none(), false),
+            },
         };
         Ok(Self {
             host,
             partition,
             index,
-            on_disk,
+            on_disk: first,
+            exists,
         })
     }
 
@@ -91,7 +114,7 @@ impl<'a, H: Host> Store<'a, H> {
     }
 
     pub fn has_index(&self) -> bool {
-        self.on_disk.is_some()
+        self.exists
     }
 
     /// Writes `new` as the index. On a failed write, reads back: the commit
@@ -110,8 +133,15 @@ impl<'a, H: Host> Store<'a, H> {
             }
         };
         debug_assert!(ok);
+        // The second copy goes after the first. A failure here is not an
+        // error: the first copy is the commit point, and the next commit
+        // writes the second again.
+        let _ = self
+            .host
+            .set_secret(&names::index2(&self.partition), &bytes);
         self.index = new;
         self.on_disk = Some(bytes);
+        self.exists = true;
         Ok(())
     }
 
@@ -134,7 +164,11 @@ impl<'a, H: Host> Store<'a, H> {
             .get_secret(&name)
             .map(|b| decode_names(&b))
             .unwrap_or_default();
-        list.extend(add.iter().cloned());
+        for n in add {
+            if !list.contains(n) {
+                list.push(n.clone());
+            }
+        }
         if self.host.set_secret(&name, &encode_names(&list)) {
             Ok(())
         } else {
@@ -143,7 +177,9 @@ impl<'a, H: Host> Store<'a, H> {
     }
 
     /// Processes a non-empty `vault:gc`: removes every listed entry secret
-    /// the index does not reference, then clears the list.
+    /// the index does not reference. Names whose removal did not take stay
+    /// listed (and are retried by the next call); the list is cleared only
+    /// when every removal is confirmed.
     pub fn process_gc(&mut self) {
         let name = names::gc(&self.partition);
         let Some(bytes) = self.host.get_secret(&name) else {
@@ -156,12 +192,21 @@ impl<'a, H: Host> Store<'a, H> {
             .iter()
             .map(|e| self.entry_name(e.kind, &e.key, e.parity))
             .collect();
+        let mut failed: Vec<Vec<u8>> = Vec::new();
         for n in decode_names(&bytes) {
             if n.starts_with(&prefix) && !referenced.contains(&n) {
                 self.host.remove_secret(&n);
+                if self.host.get_secret(&n).is_some() {
+                    failed.push(n);
+                }
             }
         }
-        self.host.remove_secret(&name);
+        if failed.is_empty() {
+            self.host.remove_secret(&name);
+        } else {
+            // If this write fails the old, longer list stays: also fine.
+            self.host.set_secret(&name, &encode_names(&failed));
+        }
     }
 
     /// Writes `bytes` as the entry `(kind, key)` into the parity slot the
@@ -179,17 +224,20 @@ impl<'a, H: Host> Store<'a, H> {
             .map(|i| self.index.entries[i].clone());
         let parity = existing.as_ref().map(|e| 1 - e.parity).unwrap_or(0);
         let new_name = self.entry_name(kind, key, parity);
+        // Listed before it is written: a crash after the write and before the
+        // index commit leaves a name gc removes, never an untracked secret.
+        // The old copy is listed now too; gc skips it while the index still
+        // references it.
+        let mut listed = vec![new_name.clone()];
+        if let Some(old) = &existing {
+            listed.push(self.entry_name(kind, key, old.parity));
+        }
+        self.add_gc(&listed)?;
         if !self.host.set_secret(&new_name, bytes) {
             // Nothing references it; remove whatever may have landed.
             self.host.remove_secret(&new_name);
+            self.process_gc();
             return Err(StorageFailure);
-        }
-        if let Some(old) = &existing {
-            let old_name = self.entry_name(kind, key, old.parity);
-            if self.add_gc(&[old_name]).is_err() {
-                self.host.remove_secret(&new_name);
-                return Err(StorageFailure);
-            }
         }
         let mut new = self.index.clone();
         new.upsert(IndexEntry {
@@ -210,6 +258,7 @@ impl<'a, H: Host> Store<'a, H> {
                 // the old index; otherwise it may be the committed one.
                 if f.old_intact {
                     self.host.remove_secret(&new_name);
+                    self.process_gc();
                 }
                 Err(StorageFailure)
             }
@@ -273,6 +322,11 @@ impl<'a, H: Host> Store<'a, H> {
         };
         let ie = self.index.entries[i].clone();
         let got = self.host.get_secret(&self.entry_name(kind, key, ie.parity));
+        // An absent secret is absent, never corrupt: the read may have failed
+        // transiently, and deleting on that evidence would destroy a key.
+        if got.is_none() {
+            return Read::Missing;
+        }
         if let Some(b) = &got {
             if entry_digest(b) == ie.digest {
                 if let Ok(e) = Entry::decode(b) {
@@ -330,9 +384,9 @@ pub struct CommitFailure {
 
 fn encode_names(names: &[Vec<u8>]) -> Vec<u8> {
     let mut w = Writer::new();
-    w.u16(names.len() as u16);
+    w.len_u16(names.len(), "gc list length");
     for n in names {
-        w.u16(n.len() as u16).bytes(n);
+        w.len_u16(n.len(), "gc name length").bytes(n);
     }
     w.into_vec()
 }

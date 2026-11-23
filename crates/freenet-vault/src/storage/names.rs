@@ -19,6 +19,11 @@ pub fn index(partition: &[u8; 32]) -> Vec<u8> {
     format!("vault:idx:{}", hex(partition)).into_bytes()
 }
 
+/// The second copy of the index, written after the first (protocol 4.2).
+pub fn index2(partition: &[u8; 32]) -> Vec<u8> {
+    format!("vault:idx2:{}", hex(partition)).into_bytes()
+}
+
 pub fn gc(partition: &[u8; 32]) -> Vec<u8> {
     format!("vault:gc:{}", hex(partition)).into_bytes()
 }

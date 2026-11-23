@@ -26,11 +26,41 @@ fn version(r: &[u8; 100]) -> u32 {
 }
 
 impl Succ {
-    pub fn load<H: Host>(host: &H) -> Result<Self, StoredSuccMalformed> {
+    /// Loads `vault:succ` and verifies the records in it again: a stored
+    /// record that no longer verifies (a flipped bit) makes the whole store
+    /// malformed, so it can neither raise the floor nor be returned in Moved.
+    pub fn load<H: Host>(domain: &Domain, host: &H) -> Result<Self, StoredSuccMalformed> {
         match host.get_secret(names::SUCC) {
             None => Ok(Self::default()),
-            Some(b) => Self::decode(&b).map_err(|_| StoredSuccMalformed),
+            Some(b) => {
+                let s = Self::decode(&b).map_err(|_| StoredSuccMalformed)?;
+                s.verify_stored(domain).map_err(|_| StoredSuccMalformed)?;
+                Ok(s)
+            }
         }
+    }
+
+    /// Every stored record verifies under the domain key, `current` is not a
+    /// withdrawal and above OWN_VERSION, and the withdrawal is one.
+    fn verify_stored(&self, domain: &Domain) -> Result<(), Malformed> {
+        let check = |bytes: &[u8; 100], withdrawal: bool| {
+            let r = PointerRecord::decode(bytes);
+            if r.verify(&domain.author_vk, domain.app_id).is_err()
+                || r.is_withdrawal() != withdrawal
+            {
+                return Err(Malformed("stored record"));
+            }
+            Ok(r)
+        };
+        if let Some(c) = &self.current {
+            if check(c, false)?.version <= domain.own_version {
+                return Err(Malformed("stored current not above own version"));
+            }
+        }
+        if let Some(w) = &self.withdrawal {
+            check(w, true)?;
+        }
+        Ok(())
     }
 
     fn decode(b: &[u8]) -> Result<Self, Malformed> {

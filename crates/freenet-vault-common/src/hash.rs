@@ -69,3 +69,69 @@ pub fn contract_instance_id(code_hash: &[u8; 32], params: &[u8]) -> [u8; 32] {
     h.update(params);
     *blake3::Hasher::finalize(&h).as_bytes()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hex(b: &[u8]) -> String {
+        b.iter().map(|x| format!("{x:02x}")).collect()
+    }
+
+    /// Expected values computed outside this crate by `b3sum` over the
+    /// concatenation written in each comment (protocol 12.1), so a changed tag,
+    /// operand or operand order fails here.
+    #[test]
+    fn golden_hashes() {
+        let vk = [0x11u8; 32];
+        // "freenet-vault/entry/v1" 01 02 03
+        assert_eq!(
+            hex(&entry_digest(&[1, 2, 3])),
+            "7ac0d5a484afd301f2ff597931c2908f39fd23368838d76cb57393742d1c8555"
+        );
+        // "freenet-vault/key/v1" kind(01) key(07 07 07 07)
+        assert_eq!(
+            hex(&key_hash(1, &[7; 4])),
+            "5e8110c67abedc06302fc72aca719e211930e0328d7a39d719102ba1918d1799"
+        );
+        // "freenet-vault/partition/v1" author_vk app_id
+        assert_eq!(
+            hex(&partition_id(&vk, b"river.vault")),
+            "326b8f0cb6dce1695ee2c50df3891f3cb292ebf118d88d3aa008cd56fa8c5fe9"
+        );
+        // "freenet-vault/manifest/v1" digest(01*32) digest(02*32)
+        assert_eq!(
+            hex(&manifest_digest(&[[1; 32], [2; 32]])),
+            "fd3b9d06c9552de8c636dadf237643a769ddf8b00bf3f28bf6ff24d424f40942"
+        );
+        // "freenet-vault/chunk/v1" "chunk"
+        assert_eq!(
+            hex(&chunk_digest(b"chunk")),
+            "166b5df3da581acc08373483c5b2ba9b1e96e67ca0095dbd67df64f96bcb077a"
+        );
+        // "freenet-vault/transfer/v1" author_vk version(01 02 03 04) record(22*100)
+        assert_eq!(
+            hex(&transfer_id(&vk, 0x01020304, &[0x22; 100])),
+            "d3452a7b042501654a5cd11c33ff584a1e9e9e6e1fadbc5d1240cd114aff812f"
+        );
+        // code_hash(03*32) alone, and followed by "params"
+        assert_eq!(
+            hex(&delegate_key_empty_params(&[3; 32])),
+            "1fb5fbf7762cd146e8d15a1c322c338f2a69bee4fc2398b160e5b90099fd3942"
+        );
+        assert_eq!(
+            hex(&contract_instance_id(&[3; 32], b"params")),
+            "be72caa7b30ae308b01b84fd62d1a8b085f1ff65bad9d512c49e6706fedb357c"
+        );
+    }
+
+    #[test]
+    fn operand_order_matters() {
+        let a = [1u8; 32];
+        let b = [2u8; 32];
+        assert_ne!(manifest_digest(&[a, b]), manifest_digest(&[b, a]));
+        assert_ne!(partition_id(&a, &b), partition_id(&b, &a));
+        assert_ne!(transfer_id(&a, 1, &[0; 100]), transfer_id(&a, 2, &[0; 100]));
+        assert_ne!(key_hash(1, b"k"), key_hash(2, b"k"));
+    }
+}

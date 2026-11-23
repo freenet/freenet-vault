@@ -119,12 +119,14 @@ fn refuse(payload: &[u8], reason: u8) -> Outcome {
         }
         _ => 0,
     };
+    // A Refused frame has a fixed shape and cannot fail to encode.
     Outcome::Reply(
         freenet_vault_common::status::Status::Refused {
             request_id: rid,
             reason,
         }
-        .encode(),
+        .encode()
+        .unwrap_or_default(),
     )
 }
 
