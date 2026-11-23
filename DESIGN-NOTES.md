@@ -98,6 +98,17 @@ Operations:
   Its `sender` field carries the caller's key as a placeholder; the core
   overwrites it (freenet-core #6340).
 
+## Cross tests against River
+
+`crates/freenet-vault/src/ops_tests/river_cross.rs` runs each operation through
+`process` and compares with river-core at 4d137e66 (a dev-dependency only).
+River's X25519 shared secret is private to river-core, so KeyAgreement is
+checked by decrypting River's own ciphertexts with `SHA-256(vault output)`:
+the AES-GCM tag verifies only under the identical key. Derive and Sign are
+compared byte for byte. Mutating the KeyAgreement clamp is not detectable,
+because x25519-dalek clamps the scalar again itself; the clamp is kept to
+match River's code line for line.
+
 ## River constants
 
 - `RIVER_VAULT_AUTHOR_VK` is a placeholder (the public key of seed
