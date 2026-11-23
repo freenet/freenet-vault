@@ -12,8 +12,10 @@
 
 pub mod build;
 pub mod cov;
+pub mod gen;
 pub mod store;
 pub mod types;
+pub mod world;
 
 #[cfg(test)]
 mod tests_76;

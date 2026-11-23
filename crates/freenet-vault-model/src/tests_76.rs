@@ -43,6 +43,7 @@ impl T {
             &mut self.faults,
             &mut self.events,
             &mut self.cov,
+            &mut Vec::new(),
             i,
         )
         .expect("no crash")

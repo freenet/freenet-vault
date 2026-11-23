@@ -169,12 +169,16 @@ pub enum Note {
     },
     AwaitingCleared,
     SealedCorruptSent,
+    /// Pushed before the unseal write, so a crash right after it is seen.
+    UnsealIntent {
+        target: Ver,
+        m: Digest,
+    },
 }
 
 pub struct Output {
     pub reply: Reply,
     pub hops: Vec<(Ver, Frame)>,
-    pub notes: Vec<Note>,
     pub writes: u32,
 }
 
@@ -184,6 +188,8 @@ pub const POKE_DISCARD: u8 = 1 << 4;
 
 /// Run one vault call against `store`. Err(Crash) means the node crashed
 /// inside the call: the writes made so far stand, outputs are lost.
+/// Transitions are appended to `notes` as they are committed, so they are
+/// visible even when the call crashes afterwards.
 #[allow(clippy::too_many_arguments)]
 pub fn call(
     def: &BuildDef,
@@ -193,6 +199,7 @@ pub fn call(
     faults: &mut FaultPlan,
     events: &mut Vec<Event>,
     cov: &mut Cov,
+    notes: &mut Vec<Note>,
     input: Input,
 ) -> Result<Output, Crash> {
     let host = Host {
@@ -210,7 +217,7 @@ pub fn call(
         vol,
         cov,
         out: Vec::new(),
-        notes: Vec::new(),
+        notes,
     };
     let mut reply = cx.dispatch(input)?;
     if let Reply::Frame(f) = &reply {
@@ -225,7 +232,6 @@ pub fn call(
     Ok(Output {
         reply,
         hops: cx.out,
-        notes: cx.notes,
         writes: cx.host.writes,
     })
 }
@@ -237,7 +243,7 @@ struct Cx<'a> {
     vol: &'a mut Volatile,
     cov: &'a mut Cov,
     out: Vec<(Ver, Frame)>,
-    notes: Vec<Note>,
+    notes: &'a mut Vec<Note>,
 }
 
 type R<T> = Result<T, Crash>;
@@ -1346,6 +1352,10 @@ impl<'a> Cx<'a> {
             s if s.unseals() => {
                 let mut n = idx.clone();
                 n.state = PState::Writer(w);
+                self.notes.push(Note::UnsealIntent {
+                    target: target.v,
+                    m,
+                });
                 if self.commit(&n)? {
                     self.hit("7.5/unsealed");
                     self.notes.push(Note::Unsealed {

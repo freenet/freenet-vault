@@ -1,0 +1,1528 @@
+//! The node, the fake runtime, the clients and the operator (15.2), driven
+//! by a schedule of actions, with invariants I1 to I8 (15.4) checked after
+//! every action.
+
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
+use crate::build::{self, BuildDef, Input, Note, Op, OpRes, Params, Reply, Status, Volatile};
+use crate::cov::Cov;
+use crate::store::{Crash, Event, FaultPlan, Store, WriteFault};
+use crate::types::*;
+
+pub const NBUILDS: usize = 6;
+pub const ROLLBACK: Ver = 50;
+
+pub fn ver(i: usize) -> Ver {
+    (i as Ver + 1) * 10
+}
+pub fn bi(v: Ver) -> usize {
+    (v / 10 - 1) as usize
+}
+
+/// Builds 10..60. 40 and 60 write the unknown kind; 50 is the reserved
+/// rollback build R(5) of release 40, running the code of 30 (14.7).
+pub fn build_defs() -> Vec<BuildDef> {
+    (0..NBUILDS)
+        .map(|i| {
+            let v = ver(i);
+            BuildDef {
+                v,
+                preds: (0..i).map(ver).collect(),
+                writes_unknown_kind: v == 40 || v == 60,
+                code_of: if v == ROLLBACK { 30 } else { v },
+            }
+        })
+        .collect()
+}
+
+/// Client bundles (13.1): two full lineages, an old lineage, a mid lineage.
+pub const CLIENTS: [&[Ver]; 4] = [
+    &[10, 20, 30, 40, 50, 60],
+    &[10, 20, 30, 40, 50, 60],
+    &[10, 20, 30],
+    &[10, 20, 30, 40],
+];
+
+#[derive(Clone, Debug, Default)]
+pub struct Cfg {
+    pub params: Params,
+    /// Adversarial delivery mode: hops delayed past their run, duplicated
+    /// and reordered (violates assumption D; not gating).
+    pub adversarial: bool,
+    /// The pointer read may return any published record (not in 15.3; not
+    /// gating).
+    pub stale_pointer: bool,
+    /// Assumption D read as "never reorders two hops between the same pair"
+    /// across runs too. false: FIFO only within a run (not gating).
+    pub d_global_fifo: bool,
+    /// Hops damaged in transit (answered "malformed"); beyond 15.3.
+    pub garble_hops: bool,
+    pub withdrawals: bool,
+    pub wakeup_hop_cap: usize,
+    pub client_iter_cap: usize,
+    pub quiesce_rounds: usize,
+    pub trace: bool,
+}
+
+impl Cfg {
+    pub fn gate() -> Cfg {
+        Cfg {
+            params: Params::default(),
+            adversarial: false,
+            stale_pointer: false,
+            d_global_fifo: true,
+            garble_hops: true,
+            withdrawals: true,
+            wakeup_hop_cap: 6,
+            client_iter_cap: 14,
+            quiesce_rounds: 12,
+            trace: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fetch {
+    Newest,
+    Unreachable,
+    Stale(u8),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fate {
+    Deliver,
+    Drop,
+    Garble,
+    /// adversarial only
+    Delay,
+    /// adversarial only
+    Duplicate,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Action {
+    Publish,
+    Load {
+        client: u8,
+        fetch: Fetch,
+        ops: Vec<Op>,
+    },
+    Step {
+        pick: u16,
+        fate: Fate,
+    },
+    Wakeup {
+        b: u8,
+    },
+    Crash,
+    ArmWriteFault {
+        after: u8,
+        fault: WriteFault,
+    },
+    Quota {
+        limit: Option<u8>,
+    },
+    Unregister {
+        b: u8,
+    },
+    Restore {
+        b: u8,
+        snap: u16,
+        secret: Option<u16>,
+    },
+    Wipe {
+        b: u8,
+    },
+    Garble {
+        b: u8,
+        pick: u16,
+    },
+    /// A cached caller: addresses the build it last used (`b: None`), or a
+    /// build it used long ago (`b: Some`).
+    Cached {
+        op: Op,
+        b: Option<u8>,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub struct Scenario {
+    pub ledger: Vec<Rec>,
+    pub actions: Vec<Action>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Violation {
+    pub inv: &'static str,
+    pub msg: String,
+    pub at: usize,
+}
+
+#[derive(Clone, Debug)]
+struct Hop {
+    from: Ver,
+    to: Ver,
+    frame: Frame,
+    reply: bool,
+    seq: u64,
+}
+
+#[derive(Clone, Debug)]
+enum RunKind {
+    #[allow(dead_code)]
+    Client(usize),
+    Unprompted,
+}
+
+#[derive(Clone, Debug)]
+struct Run {
+    kind: RunKind,
+    queue: VecDeque<Hop>,
+    sent: usize,
+    iters: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Phase {
+    Poke(usize),
+    Decide,
+    Ops,
+    Done,
+}
+
+#[derive(Clone, Debug)]
+struct Session {
+    client: u8,
+    bundle: Vec<Ver>,
+    fetched: Option<Rec>,
+    /// Newest non-withdrawal record below a withdrawal, from the same fetch.
+    fetched_nonwd: Option<Rec>,
+    phase: Phase,
+    statuses: BTreeMap<Ver, Option<Status>>,
+    rounds: u8,
+    again: BTreeSet<Ver>,
+    discard: BTreeSet<Ver>,
+    ops: VecDeque<Op>,
+    target: Option<Ver>,
+    run: Option<usize>,
+}
+
+/// Possible values of one entry identity (I2, I3, I8): the last
+/// acknowledged value plus every unacknowledged attempt since.
+#[derive(Clone, Debug, Default)]
+struct Possible {
+    acked: Option<Entry>,
+    maybe: Vec<Option<Entry>>,
+}
+
+impl Possible {
+    fn allows(&self, v: &Option<Entry>) -> bool {
+        let eq = |a: &Option<Entry>| match (a, v) {
+            (None, None) => true,
+            (Some(x), Some(y)) => x.content == y.content && x.ext == y.ext && x.kind == y.kind,
+            _ => false,
+        };
+        eq(&self.acked) || self.maybe.iter().any(eq)
+    }
+}
+
+pub struct World {
+    pub cfg: Cfg,
+    pub defs: Vec<BuildDef>,
+    pub stores: Vec<Store>,
+    vols: Vec<Volatile>,
+    pub registered: Vec<bool>,
+    history: Vec<Vec<Store>>,
+    pub ledger: Vec<Rec>,
+    pub published: usize,
+    runs: BTreeMap<usize, Run>,
+    next_run: usize,
+    next_seq: u64,
+    sessions: BTreeMap<usize, Session>,
+    next_session: usize,
+    limbo: Vec<Hop>,
+    faults: FaultPlan,
+    events: Vec<Event>,
+    pub cov: Cov,
+    oracle: BTreeMap<Ident, Possible>,
+    tainted: BTreeSet<Ident>,
+    pub restored: bool,
+    pub garbled: bool,
+    held: BTreeSet<Ver>,
+    cached_target: Option<Ver>,
+    pub trace: Vec<String>,
+    pub violation: Option<Violation>,
+    step_no: usize,
+    pub sealed_corrupt_sent: u64,
+}
+
+impl World {
+    pub fn new(cfg: Cfg, ledger: Vec<Rec>) -> World {
+        World {
+            defs: build_defs(),
+            stores: vec![Store::default(); NBUILDS],
+            vols: vec![Volatile::default(); NBUILDS],
+            registered: vec![false; NBUILDS],
+            history: vec![vec![Store::default()]; NBUILDS],
+            ledger,
+            published: 0,
+            runs: BTreeMap::new(),
+            next_run: 0,
+            next_seq: 0,
+            sessions: BTreeMap::new(),
+            next_session: 0,
+            limbo: vec![],
+            faults: FaultPlan::default(),
+            events: vec![],
+            cov: Cov::default(),
+            oracle: BTreeMap::new(),
+            tainted: BTreeSet::new(),
+            restored: false,
+            garbled: false,
+            held: BTreeSet::new(),
+            cached_target: None,
+            trace: vec![],
+            violation: None,
+            step_no: 0,
+            sealed_corrupt_sent: 0,
+            cfg,
+        }
+    }
+
+    fn log(&mut self, s: impl FnOnce() -> String) {
+        if self.cfg.trace {
+            let line = s();
+            self.trace.push(line);
+        }
+    }
+
+    fn fail(&mut self, inv: &'static str, msg: String) {
+        if self.violation.is_none() {
+            self.log(|| format!("!! {inv}: {msg}"));
+            self.violation = Some(Violation {
+                inv,
+                msg,
+                at: self.step_no,
+            });
+        }
+    }
+
+    pub fn newest_published(&self) -> Option<Rec> {
+        self.ledger[..self.published].last().copied()
+    }
+
+    fn newest_nonwd_below(&self, w: Rec) -> Option<Rec> {
+        self.ledger[..self.published]
+            .iter()
+            .rev()
+            .find(|r| !r.withdrawal && r.v < w.v)
+            .copied()
+    }
+
+    // ---------------------------------------------------------- build calls
+
+    /// One vault call. None if the node crashed inside it.
+    fn call(&mut self, b: usize, input: Input) -> Option<build::Output> {
+        let before = self.stores[b].idx_or_none();
+        let fired_before = self.faults.fired.len();
+        let quota_before = self.faults.quota_hits;
+        let desc = if self.cfg.trace {
+            format!("{input:?}")
+        } else {
+            String::new()
+        };
+        let mut notes = Vec::new();
+        let res = build::call(
+            &self.defs[b],
+            &self.cfg.params,
+            &mut self.stores[b],
+            &mut self.vols[b],
+            &mut self.faults,
+            &mut self.events,
+            &mut self.cov,
+            &mut notes,
+            input,
+        );
+        let fired: Vec<WriteFault> = self.faults.fired[fired_before..].to_vec();
+        for f in fired {
+            self.cov.hit(match f {
+                WriteFault::CrashBefore => "fault/crash-before-write",
+                WriteFault::CrashAfter => "fault/crash-after-write",
+                WriteFault::Fail => "fault/storage-failure",
+                WriteFault::DurableButError => "fault/durable-but-error",
+            });
+        }
+        if self.faults.quota_hits > quota_before {
+            self.cov.hit("fault/quota");
+        }
+        self.check_events();
+        let after = self.stores[b].idx_or_none();
+        if after != before {
+            let h = &mut self.history[b];
+            h.push(self.stores[b].clone());
+            if h.len() > 24 {
+                h.remove(0);
+            }
+        }
+        if matches!(after.state, PState::Writer(_) | PState::Sealed { .. }) {
+            self.held.insert(ver(b));
+        }
+        match res {
+            Err(Crash) => {
+                self.log(|| format!("  {} {desc} -> CRASH inside the call", ver(b)));
+                self.check_transition(b, &before, &after, &notes);
+                self.crash_node();
+                None
+            }
+            Ok(out) => {
+                self.log(|| {
+                    format!(
+                        "  {} {desc} -> {:?} hops [{}] state {} -> {}",
+                        ver(b),
+                        short_reply(&out.reply),
+                        out.hops
+                            .iter()
+                            .map(|(t, f)| format!("{}:{}", t, f.short()))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        before.state.code(),
+                        after.state.code()
+                    )
+                });
+                self.check_transition(b, &before, &after, &notes);
+                Some(out)
+            }
+        }
+    }
+
+    fn crash_node(&mut self) {
+        self.runs.clear();
+        self.sessions.clear();
+        self.limbo.clear();
+        for v in self.vols.iter_mut() {
+            *v = Volatile::default();
+        }
+        // lifecycle NodeStarted: a step for each registered build with work
+        for b in 0..NBUILDS {
+            if self.registered[b] {
+                self.start_unprompted(b, Input::Wakeup);
+            }
+        }
+    }
+
+    fn new_run(&mut self, kind: RunKind) -> usize {
+        let id = self.next_run;
+        self.next_run += 1;
+        self.runs.insert(
+            id,
+            Run {
+                kind,
+                queue: VecDeque::new(),
+                sent: 0,
+                iters: 1,
+            },
+        );
+        id
+    }
+
+    fn start_unprompted(&mut self, b: usize, input: Input) {
+        let r = self.new_run(RunKind::Unprompted);
+        if let Some(out) = self.call(b, input) {
+            self.enqueue(r, ver(b), out.hops);
+        }
+        self.gc_runs();
+    }
+
+    fn enqueue(&mut self, r: usize, from: Ver, hops: Vec<(Ver, Frame)>) {
+        let cap = self.cfg.wakeup_hop_cap;
+        let Some(run) = self.runs.get_mut(&r) else {
+            return;
+        };
+        for (to, frame) in hops {
+            if matches!(run.kind, RunKind::Unprompted) && run.sent >= cap {
+                self.cov.hit("fault/hop-cap");
+                continue;
+            }
+            run.sent += 1;
+            run.queue.push_back(Hop {
+                from,
+                to,
+                frame,
+                reply: false,
+                seq: {
+                    self.next_seq += 1;
+                    self.next_seq
+                },
+            });
+        }
+    }
+
+    fn gc_runs(&mut self) {
+        let done: Vec<usize> = self
+            .runs
+            .iter()
+            .filter(|(_, r)| r.queue.is_empty())
+            .map(|(k, _)| *k)
+            .collect();
+        for k in done {
+            self.runs.remove(&k);
+            for s in self.sessions.values_mut() {
+                if s.run == Some(k) {
+                    s.run = None;
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------- hops
+
+    fn deliver(&mut self, r: Option<usize>, hop: Hop, fate: Fate) {
+        let mut hop = hop;
+        match fate {
+            Fate::Drop => {
+                self.cov.hit(if hop.reply {
+                    "fault/reply-lost"
+                } else {
+                    "fault/hop-lost"
+                });
+                self.log(|| format!("  drop {}->{} {}", hop.from, hop.to, hop.frame.short()));
+                return;
+            }
+            Fate::Garble => {
+                self.cov.hit("fault/garbled-hop");
+                hop.frame.garble();
+            }
+            Fate::Delay if self.cfg.adversarial => {
+                self.cov.hit("adv/delayed");
+                self.limbo.push(hop);
+                return;
+            }
+            Fate::Duplicate if self.cfg.adversarial => {
+                self.cov.hit("adv/duplicated");
+                if let Some(r) = r {
+                    if let Some(run) = self.runs.get_mut(&r) {
+                        run.queue.push_back(hop.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
+        let to = bi(hop.to);
+        if !self.registered[to] {
+            self.cov.hit("runtime/hop-to-unregistered");
+            return;
+        }
+        if let Some(r) = r {
+            let cap = self.cfg.client_iter_cap;
+            if let Some(run) = self.runs.get_mut(&r) {
+                run.iters += 1;
+                if matches!(run.kind, RunKind::Client(_)) && run.iters > cap {
+                    self.cov.hit("fault/hop-cap");
+                    run.queue.clear();
+                    return;
+                }
+            }
+        }
+        let Some(out) = self.call(
+            to,
+            Input::Hop {
+                from: hop.from,
+                frame: hop.frame.clone(),
+            },
+        ) else {
+            return;
+        };
+        let Some(r) = r else {
+            // adversarial delivery outside any run: outputs go to limbo
+            for (t, f) in out.hops {
+                self.limbo.push(Hop {
+                    from: hop.to,
+                    to: t,
+                    frame: f,
+                    reply: false,
+                    seq: {
+                        self.next_seq += 1;
+                        self.next_seq
+                    },
+                });
+            }
+            if let Reply::Frame(f) = out.reply {
+                self.limbo.push(Hop {
+                    from: hop.to,
+                    to: hop.from,
+                    frame: f,
+                    reply: true,
+                    seq: {
+                        self.next_seq += 1;
+                        self.next_seq
+                    },
+                });
+            }
+            return;
+        };
+        if !self.runs.contains_key(&r) {
+            return;
+        }
+        if let Reply::Frame(f) = out.reply {
+            if let Some(run) = self.runs.get_mut(&r) {
+                run.queue.push_back(Hop {
+                    from: hop.to,
+                    to: hop.from,
+                    frame: f,
+                    reply: true,
+                    seq: {
+                        self.next_seq += 1;
+                        self.next_seq
+                    },
+                });
+            }
+        }
+        self.enqueue(r, hop.to, out.hops);
+    }
+
+    /// Candidates for a Step: FIFO-eligible hops (assumption D: no
+    /// reordering between the same pair), idle sessions, limbo hops.
+    fn candidates(&self) -> Vec<(u8, usize, usize)> {
+        let mut c = vec![];
+        // oldest pending hop per ordered pair, over every run
+        let mut oldest: BTreeMap<(Ver, Ver), u64> = BTreeMap::new();
+        for run in self.runs.values() {
+            for h in &run.queue {
+                let e = oldest.entry((h.from, h.to)).or_insert(h.seq);
+                *e = (*e).min(h.seq);
+            }
+        }
+        for (rid, run) in &self.runs {
+            let mut seen = BTreeSet::new();
+            for (i, h) in run.queue.iter().enumerate() {
+                let first_in_run = seen.insert((h.from, h.to));
+                let first_global = oldest.get(&(h.from, h.to)) == Some(&h.seq);
+                let ok = if self.cfg.adversarial {
+                    true
+                } else if self.cfg.d_global_fifo {
+                    first_global
+                } else {
+                    first_in_run
+                };
+                if ok {
+                    c.push((0, *rid, i));
+                }
+            }
+        }
+        for (sid, s) in &self.sessions {
+            if s.run.is_none() {
+                c.push((1, *sid, 0));
+            }
+        }
+        for i in 0..self.limbo.len() {
+            c.push((2, 0, i));
+        }
+        c
+    }
+
+    // ---------------------------------------------------------- actions
+
+    pub fn apply(&mut self, a: &Action) {
+        self.step_no += 1;
+        let n = self.step_no;
+        self.log(|| format!("[{n}] {a:?}"));
+        match a.clone() {
+            Action::Publish => {
+                if self.published < self.ledger.len() {
+                    self.published += 1;
+                    let r = self.ledger[self.published - 1];
+                    if r.withdrawal {
+                        self.cov.hit("publish/withdrawal");
+                    }
+                    if r.v == ROLLBACK {
+                        self.cov.hit("publish/rollback");
+                    }
+                }
+            }
+            Action::Load { client, fetch, ops } => self.load(client, fetch, ops),
+            Action::Step { pick, fate } => {
+                let c = self.candidates();
+                if !c.is_empty() {
+                    let (kind, a, b) = c[pick as usize % c.len()];
+                    match kind {
+                        0 => {
+                            let hop = self.runs.get_mut(&a).unwrap().queue.remove(b).unwrap();
+                            self.deliver(Some(a), hop, fate);
+                        }
+                        1 => self.session_next(a),
+                        _ => {
+                            let hop = self.limbo.remove(b);
+                            self.deliver(None, hop, Fate::Deliver);
+                        }
+                    }
+                    self.gc_runs();
+                }
+            }
+            Action::Wakeup { b } => {
+                let b = b as usize % NBUILDS;
+                if self.registered[b] {
+                    self.start_unprompted(b, Input::Wakeup);
+                }
+            }
+            Action::Crash => {
+                self.cov.hit("fault/crash-between-calls");
+                self.crash_node();
+            }
+            Action::ArmWriteFault { after, fault } => {
+                self.faults.armed = Some((after as u32, fault));
+            }
+            Action::Quota { limit } => {
+                self.faults.quota = limit.map(|l| l as usize);
+            }
+            Action::Unregister { b } => {
+                let b = b as usize % NBUILDS;
+                if self.registered[b] {
+                    self.cov.hit("fault/unregister");
+                }
+                self.registered[b] = false;
+            }
+            Action::Restore { b, snap, secret } => {
+                let b = b as usize % NBUILDS;
+                let h = &self.history[b];
+                let s = h[snap as usize % h.len()].clone();
+                match secret {
+                    None => {
+                        self.cov.hit("fault/restore-whole");
+                        self.stores[b] = s;
+                    }
+                    Some(k) => {
+                        let names: Vec<SName> = s
+                            .secrets
+                            .keys()
+                            .chain(self.stores[b].secrets.keys())
+                            .copied()
+                            .collect::<BTreeSet<_>>()
+                            .into_iter()
+                            .collect();
+                        if names.is_empty() {
+                            return;
+                        }
+                        let n = names[k as usize % names.len()];
+                        self.cov.hit("fault/restore-secret");
+                        if let SName::E(id, _) = n {
+                            self.tainted.insert(id);
+                        }
+                        match s.secrets.get(&n) {
+                            Some(v) => {
+                                self.stores[b].secrets.insert(n, v.clone());
+                            }
+                            None => {
+                                self.stores[b].secrets.remove(&n);
+                            }
+                        }
+                    }
+                }
+                self.vols[b] = Volatile::default();
+                self.taint_unheld();
+                self.restored = true;
+            }
+            Action::Wipe { b } => {
+                let b = b as usize % NBUILDS;
+                self.cov.hit("fault/wipe");
+                self.stores[b] = Store::default();
+                self.vols[b] = Volatile::default();
+                self.taint_unheld();
+                self.restored = true;
+            }
+            Action::Garble { b, pick } => {
+                let b = b as usize % NBUILDS;
+                let es: Vec<SName> = self.stores[b]
+                    .secrets
+                    .keys()
+                    .filter(|n| matches!(n, SName::E(..)))
+                    .copied()
+                    .collect();
+                if !es.is_empty() {
+                    let n = es[pick as usize % es.len()];
+                    self.cov.hit("fault/garble-secret");
+                    if let SName::E(id, _) = n {
+                        self.tainted.insert(id);
+                    }
+                    self.stores[b].secrets.insert(n, SVal::Garbled);
+                    self.garbled = true;
+                }
+            }
+            Action::Cached { op, b } => {
+                let target = match b {
+                    Some(b) => Some(ver(b as usize % NBUILDS)),
+                    None => self.cached_target,
+                };
+                if let Some(v) = target {
+                    self.cov.hit("client/cached-caller");
+                    let b = bi(v);
+                    if self.registered[b] {
+                        self.do_op(b, op);
+                    }
+                }
+            }
+        }
+        self.check_state();
+    }
+
+    // ---------------------------------------------------------- clients (5.2)
+
+    fn load(&mut self, client: u8, fetch: Fetch, ops: Vec<Op>) {
+        let client = client % CLIENTS.len() as u8;
+        let bundle: Vec<Ver> = CLIENTS[client as usize].to_vec();
+        if client == 2 {
+            self.cov.hit("client/old-lineage");
+        }
+        let (fetched, nonwd) = match fetch {
+            Fetch::Newest => {
+                let n = self.newest_published();
+                (
+                    n,
+                    n.filter(|r| r.withdrawal)
+                        .and_then(|w| self.newest_nonwd_below(w)),
+                )
+            }
+            Fetch::Unreachable => {
+                self.cov.hit("fault/pointer-unreachable");
+                (None, None)
+            }
+            Fetch::Stale(k) => {
+                if self.cfg.stale_pointer && self.published > 0 {
+                    self.cov.hit("adv/stale-pointer");
+                    let r = self.ledger[k as usize % self.published];
+                    (
+                        Some(r),
+                        if r.withdrawal {
+                            self.newest_nonwd_below(r)
+                        } else {
+                            None
+                        },
+                    )
+                } else {
+                    let n = self.newest_published();
+                    (
+                        n,
+                        n.filter(|r| r.withdrawal)
+                            .and_then(|w| self.newest_nonwd_below(w)),
+                    )
+                }
+            }
+        };
+        let id = self.next_session;
+        self.next_session += 1;
+        self.sessions.insert(
+            id,
+            Session {
+                client,
+                bundle,
+                fetched,
+                fetched_nonwd: nonwd,
+                phase: Phase::Poke(0),
+                statuses: BTreeMap::new(),
+                rounds: 0,
+                again: BTreeSet::new(),
+                discard: BTreeSet::new(),
+                ops: ops.into(),
+                target: None,
+                run: None,
+            },
+        );
+        self.session_next(id);
+    }
+
+    fn session_next(&mut self, sid: usize) {
+        let Some(s) = self.sessions.get(&sid).cloned() else {
+            return;
+        };
+        match s.phase.clone() {
+            Phase::Poke(i) => {
+                if i >= s.bundle.len() {
+                    self.sessions.get_mut(&sid).unwrap().phase = Phase::Decide;
+                    return self.session_next(sid);
+                }
+                let v = s.bundle[i];
+                self.sessions.get_mut(&sid).unwrap().phase = Phase::Poke(i + 1);
+                if s.rounds > 0 && !s.again.contains(&v) && !s.discard.contains(&v) {
+                    return self.session_next(sid);
+                }
+                let b = bi(v);
+                self.registered[b] = true;
+                let mut flags = 0;
+                // pause copying toward a target this client cannot register
+                if let Some(r) = s.fetched {
+                    if !r.withdrawal && !s.bundle.contains(&r.v) {
+                        flags |= build::POKE_PAUSE;
+                    }
+                }
+                if s.discard.contains(&v) {
+                    flags |= build::POKE_DISCARD;
+                }
+                let r = self.new_run(RunKind::Client(sid));
+                self.sessions.get_mut(&sid).unwrap().run = Some(r);
+                let out = self.call(
+                    b,
+                    Input::Poke {
+                        flags,
+                        rec: s.fetched,
+                    },
+                );
+                let Some(out) = out else { return };
+                let st = match out.reply {
+                    Reply::Status(st) => Some(st),
+                    _ => None,
+                };
+                self.enqueue(r, v, out.hops);
+                if let Some(sess) = self.sessions.get_mut(&sid) {
+                    sess.statuses.insert(v, st);
+                }
+                self.gc_runs();
+            }
+            Phase::Decide => self.decide(sid),
+            Phase::Ops => {
+                let Some(t) = s.target else {
+                    self.sessions.get_mut(&sid).unwrap().phase = Phase::Done;
+                    return;
+                };
+                let mut sess = s.clone();
+                let Some(op) = sess.ops.pop_front() else {
+                    self.sessions.remove(&sid);
+                    return;
+                };
+                self.sessions.insert(sid, sess);
+                let b = bi(t);
+                self.cached_target = Some(t);
+                self.do_op(b, op);
+            }
+            Phase::Done => {
+                self.sessions.remove(&sid);
+            }
+        }
+    }
+
+    fn decide(&mut self, sid: usize) {
+        let s = self.sessions.get(&sid).cloned().unwrap();
+        // repeat pokes while a build reports progress (at most 8 rounds)
+        let again: BTreeSet<Ver> = s
+            .statuses
+            .iter()
+            .filter(|(_, st)| st.as_ref().is_some_and(|st| st.sent))
+            .map(|(v, _)| *v)
+            .collect();
+        // discard an abandoned partial copy (8, Poke bit 4)
+        let mut discard = BTreeSet::new();
+        for (v, st) in &s.statuses {
+            if let Some(Status {
+                state: PState::Receiving { from, .. },
+                ..
+            }) = st
+            {
+                match s.statuses.get(from) {
+                    Some(Some(Status {
+                        state: PState::Retired { to, .. },
+                        ..
+                    })) if to.v != *v => {
+                        discard.insert(*v);
+                    }
+                    Some(Some(Status {
+                        state: PState::Sealed { target, .. },
+                        ..
+                    })) if target.v != *v => {
+                        discard.insert(*v);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if (!again.is_empty() || !discard.is_empty()) && s.rounds < 8 && s.discard != discard {
+            let sess = self.sessions.get_mut(&sid).unwrap();
+            sess.rounds += 1;
+            sess.again = again;
+            sess.discard = discard;
+            sess.phase = Phase::Poke(0);
+            return self.session_next(sid);
+        }
+        if !again.is_empty() && s.rounds < 8 {
+            let sess = self.sessions.get_mut(&sid).unwrap();
+            sess.rounds += 1;
+            sess.again = again;
+            sess.discard = BTreeSet::new();
+            sess.phase = Phase::Poke(0);
+            return self.session_next(sid);
+        }
+        let states: BTreeMap<Ver, Option<PState>> = s
+            .bundle
+            .iter()
+            .map(|v| (*v, s.statuses.get(v).cloned().flatten().map(|st| st.state)))
+            .collect();
+        let create = match s.fetched {
+            Some(r) if !r.withdrawal => Some(r),
+            Some(_) => s.fetched_nonwd,
+            None => None,
+        };
+        let route = route(&states, create);
+        self.log(|| format!("  courier client {} route {route:?}", s.client));
+        let sess = self.sessions.get_mut(&sid).unwrap();
+        match route {
+            Route::Writer(v) => {
+                sess.target = Some(v);
+                sess.phase = Phase::Ops;
+            }
+            Route::Create(v) => {
+                sess.target = Some(v);
+                sess.phase = Phase::Ops;
+                let r = self.new_run(RunKind::Client(sid));
+                self.sessions.get_mut(&sid).unwrap().run = Some(r);
+                let out = self.call(
+                    bi(v),
+                    Input::Poke {
+                        flags: build::POKE_ARM,
+                        rec: Some(Rec::build(v)),
+                    },
+                );
+                if let Some(out) = out {
+                    self.enqueue(r, v, out.hops);
+                }
+                self.gc_runs();
+            }
+            Route::Unavailable => {
+                self.cov.hit("5.2/unavailable");
+                self.sessions.remove(&sid);
+            }
+        }
+    }
+
+    fn do_op(&mut self, b: usize, op: Op) {
+        let mut op = op;
+        if let Op::Batch { slot, expected } = &mut op {
+            if *expected == 0 {
+                *expected = self
+                    .oracle
+                    .get(&(KIND_KEY, *slot))
+                    .and_then(|p| p.acked.as_ref())
+                    .map(|e| e.content)
+                    .unwrap_or(1);
+            }
+        }
+        let intended = intended_value(&op, &self.oracle);
+        let res = self.call(b, Input::Op(op.clone()));
+        let Some(out) = res else {
+            // unknown outcome: the change may or may not have happened
+            if let Some((id, v)) = intended {
+                self.oracle.entry(id).or_default().maybe.push(v);
+            }
+            return;
+        };
+        let Reply::Op(r) = out.reply else { return };
+        self.log(|| format!("  op {op:?} at {} -> {r:?}", ver(b)));
+        match (&op, &r) {
+            (Op::PublicKey { slot }, OpRes::Key(k)) | (Op::Batch { slot, .. }, OpRes::Key(k)) => {
+                let id = (KIND_KEY, *slot);
+                if !self.restored && !self.tainted.contains(&id) {
+                    let p = self.oracle.get(&id).cloned().unwrap_or_default();
+                    if !p.allows(&Some(key_entry(*slot, *k))) {
+                        self.fail(
+                            "I3",
+                            format!(
+                                "build {} answered slot {slot} with key {k}; possible {p:?}",
+                                ver(b)
+                            ),
+                        );
+                    }
+                }
+            }
+            (Op::PublicKey { slot }, OpRes::Absent) => {
+                let id = (KIND_KEY, *slot);
+                if !self.restored && !self.tainted.contains(&id) {
+                    let p = self.oracle.get(&id).cloned().unwrap_or_default();
+                    if !p.allows(&None) {
+                        self.fail(
+                            "I3",
+                            format!(
+                                "build {} answered slot {slot} Absent; possible {p:?}",
+                                ver(b)
+                            ),
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+        let acked = matches!(
+            (&op, &r),
+            (Op::Generate { .. }, OpRes::Key(_))
+                | (Op::Import { .. }, OpRes::Key(_))
+                | (Op::Delete { .. }, OpRes::Ok)
+                | (Op::PutExt { .. }, OpRes::Ok)
+        );
+        if acked {
+            if let Some((id, v)) = intended {
+                self.cov.hit("oracle/acked-change");
+                self.oracle.insert(
+                    id,
+                    Possible {
+                        acked: v,
+                        maybe: vec![],
+                    },
+                );
+            }
+        }
+    }
+
+    // ---------------------------------------------------------- invariants
+
+    fn check_events(&mut self) {
+        let evs = std::mem::take(&mut self.events);
+        for e in evs {
+            let Event::Delete {
+                build,
+                name,
+                named_by_committed,
+            } = e;
+            if named_by_committed {
+                self.fail(
+                    "I6",
+                    format!("build {build} deleted {name:?}, which its committed index names"),
+                );
+            }
+        }
+    }
+
+    fn check_transition(&mut self, b: usize, before: &Index, after: &Index, notes: &[Note]) {
+        let v = ver(b);
+        // I4: no unseal without a "did not take over" answer from the target
+        if let (PState::Sealed { target, m, .. }, PState::Writer(_)) = (&before.state, &after.state)
+        {
+            let intent = notes
+                .iter()
+                .any(|n| matches!(n, Note::UnsealIntent { target: t, m: mm } if *t == target.v && mm == m));
+            if !intent {
+                self.fail(
+                    "I4",
+                    format!("build {v} unsealed from {} without an answer", target.v),
+                );
+            } else if self.stores[bi(target.v)].idx_or_none().state.taken_over() == Some((v, *m)) {
+                self.fail(
+                    "I4",
+                    format!("build {v} unsealed while its target {} has taken over from it at the same manifest", target.v),
+                );
+            }
+        }
+        // I4 (ground truth): at every unseal, the target has not taken over
+        // from this build at that manifest.
+        for n in notes {
+            if let Note::Unsealed { target, m, .. } = n {
+                if self.stores[bi(*target)].idx_or_none().state.taken_over() == Some((v, *m)) {
+                    self.fail(
+                        "I4",
+                        format!(
+                            "build {v} unsealed while its target {target} has taken over from it at the same manifest"
+                        ),
+                    );
+                }
+            }
+        }
+        // I4b (the fence I4 protects): a take-over of (P, m) must not happen
+        // after P has unsealed from m, or both builds act as owners.
+        for n in notes {
+            if let Note::TookOver { from, m } = n {
+                let p = self.stores[bi(*from)].idx_or_none().state;
+                let still_sealed = matches!(&p, PState::Sealed { target, m: pm, .. } if target.v == v && pm == m)
+                    || matches!(&p, PState::Retired { to, m: pm, .. } if to.v == v && pm == m);
+                if !still_sealed && !self.restored {
+                    self.fail(
+                        "I4b",
+                        format!(
+                            "build {v} took over from {from} at m {:04x} but {from} is {} (it unsealed or moved on first)",
+                            m & 0xffff,
+                            p.code()
+                        ),
+                    );
+                }
+            }
+        }
+        // I5: creation only with no state anywhere
+        let created = notes.iter().any(|n| matches!(n, Note::Created))
+            || (before.state.is_none()
+                && matches!(&after.state, PState::Writer(w) if w.taken_over.is_none()));
+        if created {
+            self.cov.hit("I5/creation");
+            for o in 0..NBUILDS {
+                if o != b && self.stores[o].has_state() {
+                    self.fail(
+                        "I5",
+                        format!(
+                            "build {v} created the partition while build {} holds state ({})",
+                            ver(o),
+                            self.stores[o].idx_or_none().state.code()
+                        ),
+                    );
+                }
+            }
+        }
+        if notes.iter().any(|n| matches!(n, Note::SealedCorruptSent)) {
+            self.sealed_corrupt_sent += 1;
+        }
+    }
+
+    fn accepting_writers(&self) -> Vec<Ver> {
+        (0..NBUILDS)
+            .filter(|b| matches!(self.stores[*b].idx_or_none().state, PState::Writer(ref w) if !w.awaiting))
+            .map(ver)
+            .collect()
+    }
+
+    /// The value a build's committed store holds for an identity.
+    fn held_value(&self, b: usize, id: Ident) -> Result<Option<Entry>, ()> {
+        let idx = self.stores[b].idx_or_none();
+        let Some(ie) = idx.entries.get(&id) else {
+            return Ok(None);
+        };
+        match self.stores[b].secrets.get(&SName::E(id, ie.parity)) {
+            Some(SVal::E(e)) if e.digest() == ie.digest => Ok(Some(e.clone())),
+            _ => Err(()),
+        }
+    }
+
+    /// After the operator destroys or rolls back storage, an acknowledged
+    /// value that no build holds any more is lost by the operator, not by
+    /// the protocol: exclude it from I2.
+    fn taint_unheld(&mut self) {
+        let oracle = self.oracle.clone();
+        for (id, p) in &oracle {
+            let held =
+                (0..NBUILDS).any(|b| matches!(self.held_value(b, *id), Ok(ref v) if p.allows(v)));
+            if !held {
+                self.cov.hit("restore/acknowledged-value-destroyed");
+                self.tainted.insert(*id);
+            }
+        }
+    }
+
+    /// The writer chosen by 5.2 by a courier that sees every build.
+    pub fn omniscient_writer(&self) -> Route {
+        let states: BTreeMap<Ver, Option<PState>> = (0..NBUILDS)
+            .map(|b| (ver(b), Some(self.stores[b].idx_or_none().state)))
+            .collect();
+        route(&states, None)
+    }
+
+    fn check_state(&mut self) {
+        if self.violation.is_some() {
+            return;
+        }
+        // I1
+        let w = self.accepting_writers();
+        if w.len() > 1 && !self.restored {
+            self.fail("I1", format!("two builds accept changes: {w:?}"));
+        }
+        // I6 (state form): every name a committed index uses exists
+        for b in 0..NBUILDS {
+            let idx = self.stores[b].idx_or_none();
+            for (id, ie) in &idx.entries {
+                if !self.stores[b]
+                    .secrets
+                    .contains_key(&SName::E(*id, ie.parity))
+                    && !self.restored
+                    && !self.tainted.contains(id)
+                {
+                    self.fail(
+                        "I6",
+                        format!(
+                            "build {} index names {:?} parity {} but the secret is gone",
+                            ver(b),
+                            id,
+                            ie.parity
+                        ),
+                    );
+                }
+            }
+        }
+        // I2 / I8: acknowledged values held by the chosen writer
+        let oracle = self.oracle.clone();
+        match self.omniscient_writer() {
+            Route::Writer(v) => {
+                let b = bi(v);
+                for (id, p) in &oracle {
+                    if self.tainted.contains(id) {
+                        continue;
+                    }
+                    if self.restored {
+                        continue;
+                    }
+                    let inv = if id.0 == KIND_UNKNOWN { "I8" } else { "I2" };
+                    match self.held_value(b, *id) {
+                        Ok(val) => {
+                            if !p.allows(&val) {
+                                self.fail(
+                                    inv,
+                                    format!(
+                                        "writer {v} holds {val:?} for {id:?}; acknowledged {p:?}"
+                                    ),
+                                );
+                                return;
+                            }
+                        }
+                        Err(()) => {
+                            self.fail(inv, format!("writer {v} cannot read {id:?}"));
+                            return;
+                        }
+                    }
+                }
+                // I3 (state form): every build that would answer reads
+                if !self.restored {
+                    for o in 0..NBUILDS {
+                        let st = self.stores[o].idx_or_none().state;
+                        if !matches!(st, PState::Writer(_) | PState::Sealed { .. }) {
+                            continue;
+                        }
+                        for (id, p) in &oracle {
+                            if id.0 != KIND_KEY || self.tainted.contains(id) {
+                                continue;
+                            }
+                            if let Ok(val) = self.held_value(o, *id) {
+                                if !p.allows(&val) {
+                                    self.fail(
+                                        "I3",
+                                        format!(
+                                            "build {} ({}) would answer {val:?} for {id:?}; acknowledged {p:?}",
+                                            ver(o),
+                                            st.code()
+                                        ),
+                                    );
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {
+                let any_acked = oracle
+                    .iter()
+                    .any(|(id, p)| !self.tainted.contains(id) && !p.allows(&None));
+                if any_acked && !self.restored {
+                    let states: Vec<String> = (0..NBUILDS)
+                        .map(|b| {
+                            format!("{}:{}", ver(b), self.stores[b].idx_or_none().state.code())
+                        })
+                        .collect();
+                    self.fail(
+                        "I2",
+                        format!("acknowledged keys exist but 5.2 chooses no writer: {states:?}"),
+                    );
+                } else if any_acked {
+                    // with restores or wipes: some build's committed index on disk
+                    for (id, p) in &oracle {
+                        if self.tainted.contains(id) || p.acked.is_none() {
+                            continue;
+                        }
+                        let found = (0..NBUILDS)
+                            .any(|b| matches!(self.held_value(b, *id), Ok(ref v) if p.allows(v)));
+                        if !found {
+                            self.fail(
+                                "I2",
+                                format!("no build's committed index holds {id:?} = {p:?}"),
+                            );
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Run with faults stopped and clients loading with every build
+    /// registered, then check I7 (and the restore form of I1).
+    pub fn quiesce(&mut self) {
+        if self.violation.is_some() {
+            return;
+        }
+        self.log(|| "== quiescence".to_string());
+        self.faults = FaultPlan::default();
+        self.limbo.clear();
+        let adversarial = self.cfg.adversarial;
+        self.cfg.adversarial = false;
+        for _ in 0..self.cfg.quiesce_rounds {
+            self.apply(&Action::Load {
+                client: 0,
+                fetch: Fetch::Newest,
+                ops: vec![],
+            });
+            self.drain();
+            for b in 0..NBUILDS {
+                self.apply(&Action::Wakeup { b: b as u8 });
+                self.drain();
+            }
+            if self.violation.is_some() {
+                return;
+            }
+        }
+        self.cfg.adversarial = adversarial;
+        let w = self.accepting_writers();
+        // "by the first step that lets the two interact": while the domain
+        // is stopped nothing copies, so two writers need not meet.
+        let stopped = self.newest_published().is_some_and(|r| r.withdrawal);
+        if self.restored && w.len() > 1 && !stopped {
+            let reported = w
+                .iter()
+                .any(|v| self.stores[bi(*v)].idx_or_none().problems & PROBLEM_ANOTHER_WRITER != 0);
+            if !reported {
+                self.fail(
+                    "I1",
+                    format!(
+                        "after restores two builds accept changes and neither reports it: {w:?}"
+                    ),
+                );
+                return;
+            }
+        }
+        let i7_scope =
+            !self.restored && !self.garbled && !self.cfg.adversarial && !self.cfg.stale_pointer;
+        let Some(newest) = self.newest_published() else {
+            return;
+        };
+        if !i7_scope || newest.withdrawal || !(0..NBUILDS).any(|b| self.stores[b].has_state()) {
+            return;
+        }
+        self.cov.hit("I7/checked");
+        let nb = bi(newest.v);
+        let st = self.stores[nb].idx_or_none().state;
+        if !matches!(st, PState::Writer(ref w) if !w.awaiting) {
+            let states: Vec<String> = (0..NBUILDS)
+                .map(|b| format!("{}:{}", ver(b), self.stores[b].idx_or_none().state.code()))
+                .collect();
+            self.fail(
+                "I7",
+                format!(
+                    "after quiescence build {} is {} not WRITER; states {states:?}",
+                    newest.v,
+                    st.code()
+                ),
+            );
+            return;
+        }
+        for v in self.held.clone() {
+            if v != newest.v
+                && !matches!(
+                    self.stores[bi(v)].idx_or_none().state,
+                    PState::Retired { .. }
+                )
+            {
+                self.fail(
+                    "I7",
+                    format!(
+                        "after quiescence build {v} held the partition and is {}",
+                        self.stores[bi(v)].idx_or_none().state.code()
+                    ),
+                );
+                return;
+            }
+        }
+    }
+
+    /// Process every pending hop and session call, delivering everything.
+    pub fn drain(&mut self) {
+        for _ in 0..2000 {
+            if self.candidates().is_empty() || self.violation.is_some() {
+                return;
+            }
+            self.apply(&Action::Step {
+                pick: 0,
+                fate: Fate::Deliver,
+            });
+        }
+    }
+}
+
+fn key_entry(slot: u16, k: u32) -> Entry {
+    Entry {
+        kind: KIND_KEY,
+        key: slot,
+        flagged: false,
+        content: k,
+        ext: vec![],
+    }
+}
+
+/// The value a change would leave, for the oracle.
+fn intended_value(op: &Op, _oracle: &BTreeMap<Ident, Possible>) -> Option<(Ident, Option<Entry>)> {
+    match op {
+        Op::Generate { slot, seed } => Some(((KIND_KEY, *slot), Some(key_entry(*slot, *seed)))),
+        Op::Import { slot, seed, .. } => Some(((KIND_KEY, *slot), Some(key_entry(*slot, *seed)))),
+        Op::Delete { slot } => Some(((KIND_KEY, *slot), None)),
+        Op::PutExt { key, content } => Some((
+            (KIND_UNKNOWN, *key),
+            Some(Entry {
+                kind: KIND_UNKNOWN,
+                key: *key,
+                flagged: false,
+                content: *content,
+                ext: vec![0xE0, *key as u8, *content as u8],
+            }),
+        )),
+        _ => None,
+    }
+}
+
+fn short_reply(r: &Reply) -> String {
+    match r {
+        Reply::None => "-".into(),
+        Reply::Status(s) => format!("Status({}, rec {})", s.state.code(), s.record_result),
+        Reply::Op(o) => format!("{o:?}"),
+        Reply::Frame(f) => f.short(),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Route {
+    Writer(Ver),
+    Create(Ver),
+    Unavailable,
+}
+
+/// 5.2 steps 3 to 6. `None` in `states` is a build that did not answer.
+pub fn route(states: &BTreeMap<Ver, Option<PState>>, create: Option<Rec>) -> Route {
+    let writers: Vec<Ver> = states
+        .iter()
+        .filter(|(_, s)| matches!(s, Some(PState::Writer(_))))
+        .map(|(v, _)| *v)
+        .collect();
+    if let Some(v) = writers.iter().max() {
+        return Route::Writer(*v);
+    }
+    let sealed: Vec<Ver> = states
+        .iter()
+        .filter(|(_, s)| matches!(s, Some(PState::Sealed { .. })))
+        .map(|(v, _)| *v)
+        .collect();
+    if let Some(v) = sealed.iter().max() {
+        return Route::Writer(*v);
+    }
+    let retired: Vec<Ver> = states
+        .iter()
+        .filter(|(_, s)| matches!(s, Some(PState::Retired { .. })))
+        .map(|(v, _)| *v)
+        .collect();
+    if let Some(&start) = retired.first() {
+        let mut v = start;
+        for _ in 0..NBUILDS + 1 {
+            match states.get(&v) {
+                Some(Some(PState::Retired { to, .. })) => v = to.v,
+                Some(Some(PState::Writer(_))) | Some(Some(PState::Sealed { .. })) => {
+                    return Route::Writer(v)
+                }
+                _ => return Route::Unavailable,
+            }
+        }
+        return Route::Unavailable;
+    }
+    if states
+        .values()
+        .any(|s| s.is_none() || matches!(s, Some(PState::Receiving { .. })))
+    {
+        return Route::Unavailable;
+    }
+    match create {
+        Some(r) if states.contains_key(&r.v) => Route::Create(r.v),
+        _ => Route::Unavailable,
+    }
+}

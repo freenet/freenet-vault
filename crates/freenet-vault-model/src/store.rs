@@ -58,6 +58,7 @@ pub struct FaultPlan {
     /// Maximum number of secrets per build store; None is unlimited.
     pub quota: Option<usize>,
     pub fired: Vec<WriteFault>,
+    pub quota_hits: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,6 +125,7 @@ impl<'a> Host<'a> {
         if first_time {
             if let Some(q) = self.faults.quota {
                 if self.store.secrets.len() >= q {
+                    self.faults.quota_hits += 1;
                     return Err(WErr::Fail);
                 }
             }
