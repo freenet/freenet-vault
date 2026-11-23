@@ -456,6 +456,71 @@ fn a_malformed_index_is_never_read_as_none() {
     assert!(Store::open(&mut h, P).is_err());
 }
 
+/// The library maximums are frozen forever (protocol 8.1): both edges.
+#[test]
+fn library_maximums_have_both_edges() {
+    use index::IndexEntry;
+    let big = Quota {
+        max_key_slots: usize::MAX,
+        max_caller_marks: usize::MAX,
+    };
+    let reserved = |key: Vec<u8>, content: usize| Entry::new(0x10, key, vec![7; content]);
+    // 4096 entries: the 4096th fits, the 4097th does not, a replace does.
+    let mut h = MemHost::new();
+    {
+        let mut s = Store::open(&mut h, P).unwrap();
+        s.update(|ix| {
+            for i in 0..4095u16 {
+                ix.upsert(IndexEntry {
+                    kind: 0x10,
+                    key: i.to_be_bytes().to_vec(),
+                    parity: 0,
+                    len: 1,
+                    digest: [0; 32],
+                });
+            }
+        })
+        .unwrap();
+        s.put(&reserved(vec![0xFF, 0xFF], 1), &big, |_| {}).unwrap();
+        assert_eq!(s.index.entries.len(), 4096);
+        assert_eq!(
+            s.put(&reserved(vec![0xFF, 0xFE, 0], 1), &big, |_| {}),
+            Err(PutError::Quota)
+        );
+        s.put(&reserved(vec![0xFF, 0xFF], 2), &big, |_| {}).unwrap();
+    }
+    // 1 MiB of entry bytes: the last byte fits, one more does not, and a
+    // smaller replacement of an existing entry always fits.
+    let mut h = MemHost::new();
+    let mut s = Store::open(&mut h, P).unwrap();
+    let max = freenet_vault_common::bounds::MAX_PARTITION_BYTES;
+    s.update(|ix| {
+        for i in 0..16u8 {
+            ix.upsert(IndexEntry {
+                kind: 0x10,
+                key: vec![i],
+                parity: 0,
+                len: 65_399,
+                digest: [0; 32],
+            });
+        }
+    })
+    .unwrap();
+    let held = s.index.total_bytes();
+    assert_eq!(held, 16 * 65_399);
+    // An entry with 9 bytes of framing and `n` bytes of content.
+    let room = max - held;
+    let fit = reserved(vec![0xA0], room - 9);
+    assert_eq!(fit.encode().unwrap().len(), room);
+    s.put(&fit, &big, |_| {}).unwrap();
+    assert_eq!(s.index.total_bytes(), max);
+    assert_eq!(
+        s.put(&reserved(vec![0xA1], 0), &big, |_| {}),
+        Err(PutError::Quota)
+    );
+    s.put(&reserved(vec![0xA0], 10), &big, |_| {}).unwrap();
+}
+
 #[test]
 fn parts_list_is_idempotent() {
     let mut h = MemHost::new();

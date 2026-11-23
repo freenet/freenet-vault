@@ -1654,4 +1654,5 @@ fn a_full_store_keeps_reads_and_refuses_raises_and_changes() {
     assert_eq!(crypto::public_key(&seed_of(&h, &slot)), pk);
 }
 
+mod review;
 mod river_cross;
