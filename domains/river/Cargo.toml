@@ -1,0 +1,31 @@
+[package]
+name = "river-vault"
+description = "The River vault: freenet-vault built with River's domain constants"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["freenet-main-delegate"]
+# Emits the delegate's WASM entry point (freenet-stdlib's `#[delegate]`).
+freenet-main-delegate = []
+# Named by the `#[delegate]` macro's generated code; unused here.
+trace = []
+# Set for a release build. Refuses to compile while any domain constant is a
+# placeholder (DESIGN-NOTES.md, "River constants").
+release = []
+
+[dependencies]
+freenet-vault.workspace = true
+freenet-vault-common.workspace = true
+freenet-stdlib.workspace = true
+
+[dev-dependencies]
+freenet-vault = { workspace = true, features = ["testing"] }
+ed25519-dalek.workspace = true
+bs58 = "0.5"
