@@ -1,0 +1,880 @@
+//! Request handling: routing by partition state (protocol 5.1), caller marks
+//! (protocol 9), the operations (spec 6, protocol 12.5), SubmitRecord and
+//! Poke.
+
+use crate::caller::{self, Caller};
+use crate::consent::{self, Pending};
+use crate::crypto;
+use crate::domain::Domain;
+use crate::host::Host;
+use crate::storage::index::State;
+use crate::storage::{ensure_part_listed, PutError, Quota, Read, Store};
+use crate::succ::{accept_record, Succ};
+use freenet_vault_common::bounds::FORBIDDEN_SIGNING_PREFIX;
+use freenet_vault_common::entry::{Entry, KIND_CALLER_MARK, KIND_KEY};
+use freenet_vault_common::frame::{types, Frame};
+use freenet_vault_common::ops::{
+    is_operation, BatchItem, ItemResult, ListItem, OpResult, Operation, Request, SubmitRecord,
+    ITEM_FORBIDDEN_SIGNING_DOMAIN, ITEM_OK, LIST_CORRUPT, LIST_OK, LIST_UNUSABLE,
+};
+use freenet_vault_common::record::PointerRecord;
+use freenet_vault_common::status::{
+    partition_state, poke_flags, problems, refused, step_result, unusable, HandoverStatus, Poke,
+    Status,
+};
+use zeroize::Zeroizing;
+
+/// What a request produces.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Outcome {
+    /// A reply frame for the caller.
+    Reply(Vec<u8>),
+    /// Ask the user first (Export). The text is the prompt; the pending
+    /// request is already in the context.
+    Prompt { prompt_id: u32, text: String },
+    /// No output at all (frames a delegate sent that this build ignores).
+    Nothing,
+}
+
+fn refusal(request_id: u64, reason: u8) -> Outcome {
+    Outcome::Reply(Status::Refused { request_id, reason }.encode())
+}
+
+fn status(s: impl Into<Box<Status>>) -> Outcome {
+    Outcome::Reply(s.into().encode())
+}
+
+/// The request id of a frame body that carries one, for answering a request
+/// that fails later checks.
+fn peek_request_id(frame_type: u8, body: &[u8]) -> u64 {
+    if is_operation(frame_type) || frame_type == types::SUBMIT_RECORD {
+        Request::peek_request_id(body)
+    } else {
+        0
+    }
+}
+
+/// A request from a page (`MessageOrigin::WebApp(id)`).
+pub fn handle_page<H: Host>(
+    domain: &Domain,
+    host: &mut H,
+    id: &[u8; 32],
+    payload: &[u8],
+) -> Outcome {
+    let frame = match Frame::decode(payload) {
+        Ok(f) => f,
+        // Not a vault frame: River has no domain decoder, so it is malformed.
+        Err(_) => return refusal(0, refused::MALFORMED),
+    };
+    let rid = peek_request_id(frame.frame_type, frame.body);
+    match frame.frame_type {
+        types::POKE => poke(domain, host, domain.is_own_page(id), frame.body),
+        types::SUBMIT_RECORD => {
+            let s = match SubmitRecord::decode(frame.body) {
+                Ok(s) => s,
+                Err(_) => return refusal(rid, refused::MALFORMED),
+            };
+            match caller::page(domain, id, &s.header) {
+                Ok(c) => submit_record(domain, host, &c, &s),
+                Err(reason) => refusal(rid, reason),
+            }
+        }
+        t if is_operation(t) => {
+            if !domain.is_own_page(id) {
+                return refusal(rid, refused::CALLER_NOT_AUTHORIZED);
+            }
+            let req = match Request::decode(t, frame.body) {
+                Ok(r) => r,
+                Err(_) => return refusal(rid, refused::MALFORMED),
+            };
+            match caller::page(domain, id, &req.header) {
+                Ok(c) => operation(domain, host, &c, req),
+                Err(reason) => refusal(rid, reason),
+            }
+        }
+        // Includes RetireTo and the handover frames, which this build does
+        // not implement: callers treat Refused(10) as "retry after the
+        // handover".
+        _ => refusal(rid, refused::UNKNOWN_FRAME),
+    }
+}
+
+/// A request from a delegate (`MessageOrigin::Delegate(key)`, sender ==
+/// key). Anything but an operation or SubmitRecord is ignored: no state
+/// change, no output (protocol 6).
+pub fn handle_delegate<H: Host>(
+    domain: &Domain,
+    host: &mut H,
+    key: &[u8; 32],
+    payload: &[u8],
+) -> Outcome {
+    let Ok(frame) = Frame::decode(payload) else {
+        return Outcome::Nothing;
+    };
+    let t = frame.frame_type;
+    if !(is_operation(t) || t == types::SUBMIT_RECORD) {
+        return Outcome::Nothing;
+    }
+    let rid = peek_request_id(t, frame.body);
+    if t == types::SUBMIT_RECORD {
+        let s = match SubmitRecord::decode(frame.body) {
+            Ok(s) => s,
+            Err(_) => return refusal(rid, refused::MALFORMED),
+        };
+        let c = match caller::delegate(domain, key, &s.header) {
+            Ok(c) => c,
+            Err(reason) => return refusal(rid, reason),
+        };
+        if !domain.delegate_frames.contains(&t) {
+            return refusal(rid, refused::OPERATION_NOT_ALLOWED);
+        }
+        return submit_record(domain, host, &c, &s);
+    }
+    let req = match Request::decode(t, frame.body) {
+        Ok(r) => r,
+        Err(_) => return refusal(rid, refused::MALFORMED),
+    };
+    let c = match caller::delegate(domain, key, &req.header) {
+        Ok(c) => c,
+        Err(reason) => return refusal(rid, reason),
+    };
+    // Export is never offered to a delegate, whatever the domain lists.
+    if !domain.delegate_frames.contains(&t) || t == types::EXPORT {
+        return refusal(rid, refused::OPERATION_NOT_ALLOWED);
+    }
+    operation(domain, host, &c, req)
+}
+
+/// How a request is routed by the partition's state (protocol 5.1).
+enum Route {
+    Serve {
+        sealed: bool,
+        changes_busy: bool,
+    },
+    /// NONE, armed, and no newer record known: a change creates the partition.
+    Create,
+    Answer(Box<Status>),
+}
+
+fn armed_ok(domain: &Domain, armed: &Option<[u8; 100]>) -> bool {
+    armed.as_ref().is_some_and(|a| {
+        let r = PointerRecord::decode(a);
+        r.version == domain.own_version
+            && !r.is_withdrawal()
+            && r.verify(&domain.author_vk, domain.app_id).is_ok()
+    })
+}
+
+fn route<H: Host>(
+    domain: &Domain,
+    store: &Store<H>,
+    succ: &Option<Succ>,
+    is_change: bool,
+    rid: u64,
+) -> Route {
+    let partition = domain.partition();
+    let elsewhere = || match succ.as_ref().and_then(|s| s.successor()) {
+        Some(record) => Route::Answer(Box::new(Status::Moved {
+            request_id: rid,
+            partition,
+            record,
+        })),
+        None => Route::Answer(Box::new(Status::NotHere {
+            request_id: rid,
+            partition,
+        })),
+    };
+    let ix = &store.index;
+    match ix.state {
+        State::None => {
+            // Re-checked at creation: still armed with a valid record and no
+            // non-withdrawn record above OWN_VERSION known (a malformed
+            // stored record counts as unknown, so it never creates).
+            let no_newer = succ.as_ref().is_some_and(|s| s.successor().is_none());
+            if is_change && no_newer && armed_ok(domain, &ix.armed) {
+                Route::Create
+            } else {
+                elsewhere()
+            }
+        }
+        State::Writer => Route::Serve {
+            sealed: false,
+            changes_busy: ix.awaiting_retirement,
+        },
+        State::Sealed => Route::Serve {
+            sealed: true,
+            changes_busy: true,
+        },
+        State::Receiving => Route::Answer(Box::new(Status::NotHere {
+            request_id: rid,
+            partition,
+        })),
+        State::Retired => Route::Answer(Box::new(Status::Moved {
+            request_id: rid,
+            partition,
+            record: ix.peer_record.unwrap_or([0; 100]),
+        })),
+    }
+}
+
+fn quota(domain: &Domain) -> Quota {
+    Quota {
+        max_key_slots: domain.max_key_slots,
+        max_caller_marks: domain.max_caller_marks,
+    }
+}
+
+fn put_error(rid: u64, e: PutError) -> Outcome {
+    match e {
+        PutError::Quota => refusal(rid, refused::QUOTA),
+        PutError::Storage => refusal(rid, refused::STORAGE_FAILURE),
+    }
+}
+
+/// The stored caller mark for a delegate caller, if it is one the vault can
+/// read and verify. A mark that is absent, lost, or no longer verifies
+/// imposes no floor and is rewritten by the next raise (DESIGN-NOTES.md).
+fn stored_mark<H: Host>(
+    store: &mut Store<H>,
+    key: &[u8],
+    author: &[u8; 32],
+    app_id: &[u8],
+    sealed: bool,
+) -> Option<[u8; 100]> {
+    let e = match store.read(KIND_CALLER_MARK, key, sealed) {
+        Read::Ok(e) | Read::Corrupt(Some(e)) => e,
+        _ => return None,
+    };
+    let bytes: [u8; 100] = e.content.as_slice().try_into().ok()?;
+    PointerRecord::decode(&bytes).verify(author, app_id).ok()?;
+    Some(bytes)
+}
+
+/// Compares an offered caller record with the stored mark.
+#[derive(Debug, PartialEq, Eq)]
+enum MarkCmp {
+    /// Higher than the mark (or no mark): the mark must be raised.
+    Raise,
+    /// Equal to the mark, byte for byte.
+    Same,
+    /// Below the mark, at or below a stored withdrawal, or a different
+    /// record at the mark's version.
+    Refuse,
+}
+
+fn compare_mark(offered: &[u8; 100], mark: Option<&[u8; 100]>) -> MarkCmp {
+    let Some(mark) = mark else {
+        return MarkCmp::Raise;
+    };
+    let (o, m) = (PointerRecord::decode(offered), PointerRecord::decode(mark));
+    if o.version > m.version {
+        MarkCmp::Raise
+    } else if o.version == m.version && offered == mark && !m.is_withdrawal() {
+        MarkCmp::Same
+    } else {
+        MarkCmp::Refuse
+    }
+}
+
+fn raise_mark<H: Host>(
+    store: &mut Store<H>,
+    domain: &Domain,
+    key: Vec<u8>,
+    record: &[u8; 100],
+    meta: impl FnOnce(&mut crate::storage::index::Index),
+) -> Result<(), PutError> {
+    let e = Entry::new(KIND_CALLER_MARK, key, record.to_vec());
+    store.put(&e, &quota(domain), meta)
+}
+
+/// A seed and its public key.
+type UsableKey = (Zeroizing<[u8; 32]>, [u8; 32]);
+
+/// A usable key in `slot`, or the status that answers instead.
+fn usable_seed<H: Host>(
+    domain: &Domain,
+    store: &mut Store<H>,
+    slot: &[u8],
+    sealed: bool,
+    rid: u64,
+) -> Result<UsableKey, Box<Status>> {
+    let partition = domain.partition();
+    let unusable = |reason| -> Box<Status> {
+        Box::new(Status::Unusable {
+            request_id: rid,
+            partition,
+            slot: slot.to_vec(),
+            reason,
+        })
+    };
+    match store.read(KIND_KEY, slot, sealed) {
+        Read::Absent => Err(Box::new(Status::Absent {
+            request_id: rid,
+            partition,
+            slot: slot.to_vec(),
+        })),
+        Read::Corrupt(_) => Err(unusable(unusable::CORRUPT)),
+        Read::Ok(e) => {
+            let seed: Zeroizing<[u8; 32]> = Zeroizing::new(
+                e.content
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| unusable(unusable::CORRUPT))?,
+            );
+            let pk = crypto::public_key(&seed);
+            if domain.is_publisher_key(&pk) {
+                return Err(unusable(unusable::PUBLISHER_KEY));
+            }
+            Ok((seed, pk))
+        }
+    }
+}
+
+fn key_result(rid: u64, slot: &[u8], public_key: [u8; 32]) -> Outcome {
+    Outcome::Reply(
+        OpResult::Key {
+            slot: slot.to_vec(),
+            public_key,
+        }
+        .encode(rid),
+    )
+}
+
+fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Request) -> Outcome {
+    let rid = req.header.request_id;
+    if let Some(slot) = req.op.slot() {
+        if !domain.slot_ok(slot) {
+            return refusal(rid, refused::MALFORMED);
+        }
+    }
+    let is_change = matches!(
+        req.op,
+        Operation::Generate { .. } | Operation::Import { .. } | Operation::Delete { .. }
+    );
+    let succ = Succ::load(host).ok();
+    let Ok(mut store) = Store::open(host, domain.partition()) else {
+        return refusal(rid, refused::STORAGE_FAILURE);
+    };
+    let (sealed, changes_busy, creating) = match route(domain, &store, &succ, is_change, rid) {
+        Route::Answer(s) => return status(s),
+        Route::Create => (false, false, true),
+        Route::Serve {
+            sealed,
+            changes_busy,
+        } => (sealed, changes_busy, false),
+    };
+
+    // Applied to the index in the commit that stores the first entry.
+    let create = move |ix: &mut crate::storage::index::Index| {
+        if creating {
+            ix.state = State::Writer;
+            ix.armed = None;
+        }
+    };
+
+    // A delegate's record must be at least its caller mark; a higher one
+    // raises the mark, which is Busy while changes are (protocol 9).
+    if let (
+        Caller::Delegate {
+            author_vk,
+            app_id,
+            record,
+            ..
+        },
+        Some(key),
+    ) = (caller, caller.mark_key())
+    {
+        let mark = stored_mark(&mut store, &key, author_vk, app_id, sealed);
+        match compare_mark(record, mark.as_ref()) {
+            MarkCmp::Refuse => return refusal(rid, refused::CALLER_NOT_AUTHORIZED),
+            MarkCmp::Same => {}
+            MarkCmp::Raise => {
+                if changes_busy {
+                    return status(Status::Busy {
+                        request_id: rid,
+                        partition: domain.partition(),
+                    });
+                }
+                if creating && ensure_part_listed(store.host(), &domain.partition()).is_err() {
+                    return refusal(rid, refused::STORAGE_FAILURE);
+                }
+                if let Err(e) = raise_mark(&mut store, domain, key, record, create) {
+                    // The floor is never silently lost: refuse.
+                    return put_error(rid, e);
+                }
+            }
+        }
+    }
+
+    if is_change && changes_busy {
+        return status(Status::Busy {
+            request_id: rid,
+            partition: domain.partition(),
+        });
+    }
+    if creating
+        && !matches!(req.op, Operation::Delete { .. })
+        && ensure_part_listed(store.host(), &domain.partition()).is_err()
+    {
+        return refusal(rid, refused::STORAGE_FAILURE);
+    }
+
+    match req.op {
+        Operation::Generate { slot } => {
+            let mut seed = Zeroizing::new([0u8; 32]);
+            for _ in 0..2 {
+                store.host().random_bytes(seed.as_mut());
+                if *seed != [0u8; 32] {
+                    break;
+                }
+            }
+            if *seed == [0u8; 32] {
+                // The node's random source returned zeros twice.
+                return refusal(rid, refused::STORAGE_FAILURE);
+            }
+            let pk = crypto::public_key(&seed);
+            let slot = slot.unwrap_or_else(|| pk.to_vec());
+            if !domain.slot_ok(&slot) {
+                return refusal(rid, refused::MALFORMED);
+            }
+            if domain.is_publisher_key(&pk) {
+                return status(Status::Unusable {
+                    request_id: rid,
+                    partition: domain.partition(),
+                    slot,
+                    reason: unusable::PUBLISHER_KEY,
+                });
+            }
+            if store.index.find(KIND_KEY, &slot).is_some() {
+                return refusal(rid, refused::SLOT_OCCUPIED);
+            }
+            let e = Entry::new(KIND_KEY, slot.clone(), seed.to_vec());
+            match store.put(&e, &quota(domain), create) {
+                Ok(()) => key_result(rid, &slot, pk),
+                Err(e) => put_error(rid, e),
+            }
+        }
+        Operation::Import {
+            slot,
+            seed,
+            replace,
+        } => {
+            let seed = Zeroizing::new(seed);
+            let pk = crypto::public_key(&seed);
+            if domain.is_publisher_key(&pk) {
+                return status(Status::Unusable {
+                    request_id: rid,
+                    partition: domain.partition(),
+                    slot,
+                    reason: unusable::PUBLISHER_KEY,
+                });
+            }
+            let write = match store.read(KIND_KEY, &slot, false) {
+                Read::Absent => true,
+                // Same key: a no-op, except that it rewrites a slot marked corrupt.
+                Read::Ok(e) if e.content == seed.as_slice() => false,
+                Read::Corrupt(Some(e)) if e.content == seed.as_slice() => true,
+                // A different key needs replace.
+                _ if replace => true,
+                _ => return refusal(rid, refused::SLOT_OCCUPIED),
+            };
+            if write {
+                let e = Entry::new(KIND_KEY, slot.clone(), seed.to_vec());
+                if let Err(e) = store.put(&e, &quota(domain), create) {
+                    return put_error(rid, e);
+                }
+            }
+            key_result(rid, &slot, pk)
+        }
+        Operation::Delete { slot } => match store.delete(KIND_KEY, &slot) {
+            Ok(()) => Outcome::Reply(OpResult::Ok.encode(rid)),
+            Err(_) => refusal(rid, refused::STORAGE_FAILURE),
+        },
+        Operation::PublicKey { slot } => {
+            match usable_seed(domain, &mut store, &slot, sealed, rid) {
+                Ok((_, pk)) => key_result(rid, &slot, pk),
+                Err(s) => status(s),
+            }
+        }
+        Operation::List { after, max } => {
+            list(domain, &mut store, &after, max as usize, sealed, rid)
+        }
+        Operation::Batch {
+            slot,
+            expected_public_key,
+            items,
+        } => {
+            let (seed, pk) = match usable_seed(domain, &mut store, &slot, sealed, rid) {
+                Ok(v) => v,
+                Err(s) => return status(s),
+            };
+            if pk != expected_public_key {
+                return refusal(rid, refused::PUBLIC_KEY_MISMATCH);
+            }
+            let results = items
+                .iter()
+                .map(|it| match it {
+                    BatchItem::Sign(data) if data.starts_with(FORBIDDEN_SIGNING_PREFIX) => {
+                        ItemResult {
+                            status: ITEM_FORBIDDEN_SIGNING_DOMAIN,
+                            bytes: Vec::new(),
+                        }
+                    }
+                    BatchItem::Sign(data) => ItemResult {
+                        status: ITEM_OK,
+                        bytes: crypto::sign(&seed, data).to_vec(),
+                    },
+                    BatchItem::KeyAgreement(peer) => ItemResult {
+                        status: ITEM_OK,
+                        bytes: crypto::key_agreement(&seed, peer).to_vec(),
+                    },
+                    BatchItem::Derive { context, data } => ItemResult {
+                        status: ITEM_OK,
+                        bytes: crypto::derive(&seed, context, data).to_vec(),
+                    },
+                })
+                .collect();
+            Outcome::Reply(OpResult::Batch(results).encode(rid))
+        }
+        Operation::Export { slot } => {
+            let Caller::Page { id } = caller else {
+                return refusal(rid, refused::OPERATION_NOT_ALLOWED);
+            };
+            if let Err(s) = usable_seed(domain, &mut store, &slot, sealed, rid) {
+                return status(s);
+            }
+            let mut idb = [0u8; 4];
+            let mut prompt_id = 0u32;
+            for _ in 0..2 {
+                store.host().random_bytes(&mut idb);
+                prompt_id = u32::from_be_bytes(idb);
+                if prompt_id != 0 {
+                    break;
+                }
+            }
+            if prompt_id == 0 {
+                return refusal(rid, refused::STORAGE_FAILURE);
+            }
+            let pending = Pending {
+                prompt_id,
+                origin: *id,
+                request_id: rid,
+                slot: slot.clone(),
+            };
+            if !store.host().write_context(&pending.encode()) {
+                return refusal(rid, refused::STORAGE_FAILURE);
+            }
+            Outcome::Prompt {
+                prompt_id,
+                text: (domain.export_prompt)(&slot),
+            }
+        }
+    }
+}
+
+fn list<H: Host>(
+    domain: &Domain,
+    store: &mut Store<H>,
+    after: &[u8],
+    max: usize,
+    sealed: bool,
+    rid: u64,
+) -> Outcome {
+    let slots: Vec<Vec<u8>> = store
+        .index
+        .entries
+        .iter()
+        .filter(|e| e.kind == KIND_KEY && e.key.as_slice() > after)
+        .map(|e| e.key.clone())
+        .collect();
+    let more = slots.len() > max;
+    let mut items = Vec::new();
+    for slot in slots.into_iter().take(max) {
+        let item = match store.read(KIND_KEY, &slot, sealed) {
+            Read::Absent => continue,
+            Read::Ok(e) => {
+                let seed: Option<[u8; 32]> = e.content.as_slice().try_into().ok();
+                let pk = seed.map(|s| crypto::public_key(&s)).unwrap_or([0; 32]);
+                let status = if domain.is_publisher_key(&pk) {
+                    LIST_UNUSABLE
+                } else {
+                    LIST_OK
+                };
+                ListItem {
+                    slot,
+                    public_key: pk,
+                    status,
+                }
+            }
+            Read::Corrupt(e) => {
+                // Derived from the flagged bytes: informational only.
+                let seed: Option<[u8; 32]> = e.and_then(|e| e.content.as_slice().try_into().ok());
+                ListItem {
+                    slot,
+                    public_key: seed.map(|s| crypto::public_key(&s)).unwrap_or([0; 32]),
+                    status: LIST_CORRUPT,
+                }
+            }
+        };
+        items.push(item);
+    }
+    Outcome::Reply(OpResult::List { items, more }.encode(rid))
+}
+
+/// The answer to the consent prompt (spec 6). `Ok(None)` when the answer
+/// does not belong to the pending prompt.
+pub fn export_answer<H: Host>(
+    domain: &Domain,
+    host: &mut H,
+    origin: &[u8; 32],
+    prompt_id: u32,
+    response: &[u8],
+) -> Option<Outcome> {
+    let pending = Pending::decode(&host.read_context())?;
+    if pending.prompt_id != prompt_id || &pending.origin != origin {
+        return None;
+    }
+    host.write_context(&[]);
+    let rid = pending.request_id;
+    if response != consent::ALLOW || !domain.is_own_page(origin) {
+        return Some(refusal(rid, refused::CONSENT_DENIED));
+    }
+    let succ = Succ::load(host).ok();
+    let Ok(mut store) = Store::open(host, domain.partition()) else {
+        return Some(refusal(rid, refused::STORAGE_FAILURE));
+    };
+    let sealed = match route(domain, &store, &succ, false, rid) {
+        Route::Answer(s) => return Some(status(s)),
+        Route::Serve { sealed, .. } => sealed,
+        Route::Create => false,
+    };
+    Some(
+        match usable_seed(domain, &mut store, &pending.slot, sealed, rid) {
+            Ok((seed, _)) => Outcome::Reply(OpResult::Export { seed: *seed }.encode(rid)),
+            Err(s) => status(s),
+        },
+    )
+}
+
+fn partition_state_of(store_state: State, armed: bool, awaiting: bool) -> u8 {
+    match store_state {
+        State::None if armed => partition_state::NONE_ARMED,
+        State::None => partition_state::NONE,
+        State::Writer if awaiting => partition_state::WRITER_AWAITING,
+        State::Writer => partition_state::WRITER,
+        State::Sealed => partition_state::SEALED,
+        State::Receiving => partition_state::RECEIVING,
+        State::Retired => partition_state::RETIRED,
+    }
+}
+
+fn handover_status<H: Host>(
+    domain: &Domain,
+    succ: Option<&Succ>,
+    store: Option<&Store<H>>,
+    step: u8,
+    extra_problems: u8,
+    own_page: bool,
+) -> Outcome {
+    let (record_state, floor) = match succ {
+        Some(s) => (s.record_state(), s.floor(domain.own_version)),
+        None => (
+            freenet_vault_common::status::record_state::STORED_MALFORMED,
+            domain.own_version,
+        ),
+    };
+    let mut h = HandoverStatus {
+        request_id: 0,
+        own_version: domain.own_version,
+        floor_version: floor,
+        record_state,
+        step_result: step,
+        partition_state: 0,
+        peer_record: [0; 100],
+        taken_over_from: 0,
+        taken_over_attempt: 0,
+        taken_over_manifest: [0; 32],
+        attempt: 0,
+        manifest_digest: [0; 32],
+        problems: extra_problems,
+        lost_entries: 0,
+    };
+    if let Some(s) = store {
+        let ix = &s.index;
+        h.partition_state =
+            partition_state_of(ix.state, ix.armed.is_some(), ix.awaiting_retirement);
+        h.peer_record = ix.peer_record.unwrap_or([0; 100]);
+        h.problems |= ix.problems;
+        h.lost_entries = ix.lost_entries;
+    } else {
+        h.problems |= problems::STORAGE_FAILURE;
+    }
+    if !own_page {
+        h = h.redacted();
+    }
+    status(Status::Handover(h))
+}
+
+/// Poke (protocol 6, first row): records from any page; flags only from the
+/// domain's own pages. Only flag bit 1 (arm) is implemented; the other bits
+/// belong to the handover.
+fn poke<H: Host>(domain: &Domain, host: &mut H, own_page: bool, body: &[u8]) -> Outcome {
+    let p = match Poke::decode(body) {
+        Ok(p) => p,
+        Err(_) => return refusal(0, refused::MALFORMED),
+    };
+    if p.partition != domain.partition() {
+        return refusal(0, refused::MALFORMED);
+    }
+    let Ok(mut succ) = Succ::load(host) else {
+        // A malformed stored record: no record handling and no flags.
+        let store = Store::open(host, domain.partition()).ok();
+        return handover_status(
+            domain,
+            None,
+            store.as_ref(),
+            step_result::NOTHING,
+            0,
+            own_page,
+        );
+    };
+    let mut extra = 0;
+    let mut step = step_result::NOTHING;
+    if let Some(r) = &p.record {
+        let a = accept_record(domain, host, &mut succ, r);
+        step = a.step_result;
+        if a.storage_failure {
+            extra |= problems::STORAGE_FAILURE;
+        }
+    }
+    let Ok(mut store) = Store::open(host, domain.partition()) else {
+        return handover_status::<H>(domain, Some(&succ), None, step, extra, own_page);
+    };
+    // Any newer record clears creation arming.
+    if store.index.state == State::None
+        && store.index.armed.is_some()
+        && succ.successor().is_some()
+        && store.update(|ix| ix.armed = None).is_err()
+    {
+        extra |= problems::STORAGE_FAILURE;
+    }
+    if own_page && p.flags & poke_flags::ARM != 0 {
+        let can_arm = store.index.state == State::None
+            && succ.successor().is_none()
+            && armed_ok(domain, &p.record);
+        if can_arm && store.update(|ix| ix.armed = p.record).is_err() {
+            extra |= problems::STORAGE_FAILURE;
+        }
+    }
+    handover_status(domain, Some(&succ), Some(&store), step, extra, own_page)
+}
+
+/// SubmitRecord: a domain record (protocol 3) or a caller record that may
+/// raise a caller mark, including a caller withdrawal (protocol 9).
+fn submit_record<H: Host>(
+    domain: &Domain,
+    host: &mut H,
+    caller: &Caller,
+    s: &SubmitRecord,
+) -> Outcome {
+    let rid = s.header.request_id;
+    let own_page = matches!(caller, Caller::Page { .. });
+    let with_rid = |o: Outcome| match o {
+        Outcome::Reply(bytes) => {
+            // Stamp the request id into the HandoverStatus reply.
+            let f = Frame::decode(&bytes).expect("own encoding");
+            match Status::decode(f.frame_type, f.body) {
+                Ok(Status::Handover(mut h)) => {
+                    h.request_id = rid;
+                    Outcome::Reply(Status::Handover(h).encode())
+                }
+                _ => Outcome::Reply(bytes),
+            }
+        }
+        o => o,
+    };
+    if s.author_vk == domain.author_vk && s.app_id == domain.app_id {
+        let Ok(mut succ) = Succ::load(host) else {
+            return refusal(rid, refused::STORED_RECORD_MALFORMED);
+        };
+        let a = accept_record(domain, host, &mut succ, &s.record);
+        let mut extra = if a.storage_failure {
+            problems::STORAGE_FAILURE
+        } else {
+            0
+        };
+        let store = match Store::open(host, domain.partition()) {
+            Ok(mut st) => {
+                if st.index.state == State::None
+                    && st.index.armed.is_some()
+                    && succ.successor().is_some()
+                    && st.update(|ix| ix.armed = None).is_err()
+                {
+                    extra |= problems::STORAGE_FAILURE;
+                }
+                Some(st)
+            }
+            Err(_) => None,
+        };
+        return with_rid(handover_status(
+            domain,
+            Some(&succ),
+            store.as_ref(),
+            a.step_result,
+            extra,
+            own_page,
+        ));
+    }
+    if s.author_vk == domain.author_vk || domain.caller_delegate(&s.author_vk, &s.app_id).is_none()
+    {
+        return refusal(rid, refused::CALLER_NOT_AUTHORIZED);
+    }
+    let offered = PointerRecord::decode(&s.record);
+    let succ = Succ::load(host).ok();
+    let Ok(mut store) = Store::open(host, domain.partition()) else {
+        return refusal(rid, refused::STORAGE_FAILURE);
+    };
+    let step = if offered.verify(&s.author_vk, &s.app_id).is_err() {
+        step_result::INVALID
+    } else {
+        let changes_busy = match route(domain, &store, &succ, false, rid) {
+            Route::Answer(st) => return status(st),
+            Route::Serve { changes_busy, .. } => changes_busy,
+            Route::Create => false,
+        };
+        let key = [s.author_vk.as_slice(), &s.app_id].concat();
+        let sealed = store.index.state == State::Sealed;
+        let mark = stored_mark(&mut store, &key, &s.author_vk, &s.app_id, sealed);
+        let mark_version = mark.map(|m| PointerRecord::decode(&m).version);
+        match mark_version {
+            Some(v) if offered.version < v => step_result::NOT_NEWER,
+            Some(v) if offered.version == v => {
+                if mark.as_ref() == Some(&s.record) {
+                    step_result::RECORD_ACCEPTED
+                } else {
+                    step_result::EQUIVOCATION
+                }
+            }
+            _ => {
+                if changes_busy {
+                    return status(Status::Busy {
+                        request_id: rid,
+                        partition: domain.partition(),
+                    });
+                }
+                if let Err(e) = raise_mark(&mut store, domain, key, &s.record, |_| {}) {
+                    return put_error(rid, e);
+                }
+                step_result::RECORD_ACCEPTED
+            }
+        }
+    };
+    with_rid(handover_status(
+        domain,
+        succ.as_ref(),
+        Some(&store),
+        step,
+        0,
+        own_page,
+    ))
+}

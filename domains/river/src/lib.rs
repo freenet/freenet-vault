@@ -82,8 +82,24 @@ impl DelegateInterface for RiverVault {
         origin: Option<MessageOrigin>,
         message: InboundDelegateMsg,
     ) -> Result<Vec<OutboundDelegateMsg>, DelegateError> {
-        let _ = (ctx, parameters, origin, message);
-        Err(DelegateError::Other("not built yet".into()))
+        #[cfg(target_family = "wasm")]
+        {
+            let mut host = freenet_vault::host::CtxHost(ctx);
+            freenet_vault::process(
+                &RIVER,
+                &mut host,
+                parameters.as_ref(),
+                origin.as_ref(),
+                message,
+            )
+        }
+        // DelegateCtx is inert off wasm32; native tests call
+        // `freenet_vault::process` with a test host instead.
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let _ = (ctx, parameters, origin, message);
+            Err(DelegateError::Other("the vault runs only as WASM".into()))
+        }
     }
 }
 

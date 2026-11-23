@@ -359,10 +359,10 @@ pub fn ensure_part_listed<H: Host>(
     partition: &[u8; 32],
 ) -> Result<(), StorageFailure> {
     let existing = host.get_secret(names::PARTS).unwrap_or_default();
-    if existing.len() % 32 == 0 && existing.chunks(32).any(|c| c == partition) {
+    if existing.len().is_multiple_of(32) && existing.chunks(32).any(|c| c == partition) {
         return Ok(());
     }
-    let mut list = if existing.len() % 32 == 0 {
+    let mut list = if existing.len().is_multiple_of(32) {
         existing
     } else {
         Vec::new()
