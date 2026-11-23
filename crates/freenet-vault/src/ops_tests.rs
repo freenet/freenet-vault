@@ -564,6 +564,11 @@ fn arming_needs_the_own_page_a_valid_record_at_own_version() {
         poke(poke_flags::ARM, Some(domain_record(1, [1; 32]))),
     ));
     assert_eq!(handover(r).partition_state, 0);
+    // Read unredacted from the own page: still not armed.
+    assert_eq!(
+        handover(page(&mut h, poke(0, None))).partition_state,
+        partition_state::NONE
+    );
     for bad in [
         domain_record(2, [1; 32]),                      // not OWN_VERSION
         record(&[0x99; 32], b"test.vault", 1, [1; 32]), // wrong signer
@@ -602,6 +607,64 @@ fn a_newer_record_disarms_and_routes_to_the_successor() {
             record: r2
         })
     );
+}
+
+/// Arming is re-checked at creation: if the write clearing it fails, a
+/// change still does not create while a newer record is known.
+#[test]
+fn creation_rechecks_for_a_newer_record_when_disarming_failed() {
+    let mut h = MemHost::new();
+    arm(&mut h);
+    let idx = names::index(&domain().partition());
+    h.set_fault(move |name| {
+        if name == idx.as_slice() {
+            WriteFault::Fail
+        } else {
+            WriteFault::None
+        }
+    });
+    let r2 = domain_record(2, [0x22; 32]);
+    let s = handover(page(&mut h, poke(0, Some(r2))));
+    assert_eq!(s.step_result, step_result::RECORD_ACCEPTED);
+    assert_eq!(
+        s.partition_state,
+        partition_state::NONE_ARMED,
+        "clearing failed"
+    );
+    assert_ne!(s.problems & problems::STORAGE_FAILURE, 0);
+    h.clear_fault();
+    assert_eq!(
+        page(&mut h, op(1, Operation::Generate { slot: None })),
+        Reply::St(Status::Moved {
+            request_id: 1,
+            partition: domain().partition(),
+            record: r2
+        })
+    );
+    assert!(h.names_with_prefix(b"vault:e:").is_empty());
+}
+
+#[test]
+fn submit_record_from_another_page_is_refused() {
+    let mut h = MemHost::new();
+    writer_with_key(&mut h);
+    let s = SubmitRecord {
+        header: page_header(6),
+        author_vk: vk(&PUBLISHER_SEED),
+        app_id: CHAT_APP.to_vec(),
+        record: record(&PUBLISHER_SEED, CHAT_APP, 9, [0; 32]),
+        ext: vec![],
+    };
+    let other = hash::contract_instance_id(&CONTAINER, &[9; 32]);
+    assert_eq!(
+        single_app_reply(from_page_as(&mut h, other, s.encode())),
+        refused(6, refused::CALLER_NOT_AUTHORIZED)
+    );
+    // The withdrawal was not stored: version 5 still serves.
+    assert!(matches!(
+        chat_pk(&mut h, 5, &[1; 32]),
+        Reply::St(Status::Absent { .. })
+    ));
 }
 
 #[test]
