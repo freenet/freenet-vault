@@ -1040,12 +1040,6 @@ fn arbitrary_bytes_never_panic_and_a_refusal_changes_nothing() {
     let frames = seed_frames(&probe_slot, probe_pk);
     let c = chat(5);
     for (state, base) in states() {
-        let seed_bytes: Vec<[u8; 32]> = base
-            .secrets
-            .values()
-            .filter(|v| v.len() == 72)
-            .map(|v| v[38..70].try_into().unwrap())
-            .collect();
         for i in 0..400 {
             // A payload: random, an envelope around random, or a damaged valid frame.
             let payload = match i % 3 {
@@ -1076,9 +1070,6 @@ fn arbitrary_bytes_never_panic_and_a_refusal_changes_nothing() {
                     f
                 }
             };
-            let mut h = MemHost::new();
-            h.secrets = base.secrets.clone();
-            let before = h.secrets.clone();
             let (origin, msg): (Option<MessageOrigin>, _) = match rnd(1)[0] % 3 {
                 0 => (
                     Some(MessageOrigin::WebApp(ContractInstanceId::new(page_id()))),
@@ -1097,31 +1088,107 @@ fn arbitrary_bytes_never_panic_and_a_refusal_changes_nothing() {
                     )),
                 ),
             };
-            // No panic: process returns, Ok or Err.
-            let out = process(&domain(), &mut h, &[], origin.as_ref(), msg);
-            let mut may_change = false;
-            if let Ok(out) = &out {
-                for m in out {
-                    let bytes = match m {
-                        OutboundDelegateMsg::ApplicationMessage(a) => &a.payload,
-                        OutboundDelegateMsg::SendDelegateMessage(d) => &d.payload,
-                        _ => continue,
-                    };
-                    // No reply ever contains a stored seed.
-                    for s in &seed_bytes {
-                        assert!(
-                            !bytes.windows(32).any(|w| w == s),
-                            "{state}: a reply carries a seed"
-                        );
-                    }
-                    match decode_reply(bytes) {
-                        Reply::Op(..) | Reply::St(Status::Handover(_)) => may_change = true,
-                        Reply::St(_) => {}
-                    }
-                }
+            check_one(state, &base, origin, msg);
+        }
+    }
+}
+
+/// Runs one message against a copy of `base` and checks the invariants: no
+/// panic, no reply carrying a stored seed, and no change to storage unless
+/// the reply is a result or a HandoverStatus.
+fn check_one(
+    state: &str,
+    base: &MemHost,
+    origin: Option<MessageOrigin>,
+    msg: InboundDelegateMsg<'static>,
+) {
+    let seed_bytes: Vec<[u8; 32]> = base
+        .secrets
+        .values()
+        .filter(|v| v.len() == 72)
+        .map(|v| v[38..70].try_into().unwrap())
+        .collect();
+    let mut h = MemHost::new();
+    h.secrets = base.secrets.clone();
+    let before = h.secrets.clone();
+    // No panic: process returns, Ok or Err.
+    let out = process(&domain(), &mut h, &[], origin.as_ref(), msg);
+    let mut may_change = false;
+    if let Ok(out) = &out {
+        for m in out {
+            let bytes = match m {
+                OutboundDelegateMsg::ApplicationMessage(a) => &a.payload,
+                OutboundDelegateMsg::SendDelegateMessage(d) => &d.payload,
+                _ => continue,
+            };
+            for s in &seed_bytes {
+                assert!(
+                    !bytes.windows(32).any(|w| w == s),
+                    "{state}: a reply carries a seed"
+                );
             }
-            if !may_change {
-                assert_eq!(h.secrets, before, "{state}: a refusal changed storage");
+            match decode_reply(bytes) {
+                Reply::Op(..) | Reply::St(Status::Handover(_)) => may_change = true,
+                Reply::St(_) => {}
+            }
+        }
+    }
+    if !may_change {
+        assert_eq!(h.secrets, before, "{state}: a refusal changed storage");
+    }
+}
+
+/// The undamaged frames, including ones from a stale caller (below its mark,
+/// the caller-mark gate's refusal), from every origin the vault can see.
+#[test]
+fn every_valid_frame_from_every_origin_obeys_the_same_invariants() {
+    let slot = vec![0x5A; 32];
+    let mut frames = seed_frames(&slot, crypto::public_key(&[0x5A; 32]));
+    let stale = chat(4);
+    frames.push(pk_req(&stale, &slot));
+    frames.push(
+        SubmitRecord {
+            header: stale.header.clone(),
+            author_vk: vk(&DOMAIN_SEED),
+            app_id: b"test.vault".to_vec(),
+            record: domain_record(2, [0x22; 32]),
+            ext: vec![],
+        }
+        .encode()
+        .unwrap(),
+    );
+    for (state, base) in states() {
+        for payload in &frames {
+            let page = |id: [u8; 32]| {
+                (
+                    Some(MessageOrigin::WebApp(ContractInstanceId::new(id))),
+                    InboundDelegateMsg::ApplicationMessage(ApplicationMessage::new(
+                        payload.clone(),
+                    )),
+                )
+            };
+            let mut cases = vec![
+                page(page_id()),
+                page([0x66; 32]),
+                (
+                    None,
+                    InboundDelegateMsg::ApplicationMessage(ApplicationMessage::new(
+                        payload.clone(),
+                    )),
+                ),
+            ];
+            for key in [chat(4).key, chat(5).key] {
+                cases.push((
+                    Some(MessageOrigin::Delegate(delegate_key(key))),
+                    InboundDelegateMsg::DelegateMessage(DelegateMessage::new(
+                        delegate_key([0xEE; 32]),
+                        delegate_key(key),
+                        payload.clone(),
+                    )),
+                ));
+            }
+            for (origin, msg) in cases {
+                check_one(state, &base, origin, msg);
             }
         }
     }
