@@ -1649,3 +1649,5 @@ fn a_full_store_keeps_reads_and_refuses_raises_and_changes() {
     h.clear_fault();
     assert_eq!(crypto::public_key(&seed_of(&h, &slot)), pk);
 }
+
+mod river_cross;
