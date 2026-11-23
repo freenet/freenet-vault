@@ -31,6 +31,35 @@ fn entry_name(slot: u8, parity: u8) -> Vec<u8> {
     names::entry(&P, KIND_KEY, &[slot; 32], parity)
 }
 
+/// The names pending in either gc list copy.
+fn gc_names(host: &MemHost) -> Vec<Vec<u8>> {
+    let mut out: Vec<Vec<u8>> = vec![];
+    for n in [names::gc(&P), names::gc2(&P)] {
+        if let Some(l) = host.secrets.get(&n).and_then(|b| decode_names(b)) {
+            for g in l {
+                if !out.contains(&g.name) {
+                    out.push(g.name);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Plants a gc list (both copies), as a crash leaves one.
+fn set_gc(host: &mut MemHost, list: &[Vec<u8>]) {
+    let l: Vec<GcName> = list
+        .iter()
+        .map(|n| GcName {
+            name: n.clone(),
+            uncertain: 0,
+        })
+        .collect();
+    let b = encode_names(&l).unwrap();
+    host.secrets.insert(names::gc(&P), b.clone());
+    host.secrets.insert(names::gc2(&P), b);
+}
+
 fn index_on_disk(host: &MemHost) -> Option<Vec<u8>> {
     host.secrets.get(&names::index(&P)).cloned()
 }
@@ -104,13 +133,12 @@ fn failed_index_write_leaves_the_old_value_and_gc_cannot_delete_it() {
     assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
     // The same state as after a crash: a gc list naming both copies.
     h.clear_fault();
-    h.secrets.insert(
-        names::gc(&P),
-        encode_names(&[entry_name(1, 0), entry_name(1, 1)]),
-    );
-    let mut s = Store::open(&mut h, P).unwrap();
-    s.process_gc();
-    drop(s);
+    set_gc(&mut h, &[entry_name(1, 0), entry_name(1, 1)]);
+    for _ in 0..2 {
+        // The second name never existed: uncertain once, then dropped.
+        let mut s = Store::open(&mut h, P).unwrap();
+        s.process_gc();
+    }
     assert!(!h.secrets.contains_key(&names::gc(&P)));
     assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
 }
@@ -181,11 +209,7 @@ fn gc_never_touches_names_outside_the_partition() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
     h.secrets.insert(b"vault:succ".to_vec(), vec![1]);
-    let mut list = Vec::new();
-    list.extend_from_slice(&1u16.to_be_bytes());
-    list.extend_from_slice(&10u16.to_be_bytes());
-    list.extend_from_slice(b"vault:succ");
-    h.secrets.insert(names::gc(&P), list);
+    set_gc(&mut h, &[b"vault:succ".to_vec()]);
     let mut s = Store::open(&mut h, P).unwrap();
     s.process_gc();
     drop(s);
@@ -273,8 +297,7 @@ fn gc_keeps_names_whose_removal_failed_and_retries() {
     h.undeletable.insert(entry_name(1, 0));
     put(&mut h, &key_entry(1, 8)).unwrap();
     assert!(h.secrets.contains_key(&entry_name(1, 0)));
-    let listed = decode_names(&h.secrets[&names::gc(&P)]);
-    assert_eq!(listed, vec![entry_name(1, 0)]);
+    assert_eq!(gc_names(&h), vec![entry_name(1, 0)]);
     // Still failing: still listed.
     let mut s = Store::open(&mut h, P).unwrap();
     s.process_gc();
@@ -296,8 +319,8 @@ fn gc_keeps_names_whose_removal_failed_and_retries() {
 fn an_interrupted_entry_write_is_reachable_by_gc() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
-    // Die right after the new copy lands: gc add (1) + entry write (2).
-    h.crash_after(2);
+    // Die right after the new copy lands: both gc list copies (2) + entry (1).
+    h.crash_after(3);
     let _ = put(&mut h, &key_entry(1, 8));
     assert!(h.secrets.contains_key(&entry_name(1, 1)));
     let mut h = h.restart();
@@ -354,14 +377,273 @@ fn the_second_index_copy_covers_a_lost_or_damaged_first() {
 fn a_crash_between_the_two_index_writes_leaves_a_consistent_older_state() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
-    // Replace: gc add, entry write, index 1, [crash before index 2].
-    h.crash_after(3);
+    // Replace: gc lists (2), entry write, index 1, [crash before index 2].
+    h.crash_after(4);
     let _ = put(&mut h, &key_entry(1, 8));
     let mut h = h.restart();
     assert_ne!(h.secrets[&names::index(&P)], h.secrets[&names::index2(&P)]);
     // First copy lost: the second (older) serves the old value, intact.
     h.secrets.remove(&names::index(&P));
     assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
+}
+
+/// The round-2 failure: after a crash between the two index writes, the next
+/// call runs gc. It must not remove the copy the OLDER index still names, so
+/// the first index can then be lost with no harm. (`open` brings the second
+/// copy in line before gc is allowed to run.)
+#[test]
+fn gc_after_a_crash_between_index_writes_never_orphans_the_other_index() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    h.crash_after(4);
+    let _ = put(&mut h, &key_entry(1, 8));
+    for lose_first in [true, false] {
+        let mut d = h.restart();
+        // The next call: open reconciles, then gc.
+        let mut s = Store::open(&mut d, P).unwrap();
+        assert_eq!(s.mode(), Mode::Clean);
+        s.process_gc();
+        drop(s);
+        assert_eq!(d.secrets[&names::index(&P)], d.secrets[&names::index2(&P)]);
+        // Lose either index copy: the other names a copy that still exists.
+        d.secrets.remove(&if lose_first {
+            names::index(&P)
+        } else {
+            names::index2(&P)
+        });
+        let value = read(&mut d, 1);
+        assert!(
+            matches!(value, Read::Ok(_)),
+            "lose_first={lose_first}: {value:?}"
+        );
+    }
+}
+
+/// A flipped bit that still parses (a digest, a parity, the state) fails the
+/// checksum, so the good copy wins instead of the flip being believed.
+#[test]
+fn a_bit_flipped_index_that_still_parses_is_rejected() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    put(&mut h, &key_entry(2, 8)).unwrap();
+    let good = h.secrets[&names::index(&P)].clone();
+    for at in 0..good.len() {
+        for second in [false, true] {
+            let mut d = h.restart();
+            let name = if second {
+                names::index2(&P)
+            } else {
+                names::index(&P)
+            };
+            let mut bad = good.clone();
+            bad[at] ^= 0x01;
+            d.secrets.insert(name, bad);
+            let mut s = Store::open(&mut d, P).unwrap_or_else(|_| panic!("byte {at}"));
+            assert_eq!(s.mode(), Mode::Clean, "byte {at}");
+            assert_eq!(s.read(KIND_KEY, &[1; 32], false), Read::Ok(key_entry(1, 9)));
+            assert_eq!(s.read(KIND_KEY, &[2; 32], false), Read::Ok(key_entry(2, 8)));
+            drop(s);
+            // Both copies are the good one again.
+            assert_eq!(d.secrets[&names::index(&P)], good, "byte {at}");
+            assert_eq!(d.secrets[&names::index2(&P)], good, "byte {at}");
+        }
+    }
+}
+
+/// gc waits while the second copy cannot be written, and runs once it can.
+#[test]
+fn gc_does_not_run_while_the_second_index_copy_is_unwritten() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    let idx2 = names::index2(&P);
+    h.set_fault(move |name| {
+        if name == idx2.as_slice() {
+            WriteFault::Fail
+        } else {
+            WriteFault::None
+        }
+    });
+    put(&mut h, &key_entry(1, 8)).unwrap();
+    // The old copy is still there, because the second index names it.
+    assert!(h.secrets.contains_key(&entry_name(1, 0)));
+    assert!(!gc_names(&h).is_empty());
+    // Still failing on the next call: still no gc.
+    let mut s = Store::open(&mut h, P).unwrap();
+    assert_eq!(s.mode(), Mode::Unsynced);
+    s.process_gc();
+    drop(s);
+    assert!(h.secrets.contains_key(&entry_name(1, 0)));
+    // The host recovers: open writes the second copy, then gc removes it.
+    h.clear_fault();
+    let mut s = Store::open(&mut h, P).unwrap();
+    assert_eq!(s.mode(), Mode::Clean);
+    s.process_gc();
+    drop(s);
+    assert!(!h.secrets.contains_key(&entry_name(1, 0)));
+    assert!(gc_names(&h).is_empty());
+    assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 8)));
+}
+
+/// A first index copy that reads as absent is ambiguous (lost, or a transient
+/// miss), so the store is read-only: nothing is written, rewritten or removed.
+#[test]
+fn an_absent_first_index_makes_the_store_read_only() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    // A pending removal that must not run on this evidence.
+    set_gc(&mut h, &[entry_name(1, 1)]);
+    h.secrets.insert(entry_name(1, 1), vec![1]);
+    h.hidden.insert(names::index(&P));
+    let before = h.secrets.clone();
+    let mut s = Store::open(&mut h, P).unwrap();
+    assert_eq!(s.mode(), Mode::ReadOnly);
+    assert_eq!(s.read(KIND_KEY, &[1; 32], false), Read::Ok(key_entry(1, 9)));
+    s.process_gc();
+    assert_eq!(
+        s.put(&key_entry(2, 2), &QUOTA, |_| {}),
+        Err(PutError::Storage)
+    );
+    assert_eq!(s.delete(KIND_KEY, &[1; 32]), Err(StorageFailure));
+    assert_eq!(s.update(|ix| ix.problems = 1), Err(StorageFailure));
+    drop(s);
+    assert_eq!(h.secrets, before, "nothing changed");
+}
+
+/// An absent index for a partition `vault:parts` lists is an error, never a
+/// fresh partition (a transient miss of both copies must not orphan entries).
+#[test]
+fn a_listed_partition_with_no_index_is_an_error_not_none() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    ensure_part_listed(&mut h, &P).unwrap();
+    h.hidden.insert(names::index(&P));
+    h.hidden.insert(names::index2(&P));
+    assert!(Store::open(&mut h, P).is_err());
+    // An unlisted partition with no index is simply new.
+    let mut fresh = MemHost::new();
+    assert!(!Store::open(&mut fresh, P).unwrap().has_index());
+}
+
+/// A gc list that fails to read must not lose pending removals (copy two
+/// still has them), and writing it again keeps them.
+#[test]
+fn the_gc_list_survives_one_copy_not_reading() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    // An undeletable stray copy is pending.
+    let stray = entry_name(3, 0);
+    h.secrets.insert(stray.clone(), vec![7]);
+    h.undeletable.insert(stray.clone());
+    set_gc(&mut h, std::slice::from_ref(&stray));
+    // Copy one stops reading; another operation adds its own names.
+    h.hidden.insert(names::gc(&P));
+    put(&mut h, &key_entry(1, 8)).unwrap();
+    assert!(gc_names_both(&h).contains(&stray), "pending removal lost");
+    // Still retried: once removable, it goes.
+    h.hidden.clear();
+    h.undeletable.clear();
+    let mut s = Store::open(&mut h, P).unwrap();
+    s.process_gc();
+    drop(s);
+    assert!(!h.secrets.contains_key(&stray));
+}
+
+fn gc_names_both(h: &MemHost) -> Vec<Vec<u8>> {
+    gc_names(h)
+}
+
+/// The list is bounded: a write that would exceed it fails and leaves the
+/// pending names alone, instead of wrapping its count and erasing itself.
+#[test]
+fn the_gc_list_is_bounded_and_never_erases_itself() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    let prefix = names::entry_prefix(&P);
+    let full: Vec<Vec<u8>> = (0..MAX_GC_NAMES)
+        .map(|i| [prefix.as_slice(), format!("{i:05}").as_bytes()].concat())
+        .collect();
+    // Every name is undeletable and present, so none can drain.
+    for n in &full {
+        h.secrets.insert(n.clone(), vec![1]);
+        h.undeletable.insert(n.clone());
+    }
+    set_gc(&mut h, &full);
+    let before = gc_names(&h);
+    assert_eq!(before.len(), MAX_GC_NAMES);
+    assert_eq!(put(&mut h, &key_entry(1, 8)), Err(PutError::Storage));
+    assert_eq!(gc_names(&h), before, "the list was not erased or truncated");
+    assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
+}
+
+/// A removal that neither succeeds nor reads back is retried, then dropped:
+/// a name that never existed does not stay listed for ever.
+#[test]
+fn an_uncertain_removal_is_retried_then_dropped() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    set_gc(&mut h, &[entry_name(5, 0)]);
+    let mut s = Store::open(&mut h, P).unwrap();
+    s.process_gc();
+    drop(s);
+    assert_eq!(gc_names(&h), vec![entry_name(5, 0)], "kept for one retry");
+    let mut s = Store::open(&mut h, P).unwrap();
+    s.process_gc();
+    drop(s);
+    assert!(gc_names(&h).is_empty());
+}
+
+/// A removal that failed while the follow-up read also fails is not taken as
+/// done: the name stays listed (the secret is present, just unreadable now).
+#[test]
+fn a_failed_removal_with_a_failing_read_is_retried() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    let stray = entry_name(3, 0);
+    h.secrets.insert(stray.clone(), vec![7]);
+    h.undeletable.insert(stray.clone());
+    h.hidden.insert(stray.clone());
+    set_gc(&mut h, std::slice::from_ref(&stray));
+    for _ in 0..1 {
+        let mut s = Store::open(&mut h, P).unwrap();
+        s.process_gc();
+    }
+    // One uncertain pass: still listed. Once readable again it is retried.
+    assert_eq!(gc_names(&h), vec![stray.clone()]);
+    h.hidden.clear();
+    h.undeletable.clear();
+    let mut s = Store::open(&mut h, P).unwrap();
+    s.process_gc();
+    drop(s);
+    assert!(!h.secrets.contains_key(&stray));
+}
+
+/// An index write that fails and leaves something that is neither the old nor
+/// the new index: the new entry copy might be the committed one, so it is not
+/// removed on that evidence (the `old_intact` guard).
+#[test]
+fn a_torn_index_write_does_not_remove_the_new_copy() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    let idx = names::index(&P);
+    h.set_fault(move |name| {
+        if name == idx.as_slice() {
+            WriteFault::GarbageButFail
+        } else {
+            WriteFault::None
+        }
+    });
+    assert_eq!(put(&mut h, &key_entry(1, 8)), Err(PutError::Storage));
+    assert!(
+        h.secrets.contains_key(&entry_name(1, 1)),
+        "the new copy was removed although the first index is in an unknown state"
+    );
+    // The next call: the first index is damaged, the second is the old one.
+    h.clear_fault();
+    let mut s = Store::open(&mut h, P).unwrap();
+    s.process_gc();
+    drop(s);
+    assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
+    assert!(!h.secrets.contains_key(&entry_name(1, 1)));
 }
 
 /// While sealed nothing is rewritten or removed (protocol 4.3).

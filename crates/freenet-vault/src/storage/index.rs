@@ -6,21 +6,24 @@
 //! versioned only so this build can refuse bytes it did not write.
 //!
 //! ```text
-//! "FVIX" 4 ; format 1 (= 1) ; state 1 ; flags 1
+//! "FVIX" 4 ; format 1 (= 2) ; state 1 ; flags 1
 //! [armed record 100]      if flags bit 0
 //! [peer record 100]       if flags bit 2
 //! problems 1 ; lost_entries 2
 //! handover_len 4 ; handover    (reserved for the handover module; empty now)
 //! count 2 ; count x { kind 1 ; key_len 2 ; key ; parity 1 ; len 2 ; digest 32 }
+//! checksum 32     BLAKE3 of every byte above
 //! ```
 //! flags: bit 0 armed, bit 1 awaiting_retirement, bit 2 peer record present.
-//! Entries are sorted by `(kind, key)` with no duplicates.
+//! Entries are sorted by `(kind, key)` with no duplicates. The checksum is what
+//! lets the second index copy cover bit rot: a flipped bit that still parses
+//! (a digest, a parity, the state) fails the checksum, so the good copy wins.
 
 use freenet_vault_common::bounds::{MAX_ENTRY, MAX_KEY, MAX_PARTITION_ENTRIES};
 use freenet_vault_common::codec::{Malformed, Reader, Writer};
 
 const MAGIC: &[u8; 4] = b"FVIX";
-const FORMAT: u8 = 1;
+const FORMAT: u8 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
@@ -139,11 +142,23 @@ impl Index {
                 .u16(e.len)
                 .bytes(&e.digest);
         }
-        w.into_vec()
+        let mut out = w.into_vec();
+        if !out.is_empty() {
+            let sum = *blake3::hash(&out).as_bytes();
+            out.extend_from_slice(&sum);
+        }
+        out
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, Malformed> {
-        let mut r = Reader::new(bytes);
+        if bytes.len() < 32 {
+            return Err(Malformed("index too short"));
+        }
+        let (body, sum) = bytes.split_at(bytes.len() - 32);
+        if blake3::hash(body).as_bytes() != sum {
+            return Err(Malformed("index checksum"));
+        }
+        let mut r = Reader::new(body);
         if r.take(4, "index magic")? != MAGIC || r.u8("index format")? != FORMAT {
             return Err(Malformed("index header"));
         }

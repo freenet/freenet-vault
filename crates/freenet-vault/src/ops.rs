@@ -355,7 +355,10 @@ fn usable_seed<H: Host>(
             reason,
         })
     };
-    let entry = match store.read(KIND_KEY, slot, sealed) {
+    // Export's lookup never changes storage (`allow_corrupt` reads like a
+    // sealed vault): a user who clicks Deny must not lose bytes Export exists
+    // to recover.
+    let entry = match store.read(KIND_KEY, slot, sealed || allow_corrupt) {
         Read::Absent => {
             return Err(status(Status::Absent {
                 request_id: rid,
@@ -826,17 +829,26 @@ fn poke<H: Host>(domain: &Domain, host: &mut H, own_page: bool, body: &[u8]) -> 
     if p.partition != domain.partition() {
         return refusal(0, refused::MALFORMED);
     }
-    let Ok(mut succ) = Succ::load(domain, host) else {
-        // A malformed stored record: no record handling and no flags.
-        let store = Store::open(host, domain.partition()).ok();
-        return handover_status(
-            domain,
-            None,
-            store.as_ref(),
-            step_result::NOTHING,
-            0,
-            own_page,
-        );
+    let mut succ = match Succ::load(domain, host) {
+        Ok(s) => s,
+        // A `vault:succ` that no longer verifies is replaced by a record that
+        // does (it verifies itself); without one, no record handling and no
+        // flags.
+        Err(_) => {
+            if let Some(fresh) = p.record.as_ref().and_then(|r| repair_succ(domain, host, r)) {
+                fresh
+            } else {
+                let store = Store::open(host, domain.partition()).ok();
+                return handover_status(
+                    domain,
+                    None,
+                    store.as_ref(),
+                    step_result::NOTHING,
+                    0,
+                    own_page,
+                );
+            }
+        }
     };
     let mut extra = 0;
     let mut step = step_result::NOTHING;
@@ -867,6 +879,16 @@ fn poke<H: Host>(domain: &Domain, host: &mut H, own_page: bool, body: &[u8]) -> 
         }
     }
     handover_status(domain, Some(&succ), Some(&store), step, extra, own_page)
+}
+
+/// A `vault:succ` that no longer verifies is replaced by a record that
+/// verifies and is newer than this build (the record verifies itself, so it
+/// is not trusted on the stored bytes' say-so). `None` leaves it as it is.
+/// What the unreadable store held is lost; it could not be trusted anyway.
+fn repair_succ<H: Host>(domain: &Domain, host: &mut H, record: &[u8; 100]) -> Option<Succ> {
+    let mut fresh = Succ::default();
+    let a = accept_record(domain, host, &mut fresh, record);
+    (a.step_result == step_result::RECORD_ACCEPTED && !a.storage_failure).then_some(fresh)
 }
 
 /// SubmitRecord: a domain record (protocol 3) or a caller record that may
@@ -927,8 +949,12 @@ fn submit_record<H: Host>(
         }
     }
     if s.author_vk == domain.author_vk && s.app_id == domain.app_id {
-        let Ok(mut succ) = Succ::load(domain, host) else {
-            return refusal(rid, refused::STORED_RECORD_MALFORMED);
+        let mut succ = match Succ::load(domain, host) {
+            Ok(s) => s,
+            Err(_) => match repair_succ(domain, host, &s.record) {
+                Some(fresh) => fresh,
+                None => return refusal(rid, refused::STORED_RECORD_MALFORMED),
+            },
         };
         let a = accept_record(domain, host, &mut succ, &s.record);
         let mut extra = if a.storage_failure {
@@ -977,12 +1003,26 @@ fn submit_record<H: Host>(
         };
         let key = [s.author_vk.as_slice(), &s.app_id].concat();
         let sealed = store.index.state == State::Sealed;
-        let mark = match stored_mark(&mut store, &key, &s.author_vk, &s.app_id, sealed) {
+        let mut found = stored_mark(&mut store, &key, &s.author_vk, &s.app_id, sealed);
+        if found == StoredMark::Unreadable {
+            // Read again: a transient miss resolves. A mark that is still
+            // unreadable is lost for good, and a submitted record at or above
+            // the compiled-in minimum replaces it, so it is not stuck for ever
+            // (it then lowers the floor to that record's version).
+            found = stored_mark(&mut store, &key, &s.author_vk, &s.app_id, sealed);
+        }
+        let mark = match found {
             StoredMark::Mark(m) => Some(m),
             StoredMark::NoFloor => None,
-            // A raise would overwrite an entry that may only be unreadable
-            // for a moment: refuse, and the caller retries.
-            StoredMark::Unreadable => return refusal(rid, refused::STORAGE_FAILURE),
+            StoredMark::Unreadable => {
+                let min = domain
+                    .caller_delegate(&s.author_vk, &s.app_id)
+                    .map_or(0, |c| c.min_version);
+                if offered.version < min {
+                    return refusal(rid, refused::CALLER_NOT_AUTHORIZED);
+                }
+                None
+            }
         };
         let mark_version = mark.map(|m| PointerRecord::decode(&m).version);
         match mark_version {

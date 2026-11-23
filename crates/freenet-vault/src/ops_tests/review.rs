@@ -523,7 +523,7 @@ fn a_stored_successor_that_no_longer_verifies_is_never_returned() {
                 header: page_header(3),
                 author_vk: vk(&DOMAIN_SEED),
                 app_id: b"test.vault".to_vec(),
-                record: domain_record(3, [0x33; 32]),
+                record: record(&[0x99; 32], b"test.vault", 3, [0x33; 32]),
                 ext: vec![],
             }
             .encode()
@@ -531,6 +531,30 @@ fn a_stored_successor_that_no_longer_verifies_is_never_returned() {
         ),
         refused(3, refused::STORED_RECORD_MALFORMED)
     );
+}
+
+/// A permanently unusable `vault:succ` does not block creation for ever: a
+/// verified, newer record replaces it.
+#[test]
+fn a_verified_record_replaces_an_unusable_vault_succ() {
+    let mut h = MemHost::new();
+    arm(&mut h);
+    h.secrets.insert(names::SUCC.to_vec(), vec![9, 9, 9]);
+    // Malformed: a change does not create (no_newer is unknown).
+    assert_eq!(
+        page(&mut h, op(1, Operation::Generate { slot: None })),
+        Reply::St(Status::NotHere {
+            request_id: 1,
+            partition: domain().partition()
+        })
+    );
+    // A Poke carrying the vault's own record at the version it is armed with
+    // is not newer, so it cannot repair; a newer verified one does.
+    let s = handover(page(&mut h, poke(0, Some(domain_record(1, [0x11; 32])))));
+    assert_eq!(s.record_state, record_state::STORED_MALFORMED);
+    let s = handover(page(&mut h, poke(0, Some(domain_record(2, [0x22; 32])))));
+    assert_eq!(s.step_result, step_result::RECORD_ACCEPTED);
+    assert_eq!(s.record_state, record_state::SUCCESSOR);
 }
 
 #[test]
@@ -738,34 +762,75 @@ fn caller_mark_quota_edges() {
 
 // ---- crash-point sweep through process() ---------------------------------
 
-/// What must hold after any crash and the recovery calls that follow:
-/// the index parses, every entry it names reads back with a matching digest,
-/// no entry secret is untracked, and nothing is left in `vault:gc`.
-fn assert_sound(h: &mut MemHost, what: &str) {
+/// What must hold after any crash and the recovery calls that follow: the
+/// two index copies agree and parse; every entry the index names exists and
+/// matches its digest; no entry secret is untracked; nothing is left in the
+/// gc lists; and the vault survives losing either index copy (the other names
+/// entries that still exist). With `clean`, no entry is flagged corrupt and
+/// the index counts no lost entries and no problems.
+/// A named entry secret and the digest the index holds for it.
+type NamedEntry = (Vec<u8>, [u8; 32]);
+
+fn assert_sound(h: &mut MemHost, what: &str, clean: bool) {
+    use freenet_vault_common::hash::entry_digest;
     let p = domain().partition();
-    let named: Vec<Vec<u8>> = {
+    let (named, has_index): (Vec<NamedEntry>, bool) = {
         let s = Store::open(h, p).unwrap_or_else(|_| panic!("{what}: index malformed"));
-        s.index
-            .entries
-            .iter()
-            .map(|e| names::entry(&p, e.kind, &e.key, e.parity))
-            .collect()
+        if clean {
+            assert_eq!(s.index.lost_entries, 0, "{what}: lost entries");
+            assert_eq!(s.index.problems, 0, "{what}: problems raised");
+        }
+        (
+            s.index
+                .entries
+                .iter()
+                .map(|e| (names::entry(&p, e.kind, &e.key, e.parity), e.digest))
+                .collect(),
+            s.has_index(),
+        )
     };
-    for n in &named {
+    for (n, digest) in &named {
         let b = h
             .secrets
             .get(n)
             .unwrap_or_else(|| panic!("{what}: an indexed entry is missing"));
+        assert_eq!(&entry_digest(b), digest, "{what}: digest differs");
         let e = Entry::decode(b).unwrap_or_else(|_| panic!("{what}: an indexed entry is bad"));
-        assert!(!e.is_flagged_corrupt(), "{what}");
+        if clean {
+            assert!(!e.is_flagged_corrupt(), "{what}");
+        }
     }
     for n in h.names_with_prefix(&names::entry_prefix(&p)) {
-        assert!(named.contains(&n), "{what}: an untracked entry secret");
+        assert!(
+            named.iter().any(|(m, _)| m == &n),
+            "{what}: an untracked entry secret"
+        );
     }
-    assert!(
-        !h.secrets.contains_key(&names::gc(&p)),
-        "{what}: vault:gc left behind"
-    );
+    for g in [names::gc(&p), names::gc2(&p)] {
+        assert!(!h.secrets.contains_key(&g), "{what}: a gc list left behind");
+    }
+    if has_index {
+        assert_eq!(
+            h.secrets.get(&names::index(&p)),
+            h.secrets.get(&names::index2(&p)),
+            "{what}: index copies differ"
+        );
+        // Lose either copy: what the other names must still be there.
+        for lose in [names::index(&p), names::index2(&p)] {
+            let mut d = h.restart();
+            d.secrets.remove(&lose);
+            let mut st = Store::open(&mut d, p)
+                .unwrap_or_else(|_| panic!("{what}: unusable without one index copy"));
+            let entries = st.index.entries.clone();
+            for e in entries {
+                let r = st.read(e.kind, &e.key, true);
+                assert!(
+                    matches!(r, Read::Ok(_) | Read::Corrupt(Some(_))),
+                    "{what}: with one index copy lost an entry reads {r:?}"
+                );
+            }
+        }
+    }
 }
 
 fn recover(h: &mut MemHost) {
@@ -791,13 +856,14 @@ fn sweep(
     setup: fn(&mut MemHost),
     act: fn(&mut MemHost),
     valid: fn(&mut MemHost) -> bool,
+    clean: bool,
 ) {
     let mut dry = MemHost::new();
     setup(&mut dry);
     let start = dry.mutations;
     act(&mut dry);
     let total = dry.mutations - start;
-    assert!(total >= 2, "{what}: the action writes nothing to sweep");
+    assert!(total >= 1, "{what}: the action writes nothing to sweep");
     for n in 0..=total {
         let mut h = MemHost::new();
         setup(&mut h);
@@ -817,7 +883,7 @@ fn sweep(
             let label = format!("{what}: crash {n} of {total}, recovery crash {m}");
             recover(&mut r);
             recover(&mut r);
-            assert_sound(&mut r, &label);
+            assert_sound(&mut r, &label, clean);
             assert!(valid(&mut r), "{label}: state is neither old nor new");
         }
     }
@@ -859,6 +925,7 @@ fn crash_sweep_generate() {
         },
         // The old key is untouched; the new one is there whole or not at all.
         |h| slot_seed(h, 1) == Some([0xA1; 32]),
+        true,
     );
 }
 
@@ -878,6 +945,7 @@ fn crash_sweep_import_replace() {
             )
         },
         |h| matches!(slot_seed(h, 1), Some(s) if s == [0xA1; 32] || s == [0xB2; 32]),
+        true,
     );
 }
 
@@ -888,6 +956,7 @@ fn crash_sweep_delete() {
         setup_writer_with_key,
         |h| act_page(h, Operation::Delete { slot: vec![1; 32] }),
         |h| matches!(slot_seed(h, 1), None | Some([0xA1, ..])),
+        true,
     );
 }
 
@@ -908,6 +977,7 @@ fn crash_sweep_creation() {
                 _ => false,
             }
         },
+        true,
     );
 }
 
@@ -929,6 +999,139 @@ fn crash_sweep_caller_mark_raise() {
                 _ => false,
             }
         },
+        true,
+    );
+}
+
+#[test]
+fn crash_sweep_import_of_a_new_slot() {
+    sweep(
+        "import new slot",
+        setup_writer_with_key,
+        |h| {
+            act_page(
+                h,
+                Operation::Import {
+                    slot: vec![2; 32],
+                    seed: [0xC3; 32],
+                    replace: false,
+                },
+            )
+        },
+        |h| {
+            slot_seed(h, 1) == Some([0xA1; 32])
+                && matches!(slot_seed(h, 2), None | Some([0xC3, ..]))
+        },
+        true,
+    );
+}
+
+/// The corrupt-flag rewrite in `read()`: bytes that still parse are rewritten
+/// flagged, at the other parity, with the index updated.
+#[test]
+fn crash_sweep_flagging_a_corrupt_entry() {
+    sweep(
+        "flag rewrite",
+        |h| {
+            setup_writer_with_key(h);
+            tamper_seed(h, &[1; 32]);
+        },
+        |h| act_page(h, Operation::PublicKey { slot: vec![1; 32] }),
+        |h| {
+            let mut s = Store::open(h, domain().partition()).unwrap();
+            // Flagged corrupt (the recovery's List flags it if the crash came first).
+            matches!(s.read(KIND_KEY, &[1; 32], false), Read::Corrupt(Some(_)))
+        },
+        false,
+    );
+}
+
+/// The read-drop: bytes that do not parse are removed from the index, counted
+/// lost, and their copies gc'd.
+#[test]
+fn crash_sweep_dropping_an_unparseable_entry() {
+    sweep(
+        "read drop",
+        |h| {
+            setup_writer_with_key(h);
+            let name = entry_name_of(h, KIND_KEY, &[1; 32]);
+            h.secrets.insert(name, vec![0xFF; 5]);
+        },
+        |h| act_page(h, Operation::PublicKey { slot: vec![1; 32] }),
+        |h| slot_seed(h, 1).is_none(),
+        false,
+    );
+}
+
+/// Poke arming writes the index of a partition that does not exist yet.
+#[test]
+fn crash_sweep_poke_arm() {
+    sweep(
+        "poke arm",
+        |_| {},
+        |h| {
+            let _ = from_page_as(
+                h,
+                page_id(),
+                poke(poke_flags::ARM, Some(domain_record(1, [0x11; 32]))),
+            );
+        },
+        |h| {
+            let s = Store::open(h, domain().partition()).unwrap();
+            !s.has_index() || s.index.armed.is_some()
+        },
+        true,
+    );
+}
+
+/// SubmitRecord of a domain record writes `vault:succ`.
+#[test]
+fn crash_sweep_submit_record() {
+    sweep(
+        "submit record",
+        setup_writer_with_key,
+        |h| {
+            let s = SubmitRecord {
+                header: page_header(2),
+                author_vk: vk(&DOMAIN_SEED),
+                app_id: b"test.vault".to_vec(),
+                record: domain_record(2, [0x22; 32]),
+                ext: vec![],
+            };
+            let _ = from_page_as(h, page_id(), s.encode().unwrap());
+        },
+        |h| crate::succ::Succ::load(&domain(), h).is_ok(),
+        true,
+    );
+}
+
+/// Creating the partition by a caller needs `ensure_part_listed`, the entry
+/// and the index; a delegate cannot create (its operations are not changes),
+/// so this is the page's Import into an armed, empty vault.
+#[test]
+fn crash_sweep_creation_by_import() {
+    sweep(
+        "creation by import",
+        arm,
+        |h| {
+            act_page(
+                h,
+                Operation::Import {
+                    slot: vec![1; 32],
+                    seed: [0xA1; 32],
+                    replace: false,
+                },
+            )
+        },
+        |h| {
+            let s = Store::open(h, domain().partition()).unwrap();
+            match s.index.state {
+                State::None => s.index.entries.is_empty(),
+                State::Writer => s.index.entries.len() == 1,
+                _ => false,
+            }
+        },
+        true,
     );
 }
 

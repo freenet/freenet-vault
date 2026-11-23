@@ -13,6 +13,9 @@ pub enum WriteFault {
     /// Writes the value but reports failure: a first-time secret whose index
     /// update failed after the value became durable (protocol 1).
     DurableButFail,
+    /// Stores garbage under the name and reports failure: a write that was
+    /// torn, so a read-back matches neither the old value nor the new one.
+    GarbageButFail,
 }
 
 type FaultFn = Box<dyn FnMut(&[u8]) -> WriteFault>;
@@ -122,6 +125,10 @@ impl Host for MemHost {
             WriteFault::Fail => false,
             WriteFault::DurableButFail => {
                 self.secrets.insert(key.to_vec(), value.to_vec());
+                false
+            }
+            WriteFault::GarbageButFail => {
+                self.secrets.insert(key.to_vec(), b"torn write".to_vec());
                 false
             }
         }

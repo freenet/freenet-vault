@@ -28,6 +28,12 @@ pub fn gc(partition: &[u8; 32]) -> Vec<u8> {
     format!("vault:gc:{}", hex(partition)).into_bytes()
 }
 
+/// The second copy of the gc list, written with the first. A read takes the
+/// union, so one copy that fails to read does not lose a pending removal.
+pub fn gc2(partition: &[u8; 32]) -> Vec<u8> {
+    format!("vault:gc2:{}", hex(partition)).into_bytes()
+}
+
 /// `vault:e:<P>:<key hash>:<p>`.
 pub fn entry(partition: &[u8; 32], kind: u8, key: &[u8], parity: u8) -> Vec<u8> {
     format!(

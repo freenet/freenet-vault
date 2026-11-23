@@ -719,17 +719,27 @@ fn a_malformed_stored_record_refuses_record_handling() {
     ));
     assert_eq!(s.record_state, record_state::STORED_MALFORMED);
     assert_eq!(s.partition_state, partition_state::NONE);
-    let sub = SubmitRecord {
-        header: page_header(4),
-        author_vk: domain().author_vk,
-        app_id: b"test.vault".to_vec(),
-        record: domain_record(2, [2; 32]),
-        ext: vec![],
+    let sub = |record| {
+        SubmitRecord {
+            header: page_header(4),
+            author_vk: domain().author_vk,
+            app_id: b"test.vault".to_vec(),
+            record,
+            ext: vec![],
+        }
+        .encode()
+        .unwrap()
     };
+    // A record that does not verify cannot stand in for the lost store.
+    let forged = record(&[0x99; 32], b"test.vault", 2, [2; 32]);
     assert_eq!(
-        page(&mut h, sub.encode().unwrap()),
+        page(&mut h, sub(forged)),
         refused(4, refused::STORED_RECORD_MALFORMED)
     );
+    // One that verifies and is newer replaces it: the vault is not stuck.
+    let s = handover(page(&mut h, sub(domain_record(2, [2; 32]))));
+    assert_eq!(s.step_result, step_result::RECORD_ACCEPTED);
+    assert_eq!(s.record_state, record_state::SUCCESSOR);
 }
 
 #[test]
