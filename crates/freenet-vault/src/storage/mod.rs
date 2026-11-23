@@ -13,6 +13,8 @@
 
 pub mod index;
 pub mod names;
+#[cfg(test)]
+mod tests;
 
 use crate::host::Host;
 use freenet_vault_common::bounds::{MAX_PARTITION_BYTES, MAX_PARTITION_ENTRIES};
