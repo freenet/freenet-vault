@@ -1,0 +1,12 @@
+[package]
+name = "freenet-vault-model"
+description = "Abstract randomized simulation model of the freenet-vault handover protocol (protocol section 15, step 1)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# No dependencies on purpose: this crate is an independent reading of the
+# handover protocol document (revision 7) and shares no code with the library.
+[dependencies]
