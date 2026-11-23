@@ -646,6 +646,48 @@ fn a_torn_index_write_does_not_remove_the_new_copy() {
     assert!(!h.secrets.contains_key(&entry_name(1, 1)));
 }
 
+/// Bytes whose digest matches the index are exactly what was written. If this
+/// build cannot decode them (a newer format) they are not damage: never
+/// dropped, rewritten or counted lost.
+#[test]
+fn a_digest_valid_entry_this_build_cannot_decode_is_never_dropped() {
+    use freenet_vault_common::hash::entry_digest;
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(2, 9)).unwrap();
+    // A key entry whose content is 31 bytes: a known kind with a length this
+    // build refuses.
+    let bytes = [
+        &[1u8, 0, 0, 32][..],
+        &[1u8; 32],
+        &[0, 31],
+        &[2u8; 31],
+        &[0, 0],
+    ]
+    .concat();
+    assert!(Entry::decode(&bytes).is_err());
+    let name = entry_name(1, 0);
+    h.secrets.insert(name.clone(), bytes.clone());
+    let digest = entry_digest(&bytes);
+    let mut s = Store::open(&mut h, P).unwrap();
+    s.update(|ix| {
+        ix.upsert(index::IndexEntry {
+            kind: KIND_KEY,
+            key: vec![1; 32],
+            parity: 0,
+            len: bytes.len() as u16,
+            digest,
+        })
+    })
+    .unwrap();
+    drop(s);
+    let before = h.secrets.clone();
+    assert_eq!(read(&mut h, 1), Read::Corrupt(None));
+    assert_eq!(h.secrets, before, "the entry was rewritten or removed");
+    let s = Store::open(&mut h, P).unwrap();
+    assert_eq!(s.index.lost_entries, 0);
+    assert!(s.index.find(KIND_KEY, &[1; 32]).is_some());
+}
+
 /// While sealed nothing is rewritten or removed (protocol 4.3).
 #[test]
 fn corruption_while_sealed_changes_nothing() {

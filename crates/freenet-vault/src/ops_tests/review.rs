@@ -244,6 +244,78 @@ fn an_export_answer_reads_the_slot_as_it_is_when_the_user_answers() {
     );
 }
 
+/// Export's lookup never changes storage: an unparseable slot is reported
+/// Unusable(2) and stays in the index, so a user who denies loses nothing.
+#[test]
+fn export_does_not_drop_an_unparseable_slot() {
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let name = entry_name_of(&h, KIND_KEY, &slot);
+    h.secrets.insert(name, vec![0xFF; 5]);
+    let before = h.secrets.clone();
+    assert!(matches!(
+        page(&mut h, op(2, Operation::Export { slot: slot.clone() })),
+        Reply::St(Status::Unusable { .. })
+    ));
+    assert_eq!(h.secrets, before, "Export changed storage");
+    // The same bytes are dropped by an ordinary read, as before.
+    page(&mut h, op(3, Operation::PublicKey { slot: slot.clone() }));
+    assert_ne!(h.secrets, before);
+}
+
+/// A submitted caller record replaces a mark that stays unreadable, but never
+/// below the compiled-in minimum (the stuck-mark repair).
+#[test]
+fn a_submitted_record_replaces_a_mark_that_stays_unreadable() {
+    let dom = leaked_domain(vec![chat_caller(3)], 2);
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let go = |h: &mut MemHost, v: u32| send_in(&dom, h, chat(v).key, pk_req(&chat(v), &slot));
+    assert!(is_key_result(&go(&mut h, 8).unwrap()));
+    let name = entry_name_of(&h, KIND_CALLER_MARK, &mark_key());
+    h.hidden.insert(name);
+    let submit = |h: &mut MemHost, v: u32| {
+        let s = SubmitRecord {
+            header: page_header(6),
+            author_vk: vk(&PUBLISHER_SEED),
+            app_id: CHAT_APP.to_vec(),
+            record: record(&PUBLISHER_SEED, CHAT_APP, v, [v as u8; 32]),
+            ext: vec![],
+        };
+        let out = process(
+            &dom,
+            h,
+            &[],
+            Some(&page_origin()),
+            page_in(s.encode().unwrap()),
+        );
+        single_app_reply(out.unwrap())
+    };
+    // Below the compiled-in minimum: refused, nothing replaced.
+    assert_eq!(
+        submit(&mut h, 2),
+        refused(6, refused::CALLER_NOT_AUTHORIZED)
+    );
+    // At or above it: the lost mark is replaced.
+    let st = handover(submit(&mut h, 4));
+    assert_eq!(st.step_result, step_result::RECORD_ACCEPTED);
+    h.hidden.clear();
+    assert_eq!(
+        go(&mut h, 3),
+        Some(refused(77, refused::CALLER_NOT_AUTHORIZED)),
+        "the replacement mark (4) now binds"
+    );
+    assert!(is_key_result(&go(&mut h, 4).unwrap()));
+}
+
+fn page_origin() -> MessageOrigin {
+    MessageOrigin::WebApp(ContractInstanceId::new(page_id()))
+}
+
+fn page_in(payload: Vec<u8>) -> InboundDelegateMsg<'static> {
+    InboundDelegateMsg::ApplicationMessage(ApplicationMessage::new(payload))
+}
+
 /// Bytes that do not parse as an entry are not exportable: a sealed vault
 /// does not drop them, and Export answers Unusable(2).
 #[test]
