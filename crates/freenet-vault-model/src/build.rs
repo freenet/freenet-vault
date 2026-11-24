@@ -1,9 +1,10 @@
 //! One vault build as a pure state machine over its durable store
-//! (sections 3 to 9 of the handover protocol, revision 7).
+//! (sections 3 to 9 of the handover protocol, revision 8).
 //!
 //! Every call starts from the committed store; the only volatile state is
-//! the in-flight set of 7.1, which a crash clears. Every durable write goes
-//! through [`Host`], so a crash can cut between any two writes.
+//! the in-flight set of 7.1, which a crash clears. Every durable write and
+//! every read goes through [`Host`], so a crash can cut between any two
+//! writes and a read fault can poison any call (4.0).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -25,19 +26,6 @@ pub struct Params {
     /// Builds at or above this version no longer accept marks whose caller
     /// (content) is odd: such marks are "dropped by policy" (0x03).
     pub reject_odd_marks_from: Ver,
-    pub spec: SpecReading,
-}
-
-/// Places where the document, read literally, leaves a gap. The default is
-/// the literal reading; each switch exists only so that a finding can be
-/// confirmed by flipping it, and is reported with the finding. Gate runs use
-/// the default.
-#[derive(Clone, Debug, Default)]
-pub struct SpecReading {
-    /// Section 6 accepts Ack/CompleteAck only from S(current) or S(sealed
-    /// target). The answer to Query comes from the predecessor, which is
-    /// neither, so read literally it is ignored. `true` applies it (7.4).
-    pub accept_query_answer: bool,
 }
 
 impl Default for Params {
@@ -49,7 +37,6 @@ impl Default for Params {
             window_wakeup: 2,
             missing_max: 3,
             reject_odd_marks_from: 40,
-            spec: SpecReading::default(),
         }
     }
 }
@@ -104,11 +91,27 @@ pub enum Op {
         caller: u16,
         rec: u32,
     },
+    /// Export (0x86): the seed, allowed on a corrupt slot; in read-only mode
+    /// by the direct-read rule (4.5).
+    Export {
+        slot: u16,
+    },
+    /// ResetPartition (0x88): domain pages only, only while problems bit 6
+    /// is set (4.5).
+    Reset,
+    /// The repair flow's re-import of a seed this session exported (4.5
+    /// step 6); resolved by the world into an Import.
+    ImportExported {
+        slot: u16,
+    },
 }
 
 impl Op {
     pub fn is_change(&self) -> bool {
-        !matches!(self, Op::PublicKey { .. } | Op::Batch { .. })
+        !matches!(
+            self,
+            Op::PublicKey { .. } | Op::Batch { .. } | Op::Export { .. }
+        )
     }
 }
 
@@ -127,6 +130,10 @@ pub enum OpRes {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Status {
     pub state: PState,
+    /// partition_state 7, "unknown: index lost" (4.5, 12.4).
+    pub index_lost: bool,
+    /// record_state 3, "stored record malformed" (3).
+    pub record_malformed: bool,
     pub problems: u8,
     pub succ: Succ,
     /// 0 none, 2 accepted, 3 not newer, 4 equivocation (12.4 step_result).
@@ -174,17 +181,24 @@ pub enum Note {
         target: Ver,
         m: Digest,
     },
+    /// ResetPartition wrote a fresh WRITER index over a lost one (4.5).
+    Reset,
 }
 
 pub struct Output {
     pub reply: Reply,
     pub hops: Vec<(Ver, Frame)>,
     pub writes: u32,
+    /// A read failed in this call (4.0): the host fails the call, its
+    /// outputs are not delivered and the request is retried.
+    pub poisoned: bool,
 }
 
 pub const POKE_PAUSE: u8 = 1 << 0;
 pub const POKE_ARM: u8 = 1 << 1;
-pub const POKE_DISCARD: u8 = 1 << 4;
+/// Bit 4 was "discard an abandoned partial copy" until revision 8; it is
+/// reserved (F6) and a build ignores it.
+pub const POKE_RESERVED_4: u8 = 1 << 4;
 
 /// Run one vault call against `store`. Err(Crash) means the node crashed
 /// inside the call: the writes made so far stand, outputs are lost.
@@ -202,14 +216,7 @@ pub fn call(
     notes: &mut Vec<Note>,
     input: Input,
 ) -> Result<Output, Crash> {
-    let host = Host {
-        build: def.v,
-        store,
-        faults,
-        events,
-        writes: 0,
-        crashed: false,
-    };
+    let host = Host::new(def.v, store, faults, events);
     let mut cx = Cx {
         def,
         p,
@@ -218,8 +225,18 @@ pub fn call(
         cov,
         out: Vec::new(),
         notes,
+        ro: false,
     };
-    let mut reply = cx.dispatch(input)?;
+    let res = cx.dispatch(input);
+    cx.host.finish();
+    let mut reply = res?;
+    let poisoned = cx.host.poisoned.get();
+    if poisoned {
+        cx.hit("4.0/call-poisoned");
+        if cx.host.refused_poisoned > 0 {
+            cx.hit("4.0/write-refused-after-failed-read");
+        }
+    }
     if let Reply::Frame(f) = &reply {
         if is_ignored(f) {
             reply = Reply::None;
@@ -233,6 +250,7 @@ pub fn call(
         reply,
         hops: cx.out,
         writes: cx.host.writes,
+        poisoned,
     })
 }
 
@@ -244,6 +262,9 @@ struct Cx<'a> {
     cov: &'a mut Cov,
     out: Vec<(Ver, Frame)>,
     notes: &'a mut Vec<Note>,
+    /// An earlier write in this call reported failure: read-only for the
+    /// rest of the call (4.2 "no further write", 4.5 condition 4).
+    ro: bool,
 }
 
 type R<T> = Result<T, Crash>;
@@ -252,47 +273,105 @@ impl<'a> Cx<'a> {
     fn own(&self) -> Ver {
         self.def.v
     }
+    /// The committed index as read in this call. Only called when the
+    /// index is not lost (4.5 is checked at the start of the call).
     fn idx(&self) -> Index {
-        self.host.store.idx_or_none()
+        match self.host.read(&SName::Idx) {
+            Some(SVal::Idx(i)) => i,
+            _ => Index::none(),
+        }
     }
+    /// vault:succ; a malformed one is checked separately (3).
     fn succ(&self) -> Succ {
-        self.host.store.succ()
+        match self.host.read(&SName::Succ) {
+            Some(SVal::Succ(s)) => s,
+            _ => Succ::default(),
+        }
+    }
+    fn succ_malformed(&self) -> bool {
+        matches!(self.host.read(&SName::Succ), Some(v) if !matches!(v, SVal::Succ(_)))
+    }
+    /// 4.5: the index is absent while vault:parts lists the partition, the
+    /// index is malformed, or vault:parts is malformed.
+    fn index_lost(&self) -> bool {
+        let parts = self.host.read(&SName::Parts);
+        let idx = self.host.read(&SName::Idx);
+        match (parts, idx) {
+            (Some(SVal::Parts), None) => true,
+            (Some(SVal::Parts) | None, Some(SVal::Idx(_))) => false,
+            (None, None) => false,
+            _ => true,
+        }
+    }
+    fn parts_listed(&self) -> bool {
+        matches!(self.host.read(&SName::Parts), Some(SVal::Parts))
+    }
+    /// vault:parts lists the partition before the first index write that
+    /// gives this build state for it.
+    fn ensure_parts(&mut self) -> R<bool> {
+        if self.parts_listed() {
+            return Ok(true);
+        }
+        self.hit("4.1/parts-written");
+        self.put(SName::Parts, SVal::Parts)
+    }
+    /// Creation bar (3): a non-withdrawal record above OWN_VERSION.
+    fn creation_bar(&self) -> bool {
+        self.succ().current.is_some_and(|c| c.v > self.own())
     }
     fn hit(&mut self, k: &str) {
         self.cov.hit(k);
     }
 
-    /// A durable write. Ok(false) is a storage failure.
+    /// A durable write. Ok(false) is a storage failure. After any failed
+    /// write the call makes no further write (4.2, 4.5).
     fn put(&mut self, n: SName, v: SVal) -> R<bool> {
+        if self.ro {
+            self.hit("4.5/write-refused-after-failed-write");
+            return Ok(false);
+        }
         match self.host.set(n, v) {
             Ok(()) => Ok(true),
             Err(WErr::Fail) => {
                 self.hit("fault/storage-failure-seen");
+                self.ro = true;
                 Ok(false)
             }
             Err(WErr::Crash) => Err(Crash),
         }
     }
     fn del(&mut self, n: SName) -> R<bool> {
+        if self.ro {
+            self.hit("4.5/write-refused-after-failed-write");
+            return Ok(false);
+        }
         match self.host.del(n) {
             Ok(()) => Ok(true),
-            Err(WErr::Fail) => Ok(false),
+            Err(WErr::Fail) => {
+                self.ro = true;
+                Ok(false)
+            }
             Err(WErr::Crash) => Err(Crash),
         }
     }
 
-    /// Commit an index (4.2). On failure, read the index back and report
-    /// whether the disk holds what was intended.
+    /// Commit an index (4.2). On failure, read the index back (a disk read:
+    /// the host's cache is cleared by the write, 4.0) and report whether
+    /// the disk holds what was intended.
     fn commit(&mut self, new: &Index) -> R<bool> {
         if self.put(SName::Idx, SVal::Idx(new.clone()))? {
             return Ok(true);
         }
         self.hit("4.2/commit-failed-read-back");
-        Ok(self.idx() == *new)
+        let landed = self.idx() == *new;
+        if landed {
+            self.hit("4.2/commit-failed-but-landed");
+        }
+        Ok(landed)
     }
 
     fn gc_set(&self) -> BTreeSet<SName> {
-        match self.host.get(&SName::Gc) {
+        match self.host.read(&SName::Gc) {
             Some(SVal::Gc(s)) => s.clone(),
             _ => BTreeSet::new(),
         }
@@ -334,13 +413,13 @@ impl<'a> Cx<'a> {
     }
 
     fn rx(&self) -> BTreeSet<Digest> {
-        match self.host.get(&SName::Rx) {
+        match self.host.read(&SName::Rx) {
             Some(SVal::Rx(s)) => s.clone(),
             _ => BTreeSet::new(),
         }
     }
     fn prog(&self, t: Ver) -> BTreeMap<Ident, Digest> {
-        match self.host.get(&SName::X(t)) {
+        match self.host.read(&SName::X(t)) {
             Some(SVal::X(s)) => s.clone(),
             _ => BTreeMap::new(),
         }
@@ -357,7 +436,14 @@ impl<'a> Cx<'a> {
     // ------------------------------------------------------------ dispatch
 
     fn dispatch(&mut self, input: Input) -> R<Reply> {
+        if self.index_lost() {
+            return self.lost(input);
+        }
+        let record_bad = self.succ_malformed();
         self.process_gc()?;
+        if record_bad {
+            return self.record_malformed(input);
+        }
         match input {
             Input::Poke { flags, rec } => {
                 self.hit("6/poke");
@@ -383,10 +469,135 @@ impl<'a> Cx<'a> {
         let idx = self.idx();
         Status {
             state: idx.state,
+            index_lost: false,
+            record_malformed: self.succ_malformed(),
             problems: idx.problems,
             succ: self.succ(),
             record_result,
             sent,
+        }
+    }
+
+    // ------------------------------------------------------------ 4.5 index lost
+
+    /// A call whose index is lost (4.5): read-only mode. No writes, no gc,
+    /// no creation, no arming; no handover frame sent or answered; Poke
+    /// flags ignored; status reports partition_state 7 and problems bit 6.
+    fn lost(&mut self, input: Input) -> R<Reply> {
+        self.hit("4.5/index-lost-call");
+        match input {
+            Input::Poke { .. } => {
+                self.hit("4.5/lost/poke-reports-state-7");
+                Ok(Reply::Status(Status {
+                    state: PState::none(),
+                    index_lost: true,
+                    record_malformed: self.succ_malformed(),
+                    problems: PROBLEM_INDEX_LOST,
+                    succ: self.succ(),
+                    record_result: 0,
+                    sent: false,
+                }))
+            }
+            Input::Wakeup => Ok(Reply::None),
+            Input::Hop { frame, .. } => {
+                self.hit("4.5/lost/hop-not-answered");
+                if let Frame::Query { m, .. } = frame {
+                    self.hit("7.6q/index-lost");
+                    if m == 0 {
+                        self.hit("5.3/probe-to-index-lost-build");
+                    }
+                }
+                Ok(Reply::None)
+            }
+            Input::Op(op) => self.lost_op(op).map(Reply::Op),
+        }
+    }
+
+    /// 4.5 direct-read rule: read both parity copies of the slot; use the
+    /// entry only if exactly one decodes as a valid entry for that slot (or
+    /// both decode to the same value). Err: storage failure for that slot.
+    fn direct_read(&mut self, slot: u16) -> Result<Entry, ()> {
+        let id = (KIND_KEY, slot);
+        let vals: Vec<Entry> = [false, true]
+            .iter()
+            .filter_map(|par| match self.host.read(&SName::E(id, *par)) {
+                Some(SVal::E(e)) if e.ident() == id => Some(e),
+                _ => None,
+            })
+            .collect();
+        match vals.as_slice() {
+            [e] => Ok(e.clone()),
+            [a, b] if a == b => Ok(a.clone()),
+            [_, _] => {
+                self.hit("4.5/direct-read-two-values");
+                Err(())
+            }
+            _ => Err(()),
+        }
+    }
+
+    fn lost_op(&mut self, op: Op) -> R<OpRes> {
+        match op {
+            Op::PublicKey { slot } => {
+                self.hit("4.5/lost/read");
+                Ok(match self.direct_read(slot) {
+                    Ok(e) if e.flagged => OpRes::Unusable,
+                    Ok(e) => OpRes::Key(e.content),
+                    Err(()) => OpRes::Refused(12),
+                })
+            }
+            Op::Batch { slot, expected } => {
+                self.hit("4.5/lost/read");
+                Ok(match self.direct_read(slot) {
+                    Ok(e) if e.flagged => OpRes::Unusable,
+                    Ok(e) if e.content != expected => OpRes::Refused(14),
+                    Ok(e) => OpRes::Key(e.content),
+                    Err(()) => OpRes::Refused(12),
+                })
+            }
+            Op::Export { slot } => {
+                self.hit("4.5/lost/export");
+                Ok(match self.direct_read(slot) {
+                    Ok(e) => OpRes::Key(e.content),
+                    Err(()) => OpRes::Refused(12),
+                })
+            }
+            Op::Reset => {
+                // A fresh empty, checksummed index in state WRITER (no
+                // taken-over record, not awaiting); vault:parts keeps
+                // listing the partition.
+                if !self.ensure_parts()? {
+                    return Ok(OpRes::Refused(12));
+                }
+                let mut n = Index::none();
+                n.state = PState::Writer(WFields::default());
+                if self.commit(&n)? {
+                    self.hit("4.5/reset");
+                    self.notes.push(Note::Reset);
+                    Ok(OpRes::Ok)
+                } else {
+                    Ok(OpRes::Refused(12))
+                }
+            }
+            _ => {
+                self.hit("4.5/lost/change-refused");
+                Ok(OpRes::Refused(12))
+            }
+        }
+    }
+
+    /// vault:succ is malformed (3): the build refuses handover activity,
+    /// reports it, and keeps serving as whatever it was.
+    fn record_malformed(&mut self, input: Input) -> R<Reply> {
+        self.hit("3/record-malformed-call");
+        match input {
+            Input::Poke { .. } => Ok(Reply::Status(self.status(3, false))),
+            Input::Wakeup => Ok(Reply::None),
+            Input::Hop { .. } => {
+                self.hit("3/record-malformed-refuses-handover");
+                Ok(Reply::None)
+            }
+            Input::Op(op) => self.op(op).map(Reply::Op),
         }
     }
 
@@ -425,16 +636,25 @@ impl<'a> Cx<'a> {
             n.current = Some(rec);
             self.hit("3/record-stored");
         }
-        if !self.put(SName::Succ, SVal::Succ(n.clone()))? && self.succ() != n {
-            return Ok(0);
+        if !self.put(SName::Succ, SVal::Succ(n.clone()))? {
+            // Read vault:succ back and report the floor actually held (3).
+            self.hit("3/record-write-failed-read-back");
+            if self.succ() != n {
+                return Ok(0);
+            }
+            self.hit("3/record-write-failed-but-landed");
         }
-        // "in the same write clear any creation arming": the arming lives
-        // in the index, a different secret, so this is a second write.
+        // "in the same write clear any creation arming and creation
+        // confirmations": they live in the index, a different secret, so
+        // this is a second write.
         let mut idx = self.idx();
-        if let PState::None { armed: Some(_) } = idx.state {
-            idx.state = PState::None { armed: None };
-            self.hit("5.1/arming-cleared-by-record");
-            self.commit(&idx)?;
+        if let PState::None { armed, confirmed } = &mut idx.state {
+            if armed.is_some() || !confirmed.is_empty() {
+                *armed = None;
+                confirmed.clear();
+                self.hit("5.1/arming-cleared-by-record");
+                self.commit(&idx)?;
+            }
         }
         Ok(2)
     }
@@ -469,6 +689,7 @@ impl<'a> Cx<'a> {
     // ------------------------------------------------------------ poke
 
     fn poke(&mut self, flags: u8, rec: Option<Rec>) -> R<Status> {
+        let out_before = self.out.len();
         let mut rr = 0;
         if let Some(r) = rec {
             rr = self.accept_record(r)?;
@@ -493,28 +714,60 @@ impl<'a> Cx<'a> {
                 self.commit(&idx)?;
             }
         }
+        if flags & POKE_RESERVED_4 != 0 {
+            self.hit("12.4/poke-bit-4-ignored");
+        }
         if flags & POKE_ARM != 0 {
             let idx = self.idx();
-            if let (PState::None { armed: None }, Some(r)) = (&idx.state, rec) {
-                if r.v == self.own() && !r.withdrawal && self.succ().successor().is_none() {
-                    let mut n = idx.clone();
-                    n.state = PState::None { armed: Some(r) };
-                    self.hit("13.1/armed");
-                    self.commit(&n)?;
+            if let (PState::None { armed, .. }, Some(r)) = (&idx.state, rec) {
+                if armed.is_some() {
+                    self.hit("13.1/arm-already-armed");
+                } else if r.v == self.own() && !r.withdrawal {
+                    if self.creation_bar() {
+                        self.hit("3/creation-bar-refused-arm");
+                    } else {
+                        // 5.3 step 1: the arming record with an empty
+                        // confirmed set.
+                        let mut n = idx.clone();
+                        n.state = PState::None {
+                            armed: Some(r),
+                            confirmed: BTreeSet::new(),
+                        };
+                        if self.commit(&n)? {
+                            self.hit("13.1/armed");
+                        }
+                    }
                 } else {
                     self.hit("13.1/arm-refused");
                 }
             }
         }
-        if flags & POKE_DISCARD != 0 {
-            let idx = self.idx();
-            if let PState::Receiving { .. } = idx.state {
-                self.hit("8/discard-partial-copy");
-                self.discard_to(&idx, PState::None { armed: None })?;
+        // 5.3: a poke to an armed build sends creation probes (Query with a
+        // zero manifest digest) to its unconfirmed predecessors.
+        let idx = self.idx();
+        if let PState::None {
+            armed: Some(ar),
+            confirmed,
+        } = &idx.state
+        {
+            let unconfirmed: Vec<Ver> = self
+                .def
+                .preds
+                .iter()
+                .filter(|p| !confirmed.contains(p))
+                .copied()
+                .collect();
+            if unconfirmed.is_empty() {
+                self.hit("5.3/armed-all-confirmed");
+            }
+            for pv in unconfirmed {
+                self.hit("5.3/probe-sent");
+                self.send(pv, Frame::Query { rec: *ar, m: 0 });
             }
         }
         let w = self.p.window_poke;
-        let sent = self.step(w)?;
+        self.step(w)?;
+        let sent = self.out.len() > out_before;
         Ok(self.status(rr, sent))
     }
 
@@ -654,7 +907,9 @@ impl<'a> Cx<'a> {
         let Some(ie) = idx.entries.get(&id).copied() else {
             return Ok(None);
         };
-        let val = self.host.get(&SName::E(id, ie.parity)).cloned();
+        // Undecryptable bytes read as absent (4.0) and are handled as bytes
+        // that do not parse (4.3).
+        let val = self.host.read(&SName::E(id, ie.parity));
         if let Some(SVal::E(e)) = &val {
             if e.digest() == ie.digest {
                 return Ok(Some(e.clone()));
@@ -755,22 +1010,28 @@ impl<'a> Cx<'a> {
                 self.hit("6/predecessor-role");
                 self.on_query(from, *rec, *m).map(Some)
             }
-            Frame::CompleteAck { m, status, .. }
-                if self.p.spec.accept_query_answer
-                    && matches!(&idx.state, PState::Writer(w) if w.awaiting && w.taken_over.map(|t| t.0) == Some(from)) =>
-            {
-                self.hit("6/query-answer-applied(reading)");
+            // Section 6 row (revision 8, F1): a CompleteAck from P in
+            // PREDECESSORS answering this build's own Query.
+            Frame::CompleteAck { m, status, .. } if self.def.preds.contains(&from) => {
                 let (m, status) = (*m, *status);
-                self.on_query_answer(m, status)?;
+                match &idx.state {
+                    PState::Writer(w) if w.awaiting && w.taken_over == Some((from, m)) => {
+                        self.hit("6/query-answer/awaiting");
+                        self.on_query_answer(status)?;
+                    }
+                    PState::None { armed: Some(_), .. } if m == 0 => {
+                        self.hit("6/query-answer/armed");
+                        self.on_probe_answer(from, status)?;
+                    }
+                    _ => {
+                        self.hit("6/ignored");
+                        self.hit("6/ignored/answer-from-predecessor");
+                    }
+                }
                 Ok(None)
             }
             _ => {
                 self.hit("6/ignored");
-                if matches!(frame, Frame::CompleteAck { .. })
-                    && matches!(&idx.state, PState::Writer(w) if w.awaiting && w.taken_over.map(|t| t.0) == Some(from))
-                {
-                    self.hit("6/query-answer-ignored");
-                }
                 Ok(None)
             }
         }
@@ -891,6 +1152,7 @@ impl<'a> Cx<'a> {
                             from,
                             store_failed: false,
                         };
+                        self.ensure_parts()?;
                         self.put(SName::Rx, SVal::Rx(BTreeSet::new()))?;
                         if !self.commit(&n)? {
                             // Still NONE on disk: nothing stored.
@@ -909,6 +1171,7 @@ impl<'a> Cx<'a> {
                                 from,
                                 store_failed: false,
                             };
+                            self.ensure_parts()?;
                             if !self.commit(&n)? {
                                 return Ok(cack(CStatus::StorageFailure, vec![], hs));
                             }
@@ -1397,8 +1660,13 @@ impl<'a> Cx<'a> {
 
     // ------------------------------------------------------------ predecessor role (Query)
 
-    fn on_query(&mut self, from: Ver, rec: Rec, m: Digest) -> R<Frame> {
+    /// 7.6 Query table (revision 8). `m` zero is a creation probe (5.3).
+    fn on_query(&mut self, _from: Ver, rec: Rec, m: Digest) -> R<Frame> {
         let idx = self.idx();
+        let probe = m == 0;
+        if probe {
+            self.hit("5.3/probe-received");
+        }
         let cack = |status, succ| Frame::CompleteAck {
             tid: (self.def.v, rec),
             m,
@@ -1407,23 +1675,11 @@ impl<'a> Cx<'a> {
             missing: vec![],
         };
         match idx.state.clone() {
-            PState::Retired { .. } => {
-                self.hit("7.6q/RETIRED");
+            PState::Retired { to, m: rm, .. } if to == rec && rm == m && !probe => {
+                self.hit("7.6q/RETIRED-to-querier-same-m");
                 Ok(cack(CStatus::Noted, self.succ().highest()))
             }
-            PState::None { .. } => {
-                self.hit("7.6q/NONE");
-                self.accept_record(rec)?;
-                let s = self.succ();
-                let known = s.current.is_some_and(|c| c.v >= rec.v)
-                    || s.withdrawal.is_some_and(|w| w.v >= rec.v);
-                if known {
-                    Ok(cack(CStatus::Noted, s.highest()))
-                } else {
-                    Ok(cack(CStatus::StorageFailure, s.highest()))
-                }
-            }
-            PState::Sealed { target, m: sm, w } if target.v == from && sm == m => {
+            PState::Sealed { target, m: sm, w } if target == rec && sm == m && !probe => {
                 self.hit("7.6q/SEALED-toward-querier-same-m");
                 if self.retire(&idx, target, m, w.taken_over)? {
                     Ok(cack(CStatus::Noted, self.succ().highest()))
@@ -1431,35 +1687,102 @@ impl<'a> Cx<'a> {
                     Ok(cack(CStatus::StorageFailure, self.succ().highest()))
                 }
             }
-            _ => {
+            PState::None { .. } => {
+                self.hit(if probe {
+                    "7.6q/NONE/probe"
+                } else {
+                    "7.6q/NONE/query"
+                });
+                self.accept_record(rec)?;
+                // "answers 0x0B only if the record is there": a stored
+                // non-withdrawal record at or above the querier's version,
+                // which is what raises this build's creation bar against it.
+                let s = self.succ();
+                if s.current.is_some_and(|c| c.v >= rec.v) {
+                    self.hit("7.6q/NONE-record-stored");
+                    Ok(cack(CStatus::NoState, s.highest()))
+                } else {
+                    self.hit("7.6q/NONE-storage-failure");
+                    Ok(cack(CStatus::StorageFailure, s.highest()))
+                }
+            }
+            st => {
                 self.hit("7.6q/anything-else");
+                if matches!(st, PState::Retired { .. }) {
+                    self.hit("7.6q/anything-else/RETIRED-elsewhere-or-other-m");
+                }
+                if probe {
+                    self.hit("5.3/probe-answered-state");
+                }
                 Ok(cack(CStatus::AnotherWriter, self.succ().highest()))
             }
         }
     }
 
-    fn on_query_answer(&mut self, m: Digest, status: CStatus) -> R<()> {
+    /// Section 6 row, awaiting: the answer to this build's Query from the
+    /// build it took over from, at the m it took over at.
+    fn on_query_answer(&mut self, status: CStatus) -> R<()> {
         let idx = self.idx();
-        let PState::Writer(w) = &idx.state else {
+        let PState::Writer(_) = &idx.state else {
             return Ok(());
         };
-        if w.taken_over.map(|t| t.1) != Some(m) {
-            return Ok(());
-        }
         let mut n = idx.clone();
-        if status == CStatus::Noted {
-            if let PState::Writer(w) = &mut n.state {
-                w.awaiting = false;
+        match status {
+            CStatus::Noted | CStatus::NoState => {
+                if let PState::Writer(w) = &mut n.state {
+                    w.awaiting = false;
+                }
+                if self.commit(&n)? {
+                    self.hit(&format!("6/query-answer/awaiting-cleared/{status:?}"));
+                    self.notes.push(Note::AwaitingCleared);
+                }
             }
-            if self.commit(&n)? {
-                self.hit("7.4/awaiting-cleared-by-query");
-                self.notes.push(Note::AwaitingCleared);
+            CStatus::AnotherWriter => {
+                self.hit("6/query-answer/awaiting/AnotherWriter");
+                n.problems |= PROBLEM_ANOTHER_WRITER;
+                if n != idx {
+                    self.commit(&n)?;
+                }
             }
-        } else {
-            n.problems |= PROBLEM_ANOTHER_WRITER;
-            if n != idx {
-                self.commit(&n)?;
+            s => self.hit(&format!("6/query-answer/awaiting/other/{s:?}")),
+        }
+        Ok(())
+    }
+
+    /// 5.3 step 3: the answer to a creation probe, applied in the call that
+    /// delivers it.
+    fn on_probe_answer(&mut self, p: Ver, status: CStatus) -> R<()> {
+        let idx = self.idx();
+        let PState::None {
+            armed: Some(_),
+            confirmed,
+        } = &idx.state
+        else {
+            return Ok(());
+        };
+        match status {
+            CStatus::NoState => {
+                if confirmed.contains(&p) {
+                    self.hit("5.3/confirmed-again");
+                    return Ok(());
+                }
+                let mut n = idx.clone();
+                if let PState::None { confirmed, .. } = &mut n.state {
+                    confirmed.insert(p);
+                }
+                if self.commit(&n)? {
+                    self.hit("5.3/confirmed");
+                }
             }
+            CStatus::AnotherWriter => {
+                // The predecessor holds state: clear the arming.
+                let mut n = idx.clone();
+                n.state = PState::none();
+                if self.commit(&n)? {
+                    self.hit("5.3/arming-cleared-by-state-answer");
+                }
+            }
+            s => self.hit(&format!("5.3/probe-answer-other/{s:?}")),
         }
         Ok(())
     }
@@ -1467,6 +1790,14 @@ impl<'a> Cx<'a> {
     // ------------------------------------------------------------ operations
 
     fn op(&mut self, op: Op) -> R<OpRes> {
+        if op == Op::Reset {
+            // only while problems bit 6 is set (4.5)
+            self.hit("4.5/reset-refused-index-not-lost");
+            return Ok(OpRes::Refused(8));
+        }
+        if let Op::ImportExported { .. } = op {
+            return Ok(OpRes::Refused(5));
+        }
         let idx = self.idx();
         let s = self.succ();
         let change = op.is_change();
@@ -1479,17 +1810,32 @@ impl<'a> Cx<'a> {
             "read"
         };
         match &idx.state {
-            PState::None { armed } => {
+            PState::None { armed, confirmed } => {
                 self.hit(&format!("5.1/NONE/{kind}"));
-                if change && armed.is_some() && s.successor().is_none() {
-                    let mut n = idx.clone();
-                    n.state = PState::Writer(WFields::default());
-                    if !self.commit(&n)? {
-                        return Ok(OpRes::Refused(12));
+                if change && armed.is_some() {
+                    let all = self.def.preds.iter().all(|p| confirmed.contains(p));
+                    if self.creation_bar() {
+                        self.hit("3/creation-bar-refused-create");
+                    } else if !all {
+                        self.hit("5.3/create-refused-unconfirmed");
+                    } else if self.succ_malformed() {
+                        self.hit("3/record-malformed-refused-create");
+                    } else {
+                        if !self.ensure_parts()? {
+                            return Ok(OpRes::Refused(12));
+                        }
+                        let mut n = idx.clone();
+                        n.state = PState::Writer(WFields::default());
+                        if !self.commit(&n)? {
+                            return Ok(OpRes::Refused(12));
+                        }
+                        self.hit("5.1/created");
+                        if !self.def.preds.is_empty() {
+                            self.hit("5.3/created-after-every-predecessor-confirmed");
+                        }
+                        self.notes.push(Note::Created);
+                        return self.serve(op);
                     }
-                    self.hit("5.1/created");
-                    self.notes.push(Note::Created);
-                    return self.serve(op);
                 }
                 Ok(match s.successor() {
                     Some(c) => OpRes::Moved(c),
@@ -1526,6 +1872,11 @@ impl<'a> Cx<'a> {
 
     fn serve(&mut self, op: Op) -> R<OpRes> {
         match op {
+            Op::Export { slot } => Ok(match self.read_key(slot)? {
+                None => OpRes::Absent,
+                Some(e) => OpRes::Key(e.content),
+            }),
+            Op::Reset | Op::ImportExported { .. } => Ok(OpRes::Refused(5)),
             Op::PublicKey { slot } => Ok(match self.read_key(slot)? {
                 None => OpRes::Absent,
                 Some(e) if e.flagged => OpRes::Unusable,
@@ -1594,7 +1945,7 @@ impl<'a> Cx<'a> {
                 let idx = self.idx();
                 let cur = idx.entries.get(&id).copied();
                 if let Some(ie) = cur {
-                    if let Some(SVal::E(e)) = self.host.get(&SName::E(id, ie.parity)) {
+                    if let Some(SVal::E(e)) = self.host.read(&SName::E(id, ie.parity)) {
                         if e.content >= rec {
                             return Ok(OpRes::Ok);
                         }

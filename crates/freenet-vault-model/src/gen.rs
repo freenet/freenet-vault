@@ -128,10 +128,15 @@ pub enum Family {
     /// Many changes per load, so that a writer runs near the entry
     /// maximum while copying and the receiver's staging fills (8).
     Busy,
+    /// Damaged and undecryptable secrets (the index and vault:parts
+    /// included), read faults and write faults, with no restores or wipes,
+    /// so that index loss (4.5) is checked where I1 and I3 apply.
+    Damage,
 }
 
 pub fn family_of(seed: u64) -> Family {
     match seed % 8 {
+        5 => Family::Damage,
         6 => Family::RestoreHeavy,
         7 => Family::Busy,
         _ => Family::General,
@@ -152,6 +157,10 @@ pub fn gen_scenario(seed: u64, cfg: &Cfg) -> Scenario {
         prof.fault = prof.fault.max(0.08);
     }
     if family == Family::Busy {
+        prof.fault = prof.fault.max(0.08);
+    }
+    if family == Family::Damage {
+        prof.restores = false;
         prof.fault = prof.fault.max(0.08);
     }
     let n = 60 + rng.below(241) as usize;
@@ -256,13 +265,26 @@ pub fn gen_scenario(seed: u64, cfg: &Cfg) -> Scenario {
                 3 => Action::Garble {
                     b: rng.below(NBUILDS as u64) as u8,
                     pick: rng.below(64) as u16,
+                    undecryptable: rng.chance(0.5),
+                },
+                _ => Action::Crash,
+            }
+        } else if prof.family == Family::Damage && rng.chance(0.4) {
+            match rng.below(4) {
+                0 | 1 => Action::Garble {
+                    b: rng.below(NBUILDS as u64) as u8,
+                    pick: rng.below(64) as u16,
+                    undecryptable: rng.chance(0.5),
+                },
+                2 => Action::ArmReadFault {
+                    after: rng.below(24) as u8,
                 },
                 _ => Action::Crash,
             }
         } else if !rng.chance(f * 4.0) {
             continue;
         } else {
-            match rng.below(10) {
+            match rng.below(11) {
                 0 => Action::Crash,
                 1..=3 => Action::ArmWriteFault {
                     after: rng.below(8) as u8,
@@ -271,7 +293,11 @@ pub fn gen_scenario(seed: u64, cfg: &Cfg) -> Scenario {
                         WriteFault::CrashAfter,
                         WriteFault::Fail,
                         WriteFault::DurableButError,
-                    ][rng.below(4) as usize],
+                        WriteFault::LandedButError,
+                    ][rng.below(5) as usize],
+                },
+                10 => Action::ArmReadFault {
+                    after: rng.below(24) as u8,
                 },
                 4 => Action::Quota {
                     limit: if rng.chance(0.5) {
@@ -299,6 +325,7 @@ pub fn gen_scenario(seed: u64, cfg: &Cfg) -> Scenario {
                 _ => Action::Garble {
                     b: rng.below(NBUILDS as u64) as u8,
                     pick: rng.below(64) as u16,
+                    undecryptable: rng.chance(0.5),
                 },
             }
         };

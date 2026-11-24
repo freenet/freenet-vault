@@ -154,9 +154,18 @@ pub enum Action {
     Wipe {
         b: u8,
     },
+    /// Damage one secret of build `b`: bytes that no longer parse, or
+    /// (`undecryptable`) bytes that fail authentication and read as absent
+    /// (4.0). Any secret, the index and vault:parts included (15.3).
     Garble {
         b: u8,
         pick: u16,
+        undecryptable: bool,
+    },
+    /// The n-th secret read from now fails with an I/O error: the call is
+    /// poisoned (4.0).
+    ArmReadFault {
+        after: u8,
     },
     /// A cached caller: addresses the build it last used (`b: None`), or a
     /// build it used long ago (`b: Some`).
@@ -236,7 +245,12 @@ enum LoopItem {
         input: Input,
     },
     /// A client operation the lane forwarded.
-    Op { rid: usize, b: usize, op: Op },
+    Op {
+        rid: usize,
+        sid: Option<usize>,
+        b: usize,
+        op: Op,
+    },
 }
 
 /// Core: `MAX_PENDING_UNITS`.
@@ -261,7 +275,6 @@ struct Session {
     statuses: BTreeMap<Ver, Option<Status>>,
     rounds: u8,
     again: BTreeSet<Ver>,
-    discard: BTreeSet<Ver>,
     ops: VecDeque<Op>,
     target: Option<Ver>,
     run: Option<usize>,
@@ -320,6 +333,10 @@ pub struct World {
     pub violation: Option<Violation>,
     step_no: usize,
     pub sealed_corrupt_sent: u64,
+    /// Repair flow (4.5): seeds each session exported, and sessions whose
+    /// ResetPartition succeeded.
+    exports: BTreeMap<usize, BTreeMap<u16, u32>>,
+    reset_done: BTreeSet<usize>,
 }
 
 impl World {
@@ -354,6 +371,8 @@ impl World {
             violation: None,
             step_no: 0,
             sealed_corrupt_sent: 0,
+            exports: BTreeMap::new(),
+            reset_done: BTreeSet::new(),
             cfg,
         }
     }
@@ -390,9 +409,48 @@ impl World {
 
     // ---------------------------------------------------------- build calls
 
-    /// One vault call. None if the node crashed inside it.
+    /// One vault call. None if the node crashed inside it. A call poisoned
+    /// by a read fault (4.0) has its outputs discarded and is retried once
+    /// (the read fault is consumed by the first attempt).
     fn call(&mut self, b: usize, input: Input) -> Option<build::Output> {
+        let out = self.call_once(b, input.clone())?;
+        if !out.poisoned {
+            return Some(out);
+        }
+        self.cov.hit("fault/read-poisoned");
+        self.log(|| {
+            format!(
+                "  {} call poisoned: outputs discarded, request retried",
+                ver(b)
+            )
+        });
+        if let Input::Op(op) = &input {
+            // the first attempt's writes before the failed read stand
+            if let Some((id, v)) = intended_value(op, &self.oracle) {
+                self.oracle.entry(id).or_default().maybe.push(v);
+            }
+        }
+        let out = self.call_once(b, input)?;
+        if out.poisoned {
+            // a second armed read fault: drop the request
+            return None;
+        }
+        Some(out)
+    }
+
+    fn call_once(&mut self, b: usize, input: Input) -> Option<build::Output> {
         let before = self.stores[b].idx_or_none();
+        let before_lost = self.stores[b].index_lost();
+        let before_succ = self.stores[b].succ();
+        let probe_to_none = before.state.is_none()
+            && !before_lost
+            && matches!(
+                &input,
+                Input::Hop {
+                    frame: Frame::Query { m: 0, .. },
+                    ..
+                }
+            );
         let fired_before = self.faults.fired.len();
         let quota_before = self.faults.quota_hits;
         let desc = if self.cfg.trace {
@@ -419,6 +477,7 @@ impl World {
                 WriteFault::CrashAfter => "fault/crash-after-write",
                 WriteFault::Fail => "fault/storage-failure",
                 WriteFault::DurableButError => "fault/durable-but-error",
+                WriteFault::LandedButError => "fault/landed-but-error",
             });
         }
         if self.faults.quota_hits > quota_before {
@@ -439,7 +498,12 @@ impl World {
         match res {
             Err(Crash) => {
                 self.log(|| format!("  {} {desc} -> CRASH inside the call", ver(b)));
-                self.check_transition(b, &before, &after, &notes);
+                if probe_to_none && self.stores[b].succ() != before_succ {
+                    // decision 1 condition: the older build crashes between
+                    // storing the record and answering "no state"
+                    self.cov.hit("5.3/probe-crash-after-record-stored");
+                }
+                self.check_transition(b, &before, before_lost, &after, &notes);
                 self.crash_node();
                 None
             }
@@ -458,7 +522,7 @@ impl World {
                         after.state.code()
                     )
                 });
-                self.check_transition(b, &before, &after, &notes);
+                self.check_transition(b, &before, before_lost, &after, &notes);
                 Some(out)
             }
         }
@@ -561,6 +625,9 @@ impl World {
                 } else {
                     "fault/hop-lost"
                 });
+                if is_nostate(&hop.frame) {
+                    self.cov.hit("5.3/nostate-answer-lost");
+                }
                 self.log(|| format!("  drop {}->{} {}", hop.from, hop.to, hop.frame.short()));
                 return;
             }
@@ -575,6 +642,9 @@ impl World {
             }
             Fate::Duplicate if self.cfg.adversarial => {
                 self.cov.hit("adv/duplicated");
+                if is_nostate(&hop.frame) {
+                    self.cov.hit("adv/nostate-answer-duplicated");
+                }
                 if let Some(r) = r {
                     if let Some(run) = self.runs.get_mut(&r) {
                         run.queue.push_back(hop.clone());
@@ -750,7 +820,7 @@ impl World {
     /// the loop does later and the session waits for it.
     fn client_op(&mut self, sid: Option<usize>, b: usize, op: Op) {
         if self.lane_free(b) {
-            self.do_op(b, op);
+            self.do_op(b, op, sid);
             return;
         }
         self.cov.hit("core/forwarded-to-loop");
@@ -759,7 +829,7 @@ impl World {
         if let Some(s) = sid.and_then(|sid| self.sessions.get_mut(&sid)) {
             s.run = Some(rid);
         }
-        self.lq.push_back(LoopItem::Op { rid, b, op });
+        self.lq.push_back(LoopItem::Op { rid, sid, b, op });
     }
 
     /// The first call of a run. Its hops make it a run: a pending unit if
@@ -825,8 +895,8 @@ impl World {
             LoopItem::Req { rid, sid, b, input } => {
                 self.first_call(rid, b, RunKind::Client(sid), input, false);
             }
-            LoopItem::Op { rid, b, op } => {
-                self.do_op(b, op);
+            LoopItem::Op { rid, sid, b, op } => {
+                self.do_op(b, op, sid);
                 self.finish_request(rid);
             }
         }
@@ -928,6 +998,9 @@ impl World {
             match fate {
                 Fate::Drop => {
                     self.cov.hit("fault/reply-lost");
+                    if is_nostate(&f) {
+                        self.cov.hit("5.3/nostate-answer-lost");
+                    }
                     self.log(|| format!("  drop reply {rfrom}->{from} {}", f.short()));
                     return;
                 }
@@ -1043,6 +1116,9 @@ impl World {
             Action::ArmWriteFault { after, fault } => {
                 self.faults.armed = Some((after as u32, fault));
             }
+            Action::ArmReadFault { after } => {
+                self.faults.read_armed = Some(after as u32);
+            }
             Action::Quota { limit } => {
                 self.faults.quota = limit.map(|l| l as usize);
             }
@@ -1101,22 +1177,61 @@ impl World {
                 self.taint_unheld();
                 self.restored = true;
             }
-            Action::Garble { b, pick } => {
+            Action::Garble {
+                b,
+                pick,
+                undecryptable,
+            } => {
                 let b = b as usize % NBUILDS;
                 let es: Vec<SName> = self.stores[b]
                     .secrets
-                    .keys()
-                    .filter(|n| matches!(n, SName::E(..)))
-                    .copied()
+                    .iter()
+                    .filter(|(_, v)| !matches!(v, SVal::Garbled | SVal::Undecryptable))
+                    .map(|(n, _)| *n)
                     .collect();
                 if !es.is_empty() {
                     let n = es[pick as usize % es.len()];
+                    let had_state = self.stores[b].has_state();
                     self.cov.hit("fault/garble-secret");
+                    self.cov.hit(&format!(
+                        "fault/{}/{}",
+                        if undecryptable {
+                            "undecryptable"
+                        } else {
+                            "malformed"
+                        },
+                        match n {
+                            SName::Succ => "succ",
+                            SName::Parts => "parts",
+                            SName::Idx => "index",
+                            SName::E(..) => "entry",
+                            SName::X(_) => "progress",
+                            SName::Rx => "rx",
+                            SName::Gc => "gc",
+                        }
+                    ));
                     if let SName::E(id, _) = n {
                         self.tainted.insert(id);
                     }
-                    self.stores[b].secrets.insert(n, SVal::Garbled);
+                    self.stores[b].secrets.insert(
+                        n,
+                        if undecryptable {
+                            SVal::Undecryptable
+                        } else {
+                            SVal::Garbled
+                        },
+                    );
                     self.garbled = true;
+                    // 4.4: an unreadable vault:succ is a loss of vault:succ,
+                    // and a store that now reads as NONE (index and
+                    // vault:parts both unreadable) is the same as a wipe:
+                    // stated residuals of the same class as restores.
+                    let reads_none = !self.stores[b].index_lost() && self.stores[b].idx().is_none();
+                    if (n == SName::Succ && undecryptable) || (had_state && reads_none) {
+                        self.cov.hit("fault/garble-equivalent-to-wipe-or-restore");
+                        self.restored = true;
+                    }
+                    self.taint_unheld();
                 }
             }
             Action::Cached { op, b } => {
@@ -1131,7 +1246,7 @@ impl World {
                         if self.core() {
                             self.client_op(None, b, op);
                         } else {
-                            self.do_op(b, op);
+                            self.do_op(b, op, None);
                         }
                     }
                 }
@@ -1196,7 +1311,6 @@ impl World {
                 statuses: BTreeMap::new(),
                 rounds: 0,
                 again: BTreeSet::new(),
-                discard: BTreeSet::new(),
                 ops: ops.into(),
                 target: None,
                 run: None,
@@ -1217,7 +1331,7 @@ impl World {
                 }
                 let v = s.bundle[i];
                 self.sessions.get_mut(&sid).unwrap().phase = Phase::Poke(i + 1);
-                if s.rounds > 0 && !s.again.contains(&v) && !s.discard.contains(&v) {
+                if s.rounds > 0 && !s.again.contains(&v) {
                     return self.session_next(sid);
                 }
                 let b = bi(v);
@@ -1228,9 +1342,6 @@ impl World {
                     if !r.withdrawal && !s.bundle.contains(&r.v) {
                         flags |= build::POKE_PAUSE;
                     }
-                }
-                if s.discard.contains(&v) {
-                    flags |= build::POKE_DISCARD;
                 }
                 if self.core() {
                     let rec = s.fetched;
@@ -1273,7 +1384,7 @@ impl World {
                 if self.core() {
                     self.client_op(Some(sid), b, op);
                 } else {
-                    self.do_op(b, op);
+                    self.do_op(b, op, Some(sid));
                 }
             }
             Phase::Done => {
@@ -1291,51 +1402,27 @@ impl World {
             .filter(|(_, st)| st.as_ref().is_some_and(|st| st.sent))
             .map(|(v, _)| *v)
             .collect();
-        // discard an abandoned partial copy (8, Poke bit 4)
-        let mut discard = BTreeSet::new();
-        for (v, st) in &s.statuses {
-            if let Some(Status {
-                state: PState::Receiving { from, .. },
-                ..
-            }) = st
-            {
-                match s.statuses.get(from) {
-                    Some(Some(Status {
-                        state: PState::Retired { to, .. },
-                        ..
-                    })) if to.v != *v => {
-                        discard.insert(*v);
-                    }
-                    Some(Some(Status {
-                        state: PState::Sealed { target, .. },
-                        ..
-                    })) if target.v != *v => {
-                        discard.insert(*v);
-                    }
-                    _ => {}
-                }
-            }
-        }
-        if (!again.is_empty() || !discard.is_empty()) && s.rounds < 8 && s.discard != discard {
-            let sess = self.sessions.get_mut(&sid).unwrap();
-            sess.rounds += 1;
-            sess.again = again;
-            sess.discard = discard;
-            sess.phase = Phase::Poke(0);
-            return self.session_next(sid);
-        }
+        // Poke bit 4 is reserved since revision 8 (F6): a partial copy is
+        // never discarded on a page's request.
         if !again.is_empty() && s.rounds < 8 {
             let sess = self.sessions.get_mut(&sid).unwrap();
             sess.rounds += 1;
             sess.again = again;
-            sess.discard = BTreeSet::new();
             sess.phase = Phase::Poke(0);
             return self.session_next(sid);
         }
-        let states: BTreeMap<Ver, Option<PState>> = s
+        let states: BTreeMap<Ver, Option<Seen>> = s
             .bundle
             .iter()
-            .map(|v| (*v, s.statuses.get(v).cloned().flatten().map(|st| st.state)))
+            .map(|v| {
+                (
+                    *v,
+                    s.statuses.get(v).cloned().flatten().map(|st| Seen {
+                        state: st.state,
+                        lost: st.index_lost,
+                    }),
+                )
+            })
             .collect();
         let create = match s.fetched {
             Some(r) if !r.withdrawal => Some(r),
@@ -1349,6 +1436,21 @@ impl World {
             Route::Writer(v) => {
                 sess.target = Some(v);
                 sess.phase = Phase::Ops;
+            }
+            Route::ReadOnly(v) => {
+                // 4.5: reads use the damaged build; the UI offers the repair
+                // (export every slot it knows, ResetPartition, re-import),
+                // after the session's own requests.
+                self.cov.hit("4.5/courier-selects-damaged-build");
+                sess.target = Some(v);
+                sess.phase = Phase::Ops;
+                for slot in 0..4 {
+                    sess.ops.push_back(Op::Export { slot });
+                }
+                sess.ops.push_back(Op::Reset);
+                for slot in 0..4 {
+                    sess.ops.push_back(Op::ImportExported { slot });
+                }
             }
             Route::Create(v) => {
                 sess.target = Some(v);
@@ -1381,8 +1483,34 @@ impl World {
         }
     }
 
-    fn do_op(&mut self, b: usize, op: Op) {
+    fn do_op(&mut self, b: usize, op: Op, sid: Option<usize>) {
         let mut op = op;
+        // 4.5 step 6: re-import an exported seed the UI checked against the
+        // slot's expected public key (the UI's own data: the oracle).
+        if let Op::ImportExported { slot } = op {
+            let Some(sid) = sid else { return };
+            let id = (KIND_KEY, slot);
+            let p = self.oracle.get(&id).cloned().unwrap_or_default();
+            let seed = self.exports.get(&sid).and_then(|e| e.get(&slot)).copied();
+            match seed {
+                Some(seed) if p.allows(&Some(key_entry(slot, seed))) => {
+                    op = Op::Import {
+                        slot,
+                        seed,
+                        replace: true,
+                    };
+                }
+                _ => {
+                    if self.reset_done.contains(&sid) && !p.allows(&None) {
+                        // "these keys could not be recovered" (4.5 step 7):
+                        // a stated residual
+                        self.cov.hit("4.5/repair-key-not-recovered");
+                        self.tainted.insert(id);
+                    }
+                    return;
+                }
+            }
+        }
         if let Op::Batch { slot, expected } = &mut op {
             if *expected == 0 {
                 *expected = self
@@ -1404,6 +1532,16 @@ impl World {
         };
         let Reply::Op(r) = out.reply else { return };
         self.log(|| format!("  op {op:?} at {} -> {r:?}", ver(b)));
+        match (&op, &r, sid) {
+            (Op::Export { slot }, OpRes::Key(k), Some(sid)) => {
+                self.exports.entry(sid).or_default().insert(*slot, *k);
+            }
+            (Op::Reset, OpRes::Ok, Some(sid)) => {
+                self.cov.hit("4.5/repair-reset-done");
+                self.reset_done.insert(sid);
+            }
+            _ => {}
+        }
         match (&op, &r) {
             (Op::PublicKey { slot }, OpRes::Key(k)) | (Op::Batch { slot, .. }, OpRes::Key(k)) => {
                 let id = (KIND_KEY, *slot);
@@ -1477,7 +1615,14 @@ impl World {
         }
     }
 
-    fn check_transition(&mut self, b: usize, before: &Index, after: &Index, notes: &[Note]) {
+    fn check_transition(
+        &mut self,
+        b: usize,
+        before: &Index,
+        before_lost: bool,
+        after: &Index,
+        notes: &[Note],
+    ) {
         let v = ver(b);
         // I4: no unseal without a "did not take over" answer from the target
         if let (PState::Sealed { target, m, .. }, PState::Writer(_)) = (&before.state, &after.state)
@@ -1531,8 +1676,35 @@ impl World {
             }
         }
         // I5: creation only with no state anywhere
+        let reset = notes.iter().any(|n| matches!(n, Note::Reset));
+        if reset {
+            // 4.5: resetting a damaged build while another build is WRITER
+            // or SEALED makes a second writer.
+            self.cov.hit("4.5/reset-applied");
+            for o in 0..NBUILDS {
+                if o != b
+                    && !self.stores[o].index_lost()
+                    && matches!(
+                        self.stores[o].idx_or_none().state,
+                        PState::Writer(_) | PState::Sealed { .. }
+                    )
+                    && !self.restored
+                {
+                    self.fail(
+                        "I1",
+                        format!(
+                            "build {v} was reset to WRITER while build {} is {}",
+                            ver(o),
+                            self.stores[o].idx_or_none().state.code()
+                        ),
+                    );
+                }
+            }
+        }
         let created = notes.iter().any(|n| matches!(n, Note::Created))
             || (before.state.is_none()
+                && !before_lost
+                && !reset
                 && matches!(&after.state, PState::Writer(w) if w.taken_over.is_none()));
         if created {
             self.cov.hit("I5/creation");
@@ -1556,13 +1728,34 @@ impl World {
 
     fn accepting_writers(&self) -> Vec<Ver> {
         (0..NBUILDS)
-            .filter(|b| matches!(self.stores[*b].idx_or_none().state, PState::Writer(ref w) if !w.awaiting))
+            .filter(|b| {
+                !self.stores[*b].index_lost()
+                    && matches!(self.stores[*b].idx_or_none().state, PState::Writer(ref w) if !w.awaiting)
+            })
             .map(ver)
             .collect()
     }
 
-    /// The value a build's committed store holds for an identity.
+    /// The value a build's committed store holds for an identity. A build
+    /// whose index is lost holds what the direct-read rule of 4.5 finds.
     fn held_value(&self, b: usize, id: Ident) -> Result<Option<Entry>, ()> {
+        if self.stores[b].index_lost() {
+            let vals: Vec<Entry> = [false, true]
+                .iter()
+                .filter_map(
+                    |par| match self.stores[b].secrets.get(&SName::E(id, *par)) {
+                        Some(SVal::E(e)) if e.ident() == id => Some(e.clone()),
+                        _ => None,
+                    },
+                )
+                .collect();
+            return match vals.as_slice() {
+                [] => Ok(None),
+                [e] => Ok(Some(e.clone())),
+                [a, b] if a == b => Ok(Some(a.clone())),
+                _ => Err(()),
+            };
+        }
         let idx = self.stores[b].idx_or_none();
         let Some(ie) = idx.entries.get(&id) else {
             return Ok(None);
@@ -1590,8 +1783,16 @@ impl World {
 
     /// The writer chosen by 5.2 by a courier that sees every build.
     pub fn omniscient_writer(&self) -> Route {
-        let states: BTreeMap<Ver, Option<PState>> = (0..NBUILDS)
-            .map(|b| (ver(b), Some(self.stores[b].idx_or_none().state)))
+        let states: BTreeMap<Ver, Option<Seen>> = (0..NBUILDS)
+            .map(|b| {
+                (
+                    ver(b),
+                    Some(Seen {
+                        state: self.stores[b].idx_or_none().state,
+                        lost: self.stores[b].index_lost(),
+                    }),
+                )
+            })
             .collect();
         route(&states, None)
     }
@@ -1599,6 +1800,18 @@ impl World {
     fn check_state(&mut self) {
         if self.violation.is_some() {
             return;
+        }
+        let armed = (0..NBUILDS)
+            .filter(|b| {
+                matches!(
+                    self.stores[*b].idx_or_none().state,
+                    PState::None { armed: Some(_), .. }
+                )
+            })
+            .count();
+        if armed >= 2 {
+            // decision 1 condition: two new builds racing to create
+            self.cov.hit("5.3/two-builds-armed-at-once");
         }
         // I1
         let w = self.accepting_writers();
@@ -1630,7 +1843,7 @@ impl World {
         // I2 / I8: acknowledged values held by the chosen writer
         let oracle = self.oracle.clone();
         match self.omniscient_writer() {
-            Route::Writer(v) => {
+            Route::Writer(v) | Route::ReadOnly(v) => {
                 let b = bi(v);
                 for (id, p) in &oracle {
                     if self.tainted.contains(id) {
@@ -1662,7 +1875,9 @@ impl World {
                 if !self.restored {
                     for o in 0..NBUILDS {
                         let st = self.stores[o].idx_or_none().state;
-                        if !matches!(st, PState::Writer(_) | PState::Sealed { .. }) {
+                        if self.stores[o].index_lost()
+                            || !matches!(st, PState::Writer(_) | PState::Sealed { .. })
+                        {
                             continue;
                         }
                         for (id, p) in &oracle {
@@ -1868,9 +2083,23 @@ fn intended_value(op: &Op, _oracle: &BTreeMap<Ident, Possible>) -> Option<(Ident
     }
 }
 
+/// A CompleteAck "no state, your record stored" (0x0B).
+fn is_nostate(f: &Frame) -> bool {
+    matches!(
+        f,
+        Frame::CompleteAck {
+            status: CStatus::NoState,
+            ..
+        }
+    )
+}
+
 fn short_reply(r: &Reply) -> String {
     match r {
         Reply::None => "-".into(),
+        Reply::Status(s) if s.index_lost => {
+            format!("Status(INDEX-LOST(7), rec {})", s.record_result)
+        }
         Reply::Status(s) => format!("Status({}, rec {})", s.state.code(), s.record_result),
         Reply::Op(o) => format!("{o:?}"),
         Reply::Frame(f) => f.short(),
@@ -1881,49 +2110,80 @@ fn short_reply(r: &Reply) -> String {
 pub enum Route {
     Writer(Ver),
     Create(Ver),
+    /// 5.2 step 4: no writer, one build reports partition_state 7 (index
+    /// lost); callers use it for reads and the UI offers the repair of 4.5.
+    ReadOnly(Ver),
     Unavailable,
 }
 
+/// What a probe of one build reports: its partition state, or
+/// partition_state 7 "unknown: index lost".
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Seen {
+    pub state: PState,
+    pub lost: bool,
+}
+
 /// 5.2 steps 3 to 6. `None` in `states` is a build that did not answer.
-pub fn route(states: &BTreeMap<Ver, Option<PState>>, create: Option<Rec>) -> Route {
+pub fn route(states: &BTreeMap<Ver, Option<Seen>>, create: Option<Rec>) -> Route {
+    let st = |v: &Ver| -> Option<&PState> {
+        match states.get(v) {
+            Some(Some(s)) if !s.lost => Some(&s.state),
+            _ => None,
+        }
+    };
     let writers: Vec<Ver> = states
-        .iter()
-        .filter(|(_, s)| matches!(s, Some(PState::Writer(_))))
-        .map(|(v, _)| *v)
+        .keys()
+        .filter(|v| matches!(st(v), Some(PState::Writer(_))))
+        .copied()
         .collect();
     if let Some(v) = writers.iter().max() {
         return Route::Writer(*v);
     }
     let sealed: Vec<Ver> = states
-        .iter()
-        .filter(|(_, s)| matches!(s, Some(PState::Sealed { .. })))
-        .map(|(v, _)| *v)
+        .keys()
+        .filter(|v| matches!(st(v), Some(PState::Sealed { .. })))
+        .copied()
         .collect();
     if let Some(v) = sealed.iter().max() {
         return Route::Writer(*v);
     }
-    let retired: Vec<Ver> = states
+    let lost: Vec<Ver> = states
         .iter()
-        .filter(|(_, s)| matches!(s, Some(PState::Retired { .. })))
+        .filter(|(_, s)| matches!(s, Some(Seen { lost: true, .. })))
         .map(|(v, _)| *v)
+        .collect();
+    match lost.as_slice() {
+        [v] => return Route::ReadOnly(*v),
+        [] => {}
+        _ => return Route::Unavailable,
+    }
+    let retired: Vec<Ver> = states
+        .keys()
+        .filter(|v| matches!(st(v), Some(PState::Retired { .. })))
+        .copied()
         .collect();
     if let Some(&start) = retired.first() {
         let mut v = start;
         for _ in 0..NBUILDS + 1 {
-            match states.get(&v) {
-                Some(Some(PState::Retired { to, .. })) => v = to.v,
-                Some(Some(PState::Writer(_))) | Some(Some(PState::Sealed { .. })) => {
-                    return Route::Writer(v)
-                }
+            match st(&v) {
+                Some(PState::Retired { to, .. }) => v = to.v,
+                Some(PState::Writer(_)) | Some(PState::Sealed { .. }) => return Route::Writer(v),
                 _ => return Route::Unavailable,
             }
         }
         return Route::Unavailable;
     }
-    if states
-        .values()
-        .any(|s| s.is_none() || matches!(s, Some(PState::Receiving { .. })))
-    {
+    if states.values().any(|s| {
+        s.is_none()
+            || matches!(
+                s,
+                Some(Seen {
+                    state: PState::Receiving { .. },
+                    ..
+                })
+            )
+    }) {
         return Route::Unavailable;
     }
     match create {

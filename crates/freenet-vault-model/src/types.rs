@@ -1,4 +1,4 @@
-//! Abstract values of the handover protocol (revision 7).
+//! Abstract values of the handover protocol (revision 8).
 //!
 //! Byte layouts are not modelled: a record is (version, withdrawal), an entry
 //! is a small struct, a digest is a 64-bit hash of a value. Two values that
@@ -156,11 +156,14 @@ pub enum CStatus {
     AnotherWriter,
     DifferentManifest,
     Malformed,
+    /// 0x0A: "noted" (answer to Retired) or "retired" (answer to Query).
     Noted,
+    /// 0x0B: "no state, your record stored" (Query only, 7.6, 5.3).
+    NoState,
 }
 
 impl CStatus {
-    pub const ALL: [CStatus; 11] = [
+    pub const ALL: [CStatus; 12] = [
         CStatus::Accepted,
         CStatus::Missing,
         CStatus::AlreadyWriter,
@@ -172,6 +175,7 @@ impl CStatus {
         CStatus::DifferentManifest,
         CStatus::Malformed,
         CStatus::Noted,
+        CStatus::NoState,
     ];
     /// The answers on which a sealed build may unseal (7.5).
     pub fn unseals(self) -> bool {
@@ -359,8 +363,11 @@ pub struct WFields {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PState {
+    /// NONE (5.1): the arming record, or none, and the predecessor versions
+    /// that confirmed under it (5.3).
     None {
         armed: Option<Rec>,
+        confirmed: std::collections::BTreeSet<Ver>,
     },
     Writer(WFields),
     Sealed {
@@ -382,8 +389,8 @@ pub enum PState {
 impl PState {
     pub fn code(&self) -> &'static str {
         match self {
-            PState::None { armed: None } => "NONE",
-            PState::None { armed: Some(_) } => "NONE(armed)",
+            PState::None { armed: None, .. } => "NONE",
+            PState::None { armed: Some(_), .. } => "NONE(armed)",
             PState::Writer(w) if w.awaiting => "WRITER(awaiting)",
             PState::Writer(_) => "WRITER",
             PState::Sealed { .. } => "SEALED",
@@ -400,6 +407,13 @@ impl PState {
     }
     pub fn is_none(&self) -> bool {
         matches!(self, PState::None { .. })
+    }
+    /// NONE, not armed, nothing confirmed.
+    pub fn none() -> PState {
+        PState::None {
+            armed: None,
+            confirmed: Default::default(),
+        }
     }
 }
 
@@ -422,7 +436,7 @@ pub struct Index {
 impl Index {
     pub fn none() -> Index {
         Index {
-            state: PState::None { armed: None },
+            state: PState::none(),
             entries: BTreeMap::new(),
             problems: 0,
             lost: 0,
@@ -447,11 +461,15 @@ pub const PROBLEM_ANOTHER_WRITER: u8 = 1 << 2;
 pub const PROBLEM_STAGING_FULL: u8 = 1 << 3;
 pub const PROBLEM_PAUSED: u8 = 1 << 4;
 pub const PROBLEM_HIGHER_RECEIVER: u8 = 1 << 5;
+/// "index lost: read-only" (4.5).
+pub const PROBLEM_INDEX_LOST: u8 = 1 << 6;
 
 /// Secret names (4.1). One partition, so the partition id is implicit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SName {
     Succ,
+    /// vault:parts (4.1): lists the one partition when present.
+    Parts,
     Idx,
     E(Ident, bool),
     X(Ver),
@@ -464,8 +482,14 @@ pub enum SVal {
     Succ(Succ),
     Idx(Index),
     E(Entry),
-    /// Bytes that no longer parse (a damaged single secret).
+    /// Bytes that no longer parse (a damaged single secret): read as
+    /// present but malformed.
     Garbled,
+    /// Bytes that fail authentication (corruption, or a changed node key):
+    /// the host reads them as absent without poisoning the call (4.0, #6323).
+    Undecryptable,
+    /// vault:parts listing the partition.
+    Parts,
     X(BTreeMap<Ident, Digest>),
     Rx(std::collections::BTreeSet<Digest>),
     Gc(std::collections::BTreeSet<SName>),

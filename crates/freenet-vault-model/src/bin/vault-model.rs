@@ -2,7 +2,7 @@
 //! violations (with shrunk traces) and coverage.
 //!
 //! vault-model [--seeds N] [--start S] [--queued] [--adversarial] [--stale-pointer]
-//!             [--accept-query-answer] [--trace SEED] [--quiet]
+//!             [--trace SEED] [--quiet]
 
 use std::collections::BTreeMap;
 
@@ -53,7 +53,6 @@ fn main() {
             "--run-local-fifo" => cfg.d_global_fifo = false,
             "--no-garble" => cfg.garble_hops = false,
             "--no-withdrawals" => cfg.withdrawals = false,
-            "--accept-query-answer" => cfg.params.spec.accept_query_answer = true,
             a => panic!("unknown argument {a}"),
         }
         i += 1;
@@ -151,7 +150,7 @@ fn main() {
         }
     }
     println!(
-        "schedules: {seeds} (seeds {start}..{}) plus {} coverage seeds and {} directed scenarios, delivery {:?}, adversarial {}, stale pointer {}, global FIFO {}, accept-query-answer {}",
+        "schedules: {seeds} (seeds {start}..{}) plus {} coverage seeds and {} directed scenarios, delivery {:?}, adversarial {}, stale pointer {}, global FIFO {} (protocol revision 8)",
         start + seeds,
         extra.len(),
         n_directed,
@@ -159,7 +158,6 @@ fn main() {
         cfg.adversarial,
         cfg.stale_pointer,
         cfg.d_global_fifo,
-        cfg.params.spec.accept_query_answer
     );
     if by_inv.is_empty() && directed_violations.is_empty() {
         println!("violations: none");
