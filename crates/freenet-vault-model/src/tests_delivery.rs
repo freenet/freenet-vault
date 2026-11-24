@@ -50,7 +50,12 @@ fn directed_scenarios_hit_their_rows() {
     let cfg = Cfg::gate();
     let ds = crate::directed::directed(&cfg);
     assert!(!ds.is_empty());
+    let mut missed = vec![];
     for (k, sc) in ds {
+        if k.starts_with("rev9-trace/") {
+            // revision 9 finding traces, replayed for the report
+            continue;
+        }
         let o = run(&cfg, &sc);
         if let Some(inv) = k.strip_prefix("finding/") {
             // a finding against revision 9: the scenario must still fail
@@ -58,11 +63,14 @@ fn directed_scenarios_hit_their_rows() {
             assert_eq!(o.violation.map(|v| v.inv), Some(inv), "{k}");
             continue;
         }
-        assert!(
-            o.cov.get(k) > 0,
-            "directed scenario for {k} no longer hits it"
-        );
+        if o.cov.get(k) == 0 {
+            missed.push(k);
+        }
     }
+    assert!(
+        missed.is_empty(),
+        "directed scenarios no longer hit {missed:?}"
+    );
 }
 
 /// Revision 9 (F10): a fresh install while stopped is paused (the courier

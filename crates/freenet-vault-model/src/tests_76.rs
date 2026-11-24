@@ -48,6 +48,19 @@ impl T {
         )
         .expect("no crash")
     }
+    fn try_call(&mut self, i: Input) -> Result<Output, crate::store::Crash> {
+        call(
+            &self.def,
+            &self.p,
+            &mut self.store,
+            &mut self.vol,
+            &mut self.faults,
+            &mut self.events,
+            &mut self.cov,
+            &mut Vec::new(),
+            i,
+        )
+    }
     fn hop(&mut self, from: Ver, f: Frame) -> Option<Frame> {
         match self.call(Input::Hop { from, frame: f }).reply {
             Reply::Frame(f) => Some(f),
@@ -743,36 +756,23 @@ fn a_stopped_build_refuses_arming() {
     assert_eq!(b.state(), PState::none());
 }
 
-/// Revision 9 (F7): a RETIRED predecessor answers a creation probe 0x0C
-/// only when its retired_to is at or below the querier; a creation treats
-/// 0x0C as state (clears its arming).
+/// Revision 10 (v1): a RETIRED predecessor answers every creation probe
+/// 0x07 (0x0C is unassigned in v1).
 #[test]
-fn retired_answers_0x0c_only_at_or_below_the_querier() {
-    let mut b = t(10);
-    b.set(
-        PState::Retired {
-            to: Rec::build(20),
-            m: 7,
-            taken_over: None,
-        },
-        &[],
-    );
-    assert_eq!(cstatus(&b.hop(20, query(20, 0))), CStatus::RetiredNotAhead);
-    assert_eq!(cstatus(&b.hop(30, query(30, 0))), CStatus::RetiredNotAhead);
-    let mut b = t(10);
-    b.set(
-        PState::Retired {
-            to: Rec::build(30),
-            m: 7,
-            taken_over: None,
-        },
-        &[],
-    );
-    assert_eq!(cstatus(&b.hop(20, query(20, 0))), CStatus::AnotherWriter);
-    let mut c = t(30);
-    arm(&mut c);
-    c.hop(10, answer(10, 30, 0, CStatus::RetiredNotAhead));
-    assert_eq!(c.state(), PState::none(), "a creation treats 0x0C as state");
+fn retired_answers_every_creation_probe_0x07_in_v1() {
+    for to in [20, 30] {
+        let mut b = t(10);
+        b.set(
+            PState::Retired {
+                to: Rec::build(to),
+                m: 7,
+                taken_over: None,
+            },
+            &[],
+        );
+        assert_eq!(cstatus(&b.hop(20, query(20, 0))), CStatus::AnotherWriter);
+        assert_eq!(cstatus(&b.hop(30, query(30, 0))), CStatus::AnotherWriter);
+    }
 }
 
 /// Revision 9 (F7): retiring unlists the partition before Retired is sent.
@@ -786,7 +786,9 @@ fn retire_unlists_before_sending_retired() {
         frame: cack(30, m, CStatus::Accepted),
     });
     assert!(matches!(s.state(), PState::Retired { .. }));
-    assert!(!s.store.secrets.contains_key(&SName::Parts));
+    // revision 10: vault:parts is never removed; unlisting writes the
+    // shorter list
+    assert_eq!(s.store.secrets.get(&SName::Parts), Some(&SVal::PartsEmpty));
     assert!(out
         .hops
         .iter()
@@ -837,70 +839,127 @@ fn undecryptable_index_while_listed_is_index_loss() {
         r => panic!("{r:?}"),
     }
     assert_eq!(generate(&mut b), OpRes::Refused(12));
-    // revision 9: Reindex removes the undecryptable index, writes a
-    // REPAIRING index from the copy on disk, and refuses changes until the
-    // creation guard passes
-    b.call(Input::Op(Op::Reindex {
-        slots: vec![(0, 5)],
-    }));
-    assert!(matches!(b.state(), PState::Repairing { .. }));
-    assert!(!b.store.index_lost());
+    // revision 10: a slot with no usable copy answers storage failure,
+    // never Absent
+    match b.call(Input::Op(Op::PublicKey { slot: 3 })).reply {
+        Reply::Op(r) => assert_eq!(r, OpRes::Refused(12)),
+        r => panic!("{r:?}"),
+    }
+}
+
+/// Revision 10 (F13, F15): direct read uses only copies vault:gc does not
+/// list; a malformed vault:gc leaves every slot at storage failure.
+#[test]
+fn direct_read_skips_listed_copies_and_fails_on_a_malformed_gc() {
+    let mut b = t(20);
+    b.set(PState::Writer(WFields::default()), &[key(0, 5)]);
+    b.store.secrets.insert(SName::Parts, SVal::Parts);
+    // an orphan of a failed write to the other parity, listed in vault:gc
+    b.store
+        .secrets
+        .insert(SName::E((KIND_KEY, 0), true), SVal::E(key(0, 9)));
+    b.store.secrets.insert(
+        SName::Gc,
+        SVal::Gc([SName::E((KIND_KEY, 0), true)].into_iter().collect()),
+    );
+    b.store.secrets.insert(SName::Idx, SVal::Undecryptable);
     match b.call(Input::Op(Op::PublicKey { slot: 0 })).reply {
         Reply::Op(r) => assert_eq!(r, OpRes::Key(5)),
         r => panic!("{r:?}"),
     }
-    assert_eq!(generate(&mut b), OpRes::Refused(12));
-    // the repair probes its one predecessor (10); 0x0B makes it WRITER
-    let out = b.call(Input::Poke {
-        flags: 0,
-        rec: None,
-    });
-    assert!(out
-        .hops
-        .iter()
-        .any(|(t, f)| *t == 10 && matches!(f, Frame::Query { m: 0, .. })));
-    b.hop(10, answer(10, 20, 0, CStatus::NoState));
-    assert_eq!(b.state(), PState::Writer(WFields::default()));
+    // both names listed (an incomplete Delete): storage failure, not Absent
+    b.store.secrets.insert(
+        SName::Gc,
+        SVal::Gc(
+            [
+                SName::E((KIND_KEY, 0), false),
+                SName::E((KIND_KEY, 0), true),
+            ]
+            .into_iter()
+            .collect(),
+        ),
+    );
+    match b.call(Input::Op(Op::PublicKey { slot: 0 })).reply {
+        Reply::Op(r) => assert_eq!(r, OpRes::Refused(12)),
+        r => panic!("{r:?}"),
+    }
+    b.store.secrets.insert(SName::Gc, SVal::Garbled);
+    match b.call(Input::Op(Op::Export { slot: 0 })).reply {
+        Reply::Op(r) => assert_eq!(r, OpRes::Refused(12)),
+        r => panic!("{r:?}"),
+    }
 }
 
-/// Revision 9 (4.6): a REPAIRING build probes one predecessor at a time,
-/// lowest first, ignores an answer from any other, and a record above its
-/// own version stops the repair (creation bar).
+/// Revision 10 (4.2): an entry write lists the new name and the old copy
+/// in vault:gc first, and the same call's processing leaves only the copy
+/// the committed index names.
 #[test]
-fn repair_probes_lowest_first_and_stops_on_a_newer_record() {
-    let mut b = t(40);
-    b.set(
-        PState::Repairing {
-            confirmed: Default::default(),
-        },
-        &[key(0, 5)],
-    );
-    let out = b.call(Input::Poke {
-        flags: 0,
-        rec: None,
-    });
-    let to: Vec<Ver> = out.hops.iter().map(|(t, _)| *t).collect();
-    assert_eq!(to, vec![10]);
-    b.hop(20, answer(20, 40, 0, CStatus::NoState));
+fn entry_write_lists_names_first_and_processing_cleans_up() {
+    let mut b = t(20);
+    b.set(PState::Writer(WFields::default()), &[key(0, 5)]);
+    b.store.secrets.insert(SName::Parts, SVal::Parts);
+    // crash right after the vault:gc write (step 1)
+    b.faults.armed = Some((0, crate::store::WriteFault::CrashAfter));
+    let _ = b.try_call(Input::Op(Op::Import {
+        slot: 0,
+        seed: 6,
+        replace: true,
+    }));
+    match b.store.secrets.get(&SName::Gc) {
+        Some(SVal::Gc(g)) => {
+            assert!(g.contains(&SName::E((KIND_KEY, 0), true)));
+            assert!(g.contains(&SName::E((KIND_KEY, 0), false)));
+        }
+        v => panic!("{v:?}"),
+    }
+    // a complete write leaves vault:gc empty and one copy on disk
+    let mut b = t(20);
+    b.set(PState::Writer(WFields::default()), &[key(0, 5)]);
+    b.store.secrets.insert(SName::Parts, SVal::Parts);
+    b.call(Input::Op(Op::Import {
+        slot: 0,
+        seed: 6,
+        replace: true,
+    }));
     assert_eq!(
-        b.state(),
-        PState::Repairing {
-            confirmed: Default::default()
-        },
-        "an answer from a predecessor not probed is ignored"
+        b.store.secrets.get(&SName::Gc),
+        Some(&SVal::Gc(Default::default()))
     );
-    let out = b.call(Input::Hop {
-        from: 10,
-        frame: answer(10, 40, 0, CStatus::RetiredNotAhead),
-    });
-    assert!(out.hops.iter().any(|(t, _)| *t == 20), "next probe sent");
-    b.call(Input::Poke {
-        flags: 0,
-        rec: Some(Rec::build(50)),
-    });
-    b.hop(20, answer(20, 40, 0, CStatus::NoState));
-    b.hop(30, answer(30, 40, 0, CStatus::NoState));
-    assert!(matches!(b.state(), PState::Repairing { .. }));
+    assert!(!b
+        .store
+        .secrets
+        .contains_key(&SName::E((KIND_KEY, 0), false)));
+}
+
+/// Revision 10 (F14): a malformed index is index loss only while
+/// vault:parts lists the partition or does not read as a valid list.
+#[test]
+fn malformed_index_is_none_only_while_parts_is_a_valid_list_without_it() {
+    let mut b = t(20);
+    b.store.secrets.insert(SName::Idx, SVal::Garbled);
+    b.store.secrets.insert(SName::Parts, SVal::PartsEmpty);
+    assert!(!b.store.index_lost());
+    b.store.secrets.insert(SName::Parts, SVal::Parts);
+    assert!(b.store.index_lost());
+    b.store.secrets.remove(&SName::Parts);
+    assert!(
+        b.store.index_lost(),
+        "literal reading: absent is not a valid list"
+    );
+}
+
+/// Revision 10 (F17): an undecryptable vault:parts on a writer whose index
+/// is valid is removed and written again; changes keep working.
+#[test]
+fn undecryptable_parts_with_a_valid_index_is_removed_and_relisted() {
+    let mut b = t(20);
+    b.set(PState::Writer(WFields::default()), &[key(0, 5)]);
+    b.store.secrets.insert(SName::Parts, SVal::Undecryptable);
+    match b.call(Input::Op(Op::Generate { slot: 1, seed: 9 })).reply {
+        Reply::Op(r) => assert_eq!(r, OpRes::Key(9)),
+        r => panic!("{r:?}"),
+    }
+    assert_eq!(b.store.secrets.get(&SName::Parts), Some(&SVal::Parts));
 }
 
 #[test]

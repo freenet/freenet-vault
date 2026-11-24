@@ -280,6 +280,9 @@ pub enum Note {
     DeleteStep(u8),
     /// The partition was listed in vault:parts in this call (4.2).
     Listed,
+    /// An injected write fault fired on this write or removal (coverage of
+    /// the step it hit).
+    Faulted,
 }
 
 pub struct Output {
@@ -540,7 +543,12 @@ impl<'a> Cx<'a> {
                 }
             }
         }
-        match self.host.set(n, v) {
+        let fired = self.host.faults.fired.len();
+        let r = self.host.set(n, v);
+        if self.host.faults.fired.len() > fired {
+            self.notes.push(Note::Faulted);
+        }
+        match r {
             Ok(()) => Ok(true),
             Err(WErr::Fail) => {
                 self.hit("fault/storage-failure-seen");
@@ -555,7 +563,12 @@ impl<'a> Cx<'a> {
             self.hit("4.5/write-refused-after-failed-write");
             return Ok(false);
         }
-        match self.host.del(n) {
+        let fired = self.host.faults.fired.len();
+        let r = self.host.del(n);
+        if self.host.faults.fired.len() > fired {
+            self.notes.push(Note::Faulted);
+        }
+        match r {
             Ok(()) => Ok(true),
             Err(WErr::Fail) => {
                 self.ro = true;

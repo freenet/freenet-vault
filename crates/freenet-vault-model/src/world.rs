@@ -544,6 +544,12 @@ impl World {
             } else {
                 format!("{:?}", fired_now.last().unwrap())
             };
+            // the step in progress when the first fault fired
+            let upto = notes
+                .iter()
+                .position(|n| matches!(n, Note::Faulted))
+                .unwrap_or(notes.len());
+            let notes = &notes[..upto];
             if let Some(k) = notes.iter().rev().find_map(|n| match n {
                 Note::EntryStep(k) => Some(*k),
                 _ => None,
@@ -2036,6 +2042,13 @@ impl World {
             if matches!(last, Some(PState::Retired { .. })) {
                 return if s.listed() {
                     "I3-retired-still-listed"
+                } else if matches!(s.secrets.get(&SName::Parts), Some(SVal::Garbled)) {
+                    // revision 10 finding G2: a retired build whose index
+                    // AND vault:parts are malformed reports state 7
+                    "I3-retired-parts-malformed"
+                } else if !crate::store::parts_valid_list(s.secrets.get(&SName::Parts)) {
+                    // revision 10 finding G1 shape: vault:parts absent
+                    "I3-retired-parts-absent"
                 } else {
                     "I3-retired-malformed-index"
                 };
@@ -2081,6 +2094,10 @@ impl World {
         if matches!(last, Some(PState::Retired { .. })) {
             return if s.listed() {
                 "I2-retired-still-listed"
+            } else if matches!(s.secrets.get(&SName::Parts), Some(SVal::Garbled)) {
+                "I2-retired-parts-malformed"
+            } else if !crate::store::parts_valid_list(s.secrets.get(&SName::Parts)) {
+                "I2-retired-parts-absent"
             } else {
                 "I2-retired-malformed-index"
             };
@@ -2353,8 +2370,15 @@ impl World {
                     let lost = (0..NBUILDS)
                         .filter(|b| self.stores[*b].index_lost())
                         .count();
+                    // revision 10 finding G1: a build that was never listed
+                    // (a RECEIVING or NONE index, vault:parts absent) is in
+                    // state 7 because its index is malformed
+                    let receiver_lost = (0..NBUILDS)
+                        .any(|b| self.stores[b].index_lost() && !self.stores[b].listed());
                     self.fail(
-                        if lost >= 2 {
+                        if lost >= 2 && receiver_lost {
+                            "I2-two-index-lost-unlisted-state-7"
+                        } else if lost >= 2 {
                             // 5.2 step 4: "if two report state 7, vault
                             // unavailable"
                             "I2-two-index-lost"

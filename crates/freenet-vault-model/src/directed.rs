@@ -632,30 +632,43 @@ pub fn retired_still_listed_window(cfg: &Cfg, malformed: bool) -> Option<Scenari
 
 /// Revision 10, F17 (checklist item 5): an undecryptable vault:parts,
 /// vault:gc or vault:succ (`which` 0, 1, 2) on writer 10 whose index is
-/// valid; 10 keeps changing, deleting and handing over to 20.
+/// valid; 10 keeps changing, deleting and handing over to 40. An
+/// old-lineage client (10, 20, 30) first gives 10 the record of 40 with
+/// copying paused, so that 10 holds a vault:succ to damage.
 pub fn control_secret_undecryptable(cfg: &Cfg, which: u8) -> Scenario {
-    let mut r = Rec_::new(cfg, vec![Rec::build(10), Rec::build(20)]);
+    let mut r = Rec_::new(cfg, vec![Rec::build(10), Rec::build(40)]);
     r.act(Action::Publish);
     r.load(vec![
         Op::Generate { slot: 0, seed: 500 },
         Op::Generate { slot: 1, seed: 501 },
         Op::Delete { slot: 1 },
     ]);
+    r.act(Action::Publish);
+    r.act(Action::Load {
+        client: 2,
+        fetch: Fetch::Newest,
+        ops: vec![],
+    });
+    r.drain();
     r.act(Action::GarbleNamed {
         b: 0,
         which,
         undecryptable: true,
     });
-    r.load(vec![
-        Op::Generate { slot: 2, seed: 502 },
-        Op::Delete { slot: 0 },
-        Op::Import {
-            slot: 2,
-            seed: 503,
-            replace: true,
-        },
-    ]);
-    r.act(Action::Publish);
+    r.act(Action::Load {
+        client: 2,
+        fetch: Fetch::Newest,
+        ops: vec![
+            Op::Generate { slot: 2, seed: 502 },
+            Op::Delete { slot: 0 },
+            Op::Import {
+                slot: 2,
+                seed: 503,
+                replace: true,
+            },
+        ],
+    });
+    r.drain();
     for _ in 0..4 {
         r.load(vec![Op::PublicKey { slot: 2 }]);
     }
@@ -811,9 +824,10 @@ pub fn orphan_copy_of_failed_write(cfg: &Cfg) -> Scenario {
     let mut r = Rec_::new(cfg, vec![Rec::build(10)]);
     r.act(Action::Publish);
     r.load(vec![Op::Generate { slot: 0, seed: 500 }]);
-    // the Import's writes: entry copy (write 1), index (write 2, fails)
+    // the Import's writes (revision 10): vault:gc (write 0), entry copy
+    // (write 1), index (write 2, fails)
     r.act(Action::ArmWriteFault {
-        after: 1,
+        after: 2,
         fault: WriteFault::Fail,
     });
     r.act(Action::Cached {
@@ -887,7 +901,17 @@ pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
             }
         }
         if let Some(sc) = receiver_index_lost_mid_copy(cfg, malformed) {
-            v.push(("4.4/receiver-index-lost-reads-none", sc));
+            // revision 10 finding G1: a malformed RECEIVING index while
+            // vault:parts was never written is index loss (4.5 condition 2,
+            // literal reading), so the handover never completes
+            v.push((
+                if malformed {
+                    "finding/I7-receiver-index-lost"
+                } else {
+                    "4.4/receiver-index-lost-reads-none"
+                },
+                sc,
+            ));
         }
         v.push((
             "4.4/retired-index-lost-reads-none",
@@ -899,9 +923,23 @@ pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
             WriteFault::CrashAfter,
         ] {
             if let Some(sc) = take_over_listing_fails(cfg, f, malformed) {
-                v.push(("7.4/took-over", sc));
+                v.push((
+                    match f {
+                        WriteFault::Fail => "4.2/take-over-not-listed-no-answer",
+                        WriteFault::LandedButError => "4.2/listing-write-failed",
+                        _ => "fault/crash-after-write",
+                    },
+                    sc,
+                ));
             }
-            v.push(("5.1/created", creation_listing_fails(cfg, f, malformed)));
+            v.push((
+                match f {
+                    WriteFault::Fail => "4.2/creation-not-listed-refused-12",
+                    WriteFault::LandedButError => "4.2/listing-write-failed",
+                    _ => "fault/crash-after-write",
+                },
+                creation_listing_fails(cfg, f, malformed),
+            ));
         }
         if let Some(sc) = retired_still_listed_window(cfg, malformed) {
             v.push(("7.4/retired", sc));
