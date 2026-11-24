@@ -12,6 +12,9 @@ pub trait Host {
     /// still be durable and readable (protocol 1), so a caller that depends
     /// on the outcome reads back.
     fn set_secret(&mut self, key: &[u8], value: &[u8]) -> bool;
+    /// `true` means the secret is not stored any more, including when it was
+    /// never there. `false` means the removal could not be confirmed; the
+    /// secret may still exist, so the caller keeps its record of it.
     fn remove_secret(&mut self, key: &[u8]) -> bool;
     /// The delegate context, which the runtime keeps across the calls of one
     /// run (used to carry a pending consent prompt to its answer).

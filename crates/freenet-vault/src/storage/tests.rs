@@ -134,12 +134,13 @@ fn failed_index_write_leaves_the_old_value_and_gc_cannot_delete_it() {
     // The same state as after a crash: a gc list naming both copies.
     h.clear_fault();
     set_gc(&mut h, &[entry_name(1, 0), entry_name(1, 1)]);
-    for _ in 0..2 {
-        // The second name never existed: uncertain once, then dropped.
+    for _ in 0..3 {
+        // The second name never existed: removing it is confirmed (it is not
+        // there), so it leaves the list.
         let mut s = Store::open(&mut h, P).unwrap();
         s.process_gc();
     }
-    assert!(!h.secrets.contains_key(&names::gc(&P)));
+    assert!(gc_names(&h).is_empty());
     assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
 }
 
@@ -575,21 +576,105 @@ fn the_gc_list_is_bounded_and_never_erases_itself() {
     assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
 }
 
-/// A removal that neither succeeds nor reads back is retried, then dropped:
-/// a name that never existed does not stay listed for ever.
+/// A removal that neither succeeds nor reads back stays listed however often
+/// it repeats (it may be a real secret hidden from reads), and goes once the
+/// secret can be removed.
 #[test]
-fn an_uncertain_removal_is_retried_then_dropped() {
+fn an_uncertain_removal_is_never_dropped_until_confirmed() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
-    set_gc(&mut h, &[entry_name(5, 0)]);
+    let stray = entry_name(5, 0);
+    h.secrets.insert(stray.clone(), vec![3]);
+    h.hidden.insert(stray.clone());
+    h.undeletable.insert(stray.clone());
+    set_gc(&mut h, std::slice::from_ref(&stray));
+    for _ in 0..5 {
+        let mut s = Store::open(&mut h, P).unwrap();
+        s.process_gc();
+    }
+    assert_eq!(gc_names(&h), vec![stray.clone()]);
+    h.hidden.clear();
+    h.undeletable.clear();
     let mut s = Store::open(&mut h, P).unwrap();
     s.process_gc();
     drop(s);
-    assert_eq!(gc_names(&h), vec![entry_name(5, 0)], "kept for one retry");
-    let mut s = Store::open(&mut h, P).unwrap();
-    s.process_gc();
-    drop(s);
+    assert!(!h.secrets.contains_key(&stray));
     assert!(gc_names(&h).is_empty());
+}
+
+/// Adding names needs both gc list copies to take, so no name ends up held by
+/// one copy only (the state a later read miss would erase). A write that
+/// cannot list its names is refused before it touches an entry.
+#[test]
+fn a_write_whose_names_cannot_reach_both_gc_copies_is_refused() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    let gc2 = names::gc2(&P);
+    h.set_fault(move |n| {
+        if n == gc2.as_slice() {
+            WriteFault::Fail
+        } else {
+            WriteFault::None
+        }
+    });
+    let before_entries = h.names_with_prefix(&names::entry_prefix(&P));
+    assert_eq!(put(&mut h, &key_entry(1, 8)), Err(PutError::Storage));
+    assert_eq!(
+        h.names_with_prefix(&names::entry_prefix(&P)),
+        before_entries
+    );
+    h.clear_fault();
+    assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
+}
+
+/// A write reported as failed whose follow-up read misses may have landed; its
+/// name stays listed so gc can still remove it.
+#[test]
+fn a_failed_candidate_write_with_a_read_miss_stays_listed() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    let cand = entry_name(1, 1);
+    let c2 = cand.clone();
+    h.set_fault(move |n| {
+        if n == c2.as_slice() {
+            WriteFault::DurableButFail
+        } else {
+            WriteFault::None
+        }
+    });
+    h.hidden.insert(cand.clone());
+    h.undeletable.insert(cand.clone());
+    assert_eq!(put(&mut h, &key_entry(1, 8)), Err(PutError::Storage));
+    assert!(
+        gc_names(&h).contains(&cand),
+        "the landed candidate was forgotten"
+    );
+    assert!(h.secrets.contains_key(&cand));
+}
+
+/// A full list drops its most uncertain names to take new ones, and refuses
+/// only when none is uncertain.
+#[test]
+fn a_full_list_makes_room_from_the_most_uncertain_names() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    let prefix = names::entry_prefix(&P);
+    let full: Vec<GcName> = (0..MAX_GC_NAMES)
+        .map(|i| GcName {
+            name: [prefix.as_slice(), format!("{i:05}").as_bytes()].concat(),
+            uncertain: if i == 7 || i == 8 { 9 } else { 0 },
+        })
+        .collect();
+    let b = encode_names(&full).unwrap();
+    h.secrets.insert(names::gc(&P), b.clone());
+    h.secrets.insert(names::gc2(&P), b);
+    for g in &full {
+        h.secrets.insert(g.name.clone(), vec![1]);
+        h.undeletable.insert(g.name.clone());
+    }
+    assert!(put(&mut h, &key_entry(1, 8)).is_ok());
+    assert!(!gc_names(&h).contains(&full[7].name));
+    assert!(!gc_names(&h).contains(&full[8].name));
 }
 
 /// A removal that failed while the follow-up read also fails is not taken as

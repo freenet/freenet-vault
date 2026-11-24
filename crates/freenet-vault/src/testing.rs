@@ -143,7 +143,9 @@ impl Host for MemHost {
         if self.undeletable.contains(key) {
             return false;
         }
-        self.secrets.remove(key).is_some()
+        // The post-condition is what is reported: the secret is not there.
+        self.secrets.remove(key);
+        true
     }
 
     fn read_context(&self) -> Vec<u8> {

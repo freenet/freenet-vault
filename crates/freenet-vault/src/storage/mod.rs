@@ -106,9 +106,9 @@ struct GcName {
     uncertain: u8,
 }
 
-/// Uncertain removals are retried this many times, then dropped: the name
-/// either never existed (a write that did not land) or is not readable.
-const GC_UNCERTAIN_LIMIT: u8 = 2;
+/// A name is dropped from the gc list only after a confirmed removal. An
+/// uncertain pass (not removed, not readable) keeps it, and counts. Only when
+/// the list is full are the most-uncertain names made room from.
 /// The gc list never holds more names than this, so it cannot outgrow its
 /// encoding; a write that would exceed it fails until gc drains it.
 pub const MAX_GC_NAMES: usize = 4096;
@@ -278,35 +278,26 @@ impl<'a, H: Host> Store<'a, H> {
         out
     }
 
-    /// Writes both gc list copies; one that takes is enough.
-    fn write_gc(&mut self, list: &[GcName]) -> Result<(), StorageFailure> {
+    /// Writes both gc list copies. With `both`, a copy that does not take is
+    /// an error: names are being ADDED, and a list held by one copy only can
+    /// be erased by a later write after that copy misses a read. Without it
+    /// (shrinking), one copy taking is enough, since a stale second copy only
+    /// lists names already removed.
+    fn write_gc(&mut self, list: &[GcName], both: bool) -> Result<(), StorageFailure> {
         let bytes = encode_names(list)?;
         let a = self.host.set_secret(&names::gc(&self.partition), &bytes);
         let b = self.host.set_secret(&names::gc2(&self.partition), &bytes);
-        if a || b {
+        if (a && b) || (!both && (a || b)) {
             Ok(())
         } else {
             Err(StorageFailure)
         }
     }
 
-    /// Stops listing `name` (a write that never landed).
-    fn forget_gc(&mut self, name: &[u8]) {
-        let list: Vec<GcName> = self
-            .read_gc()
-            .into_iter()
-            .filter(|g| g.name != name)
-            .collect();
-        if list.is_empty() {
-            self.host.remove_secret(&names::gc(&self.partition));
-            self.host.remove_secret(&names::gc2(&self.partition));
-        } else {
-            let _ = self.write_gc(&list);
-        }
-    }
-
     /// Adds names to the gc list. Fails, writing nothing, when the list would
-    /// exceed [`MAX_GC_NAMES`].
+    /// exceed [`MAX_GC_NAMES`] even after dropping the names whose removal has
+    /// stayed uncertain, most uncertain first; and when either copy cannot be
+    /// written.
     fn add_gc(&mut self, add: &[Vec<u8>]) -> Result<(), StorageFailure> {
         let mut list = self.read_gc();
         for n in add {
@@ -317,7 +308,21 @@ impl<'a, H: Host> Store<'a, H> {
                 });
             }
         }
-        self.write_gc(&list)
+        while list.len() > MAX_GC_NAMES {
+            let worst = list
+                .iter()
+                .enumerate()
+                .filter(|(_, g)| g.uncertain > 0 && !add.contains(&g.name))
+                .max_by_key(|(_, g)| g.uncertain)
+                .map(|(i, _)| i);
+            match worst {
+                Some(i) => {
+                    list.remove(i);
+                }
+                None => return Err(StorageFailure),
+            }
+        }
+        self.write_gc(&list, true)
     }
 
     /// Processes a non-empty `vault:gc`: removes every listed entry secret
@@ -352,11 +357,10 @@ impl<'a, H: Host> Store<'a, H> {
                 keep.push(g);
             } else if !removed {
                 // Neither removed nor readable: it may never have existed, or
-                // the read may have failed. Retry, but not for ever.
+                // the read may have failed. Keep it: only a confirmed removal
+                // drops a name.
                 let uncertain = g.uncertain.saturating_add(1);
-                if uncertain < GC_UNCERTAIN_LIMIT {
-                    keep.push(GcName { uncertain, ..g });
-                }
+                keep.push(GcName { uncertain, ..g });
             }
         }
         if keep.is_empty() {
@@ -364,7 +368,7 @@ impl<'a, H: Host> Store<'a, H> {
             self.host.remove_secret(&names::gc2(&self.partition));
         } else {
             // If this write fails the old, longer list stays: also fine.
-            let _ = self.write_gc(&keep);
+            let _ = self.write_gc(&keep, false);
         }
     }
 
@@ -394,11 +398,9 @@ impl<'a, H: Host> Store<'a, H> {
         }
         self.add_gc(&listed)?;
         if !self.host.set_secret(&new_name, bytes) {
-            // Nothing references it. If it landed anyway gc removes it; if it
-            // did not, there is nothing to remove, so stop listing it.
-            if self.host.get_secret(&new_name).is_none() {
-                self.forget_gc(&new_name);
-            }
+            // Nothing references it. If it landed anyway gc removes it; the
+            // name stays listed whatever a read now says, since a miss here
+            // does not show that nothing was written.
             self.process_gc();
             return Err(StorageFailure);
         }
