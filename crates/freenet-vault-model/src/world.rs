@@ -337,6 +337,10 @@ pub struct World {
     /// ResetPartition succeeded.
     exports: BTreeMap<usize, BTreeMap<u16, u32>>,
     reset_done: BTreeSet<usize>,
+    /// Keys whose repair flow ended after the reset and before their
+    /// re-import (labels I2 failures on them).
+    repair_interrupted: BTreeSet<Ident>,
+    repair_tries: BTreeMap<(usize, u16), u8>,
 }
 
 impl World {
@@ -373,6 +377,8 @@ impl World {
             sealed_corrupt_sent: 0,
             exports: BTreeMap::new(),
             reset_done: BTreeSet::new(),
+            repair_interrupted: BTreeSet::new(),
+            repair_tries: BTreeMap::new(),
             cfg,
         }
     }
@@ -529,6 +535,18 @@ impl World {
     }
 
     fn crash_node(&mut self) {
+        // A repair flow (4.5) that dies after ResetPartition, before its
+        // re-imports, takes the keys it held in memory with it.
+        for sid in self.sessions.keys() {
+            if self.reset_done.contains(sid) {
+                if let Some(e) = self.exports.get(sid) {
+                    for slot in e.keys() {
+                        self.cov.hit("4.5/repair-flow-interrupted-after-reset");
+                        self.repair_interrupted.insert((KIND_KEY, *slot));
+                    }
+                }
+            }
+        }
         self.runs.clear();
         self.sessions.clear();
         self.limbo.clear();
@@ -1485,6 +1503,7 @@ impl World {
 
     fn do_op(&mut self, b: usize, op: Op, sid: Option<usize>) {
         let mut op = op;
+        let mut repair_import: Option<(usize, u16, u32)> = None;
         // 4.5 step 6: re-import an exported seed the UI checked against the
         // slot's expected public key (the UI's own data: the oracle).
         if let Op::ImportExported { slot } = op {
@@ -1499,6 +1518,7 @@ impl World {
                         seed,
                         replace: true,
                     };
+                    repair_import = Some((sid, slot, seed));
                 }
                 _ => {
                     if self.reset_done.contains(&sid) && !p.allows(&None) {
@@ -1532,6 +1552,37 @@ impl World {
         };
         let Reply::Op(r) = out.reply else { return };
         self.log(|| format!("  op {op:?} at {} -> {r:?}", ver(b)));
+        if let Some((rsid, slot, _seed)) = repair_import {
+            // The UI follows Moved and retries Busy and NotHere (a handover
+            // of the reset partition may be under way); it gives up after a
+            // bounded number of tries, and the seed it held is then lost.
+            let id = (KIND_KEY, slot);
+            let tries = self.repair_tries.entry((rsid, slot)).or_insert(0);
+            match &r {
+                OpRes::Key(_) => {
+                    if let Some(e) = self.exports.get_mut(&rsid) {
+                        e.remove(&slot);
+                    }
+                }
+                OpRes::Moved(_) | OpRes::Busy | OpRes::NotHere if *tries < 8 => {
+                    *tries += 1;
+                    self.cov.hit("4.5/repair-import-retried");
+                    if let Some(sess) = self.sessions.get_mut(&rsid) {
+                        if let OpRes::Moved(rec) = &r {
+                            sess.target = Some(rec.v);
+                        }
+                        sess.ops.push_front(Op::ImportExported { slot });
+                    }
+                }
+                _ => {
+                    self.cov.hit("4.5/repair-import-gave-up");
+                    if let Some(e) = self.exports.get_mut(&rsid) {
+                        e.remove(&slot);
+                    }
+                    self.repair_interrupted.insert(id);
+                }
+            }
+        }
         match (&op, &r, sid) {
             (Op::Export { slot }, OpRes::Key(k), Some(sid)) => {
                 self.exports.entry(sid).or_default().insert(*slot, *k);
@@ -1547,7 +1598,9 @@ impl World {
                 let id = (KIND_KEY, *slot);
                 if !self.restored && !self.tainted.contains(&id) {
                     let p = self.oracle.get(&id).cloned().unwrap_or_default();
-                    if !p.allows(&Some(key_entry(*slot, *k))) {
+                    if !p.allows(&Some(key_entry(*slot, *k))) && self.in_repair_flow(id, &p) {
+                        self.cov.hit("finding/I3-read-in-repair-window");
+                    } else if !p.allows(&Some(key_entry(*slot, *k))) {
                         self.fail(
                             "I3",
                             format!(
@@ -1562,7 +1615,11 @@ impl World {
                 let id = (KIND_KEY, *slot);
                 if !self.restored && !self.tainted.contains(&id) {
                     let p = self.oracle.get(&id).cloned().unwrap_or_default();
-                    if !p.allows(&None) {
+                    if !p.allows(&None) && self.in_repair_flow(id, &p) {
+                        // 4.5: between ResetPartition and the re-import the
+                        // reset writer answers Absent for a key it held
+                        self.cov.hit("finding/I3-read-in-repair-window");
+                    } else if !p.allows(&None) {
                         self.fail(
                             "I3",
                             format!(
@@ -1646,7 +1703,9 @@ impl World {
         // from this build at that manifest.
         for n in notes {
             if let Note::Unsealed { target, m, .. } = n {
-                if self.stores[bi(*target)].idx_or_none().state.taken_over() == Some((v, *m)) {
+                if !self.stores[bi(*target)].index_lost()
+                    && self.stores[bi(*target)].idx_or_none().state.taken_over() == Some((v, *m))
+                {
                     self.fail(
                         "I4",
                         format!(
@@ -1663,7 +1722,10 @@ impl World {
                 let p = self.stores[bi(*from)].idx_or_none().state;
                 let still_sealed = matches!(&p, PState::Sealed { target, m: pm, .. } if target.v == v && pm == m)
                     || matches!(&p, PState::Retired { to, m: pm, .. } if to.v == v && pm == m);
-                if !still_sealed && !self.restored {
+                // a predecessor whose index is lost (4.5) is read-only and
+                // answers nothing: neither sealed nor unsealed is known
+                let lost = self.stores[bi(*from)].index_lost();
+                if !still_sealed && !self.restored && !lost {
                     self.fail(
                         "I4b",
                         format!(
@@ -1691,7 +1753,7 @@ impl World {
                     && !self.restored
                 {
                     self.fail(
-                        "I1",
+                        "I1-reset",
                         format!(
                             "build {v} was reset to WRITER while build {} is {}",
                             ver(o),
@@ -1711,7 +1773,14 @@ impl World {
             for o in 0..NBUILDS {
                 if o != b && self.stores[o].has_state() {
                     self.fail(
-                        "I5",
+                        if self.restored {
+                            // 5.3: "The guarantee fails only if a
+                            // predecessor's vault:succ or index is restored
+                            // or wiped (4.4)": counted apart.
+                            "I5-after-restore"
+                        } else {
+                            "I5"
+                        },
                         format!(
                             "build {v} created the partition while build {} holds state ({})",
                             ver(o),
@@ -1724,6 +1793,17 @@ impl World {
         if notes.iter().any(|n| matches!(n, Note::SealedCorruptSent)) {
             self.sealed_corrupt_sent += 1;
         }
+    }
+
+    /// A key a live repair session has exported and not yet re-imported.
+    fn in_repair_flow(&self, id: Ident, p: &Possible) -> bool {
+        id.0 == KIND_KEY
+            && self.sessions.keys().any(|sid| {
+                self.exports
+                    .get(sid)
+                    .and_then(|e| e.get(&id.1))
+                    .is_some_and(|seed| p.allows(&Some(key_entry(id.1, *seed))))
+            })
     }
 
     fn accepting_writers(&self) -> Vec<Ver> {
@@ -1852,7 +1932,20 @@ impl World {
                     if self.restored {
                         continue;
                     }
-                    let inv = if id.0 == KIND_UNKNOWN { "I8" } else { "I2" };
+                    if self.in_repair_flow(*id, p) {
+                        // 4.5 steps 3 to 6: between ResetPartition and the
+                        // re-import the key is held by the running repair
+                        // flow; it is lost if the flow ends first.
+                        self.cov.hit("4.5/key-held-by-repair-flow");
+                        continue;
+                    }
+                    let inv = if id.0 == KIND_UNKNOWN {
+                        "I8"
+                    } else if self.repair_interrupted.contains(id) {
+                        "I2-repair-interrupted"
+                    } else {
+                        "I2"
+                    };
                     match self.held_value(b, *id) {
                         Ok(val) => {
                             if !p.allows(&val) {
@@ -1885,7 +1978,9 @@ impl World {
                                 continue;
                             }
                             if let Ok(val) = self.held_value(o, *id) {
-                                if !p.allows(&val) {
+                                if !p.allows(&val) && self.in_repair_flow(*id, p) {
+                                    self.cov.hit("finding/I3-state-in-repair-window");
+                                } else if !p.allows(&val) {
                                     self.fail(
                                         "I3",
                                         format!(
@@ -1911,8 +2006,17 @@ impl World {
                             format!("{}:{}", ver(b), self.stores[b].idx_or_none().state.code())
                         })
                         .collect();
+                    let lost = (0..NBUILDS)
+                        .filter(|b| self.stores[*b].index_lost())
+                        .count();
                     self.fail(
-                        "I2",
+                        if lost >= 2 {
+                            // 5.2 step 4: "if two report state 7, vault
+                            // unavailable"
+                            "I2-two-index-lost"
+                        } else {
+                            "I2"
+                        },
                         format!("acknowledged keys exist but 5.2 chooses no writer: {states:?}"),
                     );
                 } else if any_acked {
@@ -1973,7 +2077,7 @@ impl World {
                 .any(|v| self.stores[bi(*v)].idx_or_none().problems & PROBLEM_ANOTHER_WRITER != 0);
             if !reported {
                 self.fail(
-                    "I1",
+                    "I1-restore-unreported",
                     format!(
                         "after restores two builds accept changes and neither reports it: {w:?}"
                     ),

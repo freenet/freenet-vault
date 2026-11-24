@@ -53,6 +53,7 @@ fn main() {
             "--run-local-fifo" => cfg.d_global_fifo = false,
             "--no-garble" => cfg.garble_hops = false,
             "--no-withdrawals" => cfg.withdrawals = false,
+            "--parts-after-index" => cfg.params.parts_after_index = true,
             a => panic!("unknown argument {a}"),
         }
         i += 1;
@@ -125,6 +126,7 @@ fn main() {
     let mut cov = Cov::default();
     let mut by_inv: BTreeMap<&'static str, Vec<u64>> = BTreeMap::new();
     let mut corrupt_sealed = 0u64;
+    let mut shapes: BTreeMap<String, u64> = BTreeMap::new();
     let extra: std::collections::BTreeSet<u64> = COVERAGE_SEEDS
         .iter()
         .map(|(s, _)| *s)
@@ -137,6 +139,9 @@ fn main() {
         corrupt_sealed += o.sealed_corrupt_sent;
         if let Some(v) = o.violation {
             by_inv.entry(v.inv).or_default().push(seed);
+            *shapes
+                .entry(format!("{}: {}", v.inv, shape(&v.msg)))
+                .or_insert(0) += 1;
         }
     }
     let mut directed_violations = vec![];
@@ -150,7 +155,7 @@ fn main() {
         }
     }
     println!(
-        "schedules: {seeds} (seeds {start}..{}) plus {} coverage seeds and {} directed scenarios, delivery {:?}, adversarial {}, stale pointer {}, global FIFO {} (protocol revision 8)",
+        "schedules: {seeds} (seeds {start}..{}) plus {} coverage seeds and {} directed scenarios, delivery {:?}, adversarial {}, stale pointer {}, global FIFO {}, parts after index {} (protocol revision 8)",
         start + seeds,
         extra.len(),
         n_directed,
@@ -158,6 +163,7 @@ fn main() {
         cfg.adversarial,
         cfg.stale_pointer,
         cfg.d_global_fifo,
+        cfg.params.parts_after_index,
     );
     if by_inv.is_empty() && directed_violations.is_empty() {
         println!("violations: none");
@@ -174,6 +180,9 @@ fn main() {
             s.len(),
             &s[..s.len().min(8)]
         );
+    }
+    for (k, n) in &shapes {
+        println!("  shape {n:>6} {k}");
     }
     println!("sealed build sent a corrupt entry: {corrupt_sealed} times");
     let missing = cov.missing();
@@ -215,4 +224,28 @@ fn print_trace(cfg: &Cfg, sc: &freenet_vault_model::world::Scenario, seed: u64) 
     for l in o.trace {
         println!("{l}");
     }
+}
+
+/// A violation message with its numbers replaced and its oracle detail cut,
+/// so that violations of the same kind count together.
+fn shape(msg: &str) -> String {
+    let mut out = String::new();
+    let mut in_num = false;
+    for c in msg.chars() {
+        if c.is_ascii_digit() || (in_num && c.is_ascii_hexdigit()) {
+            if !in_num {
+                out.push('#');
+                in_num = true;
+            }
+        } else {
+            in_num = false;
+            out.push(c);
+        }
+    }
+    let cut = out
+        .find("; acknowledged")
+        .or_else(|| out.find("; possible"))
+        .or_else(|| out.find(": ["))
+        .unwrap_or(out.len());
+    out[..cut].to_string()
 }

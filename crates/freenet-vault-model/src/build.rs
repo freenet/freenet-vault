@@ -26,6 +26,14 @@ pub struct Params {
     /// Builds at or above this version no longer accept marks whose caller
     /// (content) is odd: such marks are "dropped by policy" (0x03).
     pub reject_odd_marks_from: Ver,
+    /// The document does not order the vault:parts write against the first
+    /// index write that gives a build state (4.1, 4.5). Default (false):
+    /// vault:parts first, so that an index lost later is always detected.
+    /// true: the index first, vault:parts right after it. Not a gate
+    /// setting; it exists to measure the finding the default ordering
+    /// produces (a failed or crashed first index write leaves the index
+    /// absent while listed: a false index loss).
+    pub parts_after_index: bool,
 }
 
 impl Default for Params {
@@ -37,6 +45,7 @@ impl Default for Params {
             window_wakeup: 2,
             missing_max: 3,
             reject_odd_marks_from: 40,
+            parts_after_index: false,
         }
     }
 }
@@ -309,7 +318,7 @@ impl<'a> Cx<'a> {
     /// vault:parts lists the partition before the first index write that
     /// gives this build state for it.
     fn ensure_parts(&mut self) -> R<bool> {
-        if self.parts_listed() {
+        if self.p.parts_after_index || self.parts_listed() {
             return Ok(true);
         }
         self.hit("4.1/parts-written");
@@ -360,6 +369,11 @@ impl<'a> Cx<'a> {
     /// the disk holds what was intended.
     fn commit(&mut self, new: &Index) -> R<bool> {
         if self.put(SName::Idx, SVal::Idx(new.clone()))? {
+            let state = !(new.state.is_none() && new.entries.is_empty());
+            if self.p.parts_after_index && state && !self.parts_listed() {
+                self.hit("4.1/parts-written-after-index");
+                self.put(SName::Parts, SVal::Parts)?;
+            }
             return Ok(true);
         }
         self.hit("4.2/commit-failed-read-back");
@@ -735,6 +749,9 @@ impl<'a> Cx<'a> {
                         };
                         if self.commit(&n)? {
                             self.hit("13.1/armed");
+                            if self.succ().stopped() {
+                                self.hit("13.1/armed-while-stopped");
+                            }
                         }
                     }
                 } else {
@@ -1703,6 +1720,15 @@ impl<'a> Cx<'a> {
                     Ok(cack(CStatus::NoState, s.highest()))
                 } else {
                     self.hit("7.6q/NONE-storage-failure");
+                    if s.withdrawal.is_some_and(|w| w.v > rec.v) {
+                        // the stored withdrawal's version is above the
+                        // querier's: the record is "not newer" (3) and is
+                        // never stored, so this answer never becomes 0x0B
+                        self.hit("7.6q/NONE-record-below-withdrawal-floor");
+                        if probe {
+                            self.hit("finding/creation-probe-blocked-by-withdrawal");
+                        }
+                    }
                     Ok(cack(CStatus::StorageFailure, s.highest()))
                 }
             }
@@ -1830,6 +1856,9 @@ impl<'a> Cx<'a> {
                             return Ok(OpRes::Refused(12));
                         }
                         self.hit("5.1/created");
+                        if self.succ().stopped() {
+                            self.hit("5.3/created-while-stopped");
+                        }
                         if !self.def.preds.is_empty() {
                             self.hit("5.3/created-after-every-predecessor-confirmed");
                         }
