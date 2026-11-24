@@ -195,6 +195,52 @@ pub fn probe_crash_after_record_stored(cfg: &Cfg) -> Option<Scenario> {
     Some(r.done())
 }
 
+/// Decision 1 (2026-11-24), awaiting path: 10 hands over to 20; the
+/// "accepted" answer is lost, so 20 is awaiting and 10 still sealed. 10's
+/// store is then wiped (a predecessor reads NONE only after a wipe or a
+/// restore: 4.4). 20's Query reaches NONE 10, which stores 20's record and
+/// crashes before answering. Later steps re-query; 10 answers 0x0B from the
+/// record already stored and 20 stops awaiting.
+pub fn query_crash_after_record_stored(cfg: &Cfg) -> Option<Scenario> {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10), Rec::build(20)]);
+    r.act(Action::Publish);
+    r.load(vec![Op::Generate { slot: 0, seed: 5 }]);
+    r.act(Action::Publish);
+    r.act(Action::Load {
+        client: 0,
+        fetch: Fetch::Newest,
+        ops: vec![],
+    });
+    let awaiting = |r: &Rec_| matches!(r.state(20), PState::Writer(ref w) if w.awaiting);
+    for _ in 0..200 {
+        if awaiting(&r) || r.w.idle() {
+            break;
+        }
+        r.step();
+    }
+    if !awaiting(&r) {
+        return None;
+    }
+    // lose the "accepted" answer
+    r.act(Action::Step {
+        pick: 0,
+        fate: Fate::Drop,
+    });
+    r.act(Action::Wipe { b: bi(10) as u8 });
+    r.act(Action::ArmWriteFault {
+        after: 0,
+        fault: WriteFault::CrashAfter,
+    });
+    r.act(Action::Wakeup { b: bi(20) as u8 });
+    r.drain();
+    for _ in 0..3 {
+        r.act(Action::Wakeup { b: bi(20) as u8 });
+        r.drain();
+        r.load(vec![]);
+    }
+    Some(r.done())
+}
+
 /// Every directed scenario with the row it exists to reach.
 pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
     let mut v = vec![];
@@ -207,6 +253,9 @@ pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
     ));
     if let Some(sc) = probe_crash_after_record_stored(cfg) {
         v.push(("5.3/probe-crash-after-record-stored", sc));
+    }
+    if let Some(sc) = query_crash_after_record_stored(cfg) {
+        v.push(("7.4/query-crash-after-record-stored", sc));
     }
     v
 }

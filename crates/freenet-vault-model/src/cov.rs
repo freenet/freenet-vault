@@ -111,6 +111,10 @@ pub const REQUIRED: &[&str] = &[
     "5.3/probe-crash-after-record-stored",
     "5.3/two-builds-armed-at-once",
     "5.3/nostate-answer-lost",
+    "dec1/nostate-answers-awaiting-query",
+    "dec1/two-queriers-got-nostate-from-same-predecessor",
+    "dec1/awaiting-nostate-answer-lost",
+    "7.4/query-crash-after-record-stored",
     // 4.5: index lost
     "4.5/index-lost-call",
     "4.5/lost/poke-reports-state-7",

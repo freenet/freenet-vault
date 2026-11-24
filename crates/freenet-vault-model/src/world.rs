@@ -341,6 +341,8 @@ pub struct World {
     /// re-import (labels I2 failures on them).
     repair_interrupted: BTreeSet<Ident>,
     repair_tries: BTreeMap<(usize, u16), u8>,
+    /// Per predecessor, the queriers it answered 0x0B (decision 1).
+    nostate_to: BTreeMap<Ver, BTreeSet<Ver>>,
 }
 
 impl World {
@@ -379,6 +381,7 @@ impl World {
             reset_done: BTreeSet::new(),
             repair_interrupted: BTreeSet::new(),
             repair_tries: BTreeMap::new(),
+            nostate_to: BTreeMap::new(),
             cfg,
         }
     }
@@ -448,15 +451,15 @@ impl World {
         let before = self.stores[b].idx_or_none();
         let before_lost = self.stores[b].index_lost();
         let before_succ = self.stores[b].succ();
-        let probe_to_none = before.state.is_none()
-            && !before_lost
-            && matches!(
-                &input,
-                Input::Hop {
-                    frame: Frame::Query { m: 0, .. },
-                    ..
-                }
-            );
+        // A Query (creation probe, m zero; or an awaiting successor's
+        // Query, m non-zero) reaching a NONE predecessor.
+        let query_to_none = match &input {
+            Input::Hop {
+                from,
+                frame: Frame::Query { m, .. },
+            } if before.state.is_none() && !before_lost => Some((*from, *m)),
+            _ => None,
+        };
         let fired_before = self.faults.fired.len();
         let quota_before = self.faults.quota_hits;
         let desc = if self.cfg.trace {
@@ -504,16 +507,41 @@ impl World {
         match res {
             Err(Crash) => {
                 self.log(|| format!("  {} {desc} -> CRASH inside the call", ver(b)));
-                if probe_to_none && self.stores[b].succ() != before_succ {
-                    // decision 1 condition: the older build crashes between
-                    // storing the record and answering "no state"
-                    self.cov.hit("5.3/probe-crash-after-record-stored");
+                if let Some((_, m)) = query_to_none {
+                    if self.stores[b].succ() != before_succ {
+                        // decision 1 condition: the older build crashes
+                        // between storing the record and answering "no state"
+                        self.cov.hit(if m == 0 {
+                            "5.3/probe-crash-after-record-stored"
+                        } else {
+                            "7.4/query-crash-after-record-stored"
+                        });
+                    }
                 }
                 self.check_transition(b, &before, before_lost, &after, &notes);
                 self.crash_node();
                 None
             }
             Ok(out) => {
+                if let (Some((q, m)), Reply::Frame(f)) = (query_to_none, &out.reply) {
+                    if is_nostate(f) {
+                        // decision 1 condition: two new builds racing to
+                        // query the same predecessor
+                        let set = self.nostate_to.entry(ver(b)).or_default();
+                        set.insert(q);
+                        if set.len() >= 2 {
+                            self.cov
+                                .hit("dec1/two-queriers-got-nostate-from-same-predecessor");
+                            if m != 0 {
+                                self.cov
+                                    .hit("dec1/two-queriers-same-predecessor-one-awaiting");
+                            }
+                        }
+                        if m != 0 {
+                            self.cov.hit("dec1/nostate-answers-awaiting-query");
+                        }
+                    }
+                }
                 self.log(|| {
                     format!(
                         "  {} {desc} -> {:?} hops [{}] state {} -> {}",
@@ -644,7 +672,7 @@ impl World {
                     "fault/hop-lost"
                 });
                 if is_nostate(&hop.frame) {
-                    self.cov.hit("5.3/nostate-answer-lost");
+                    self.cov.hit(nostate_label(&hop.frame, "lost"));
                 }
                 self.log(|| format!("  drop {}->{} {}", hop.from, hop.to, hop.frame.short()));
                 return;
@@ -661,7 +689,7 @@ impl World {
             Fate::Duplicate if self.cfg.adversarial => {
                 self.cov.hit("adv/duplicated");
                 if is_nostate(&hop.frame) {
-                    self.cov.hit("adv/nostate-answer-duplicated");
+                    self.cov.hit(nostate_label(&hop.frame, "duplicated"));
                 }
                 if let Some(r) = r {
                     if let Some(run) = self.runs.get_mut(&r) {
@@ -1017,7 +1045,7 @@ impl World {
                 Fate::Drop => {
                     self.cov.hit("fault/reply-lost");
                     if is_nostate(&f) {
-                        self.cov.hit("5.3/nostate-answer-lost");
+                        self.cov.hit(nostate_label(&f, "lost"));
                     }
                     self.log(|| format!("  drop reply {rfrom}->{from} {}", f.short()));
                     return;
@@ -2193,6 +2221,18 @@ fn intended_value(op: &Op, _oracle: &BTreeMap<Ident, Possible>) -> Option<(Ident
             }),
         )),
         _ => None,
+    }
+}
+
+/// Coverage label for a lost or duplicated 0x0B: to a creation probe, or
+/// to an awaiting successor's Query (decision 1).
+fn nostate_label(f: &Frame, what: &str) -> &'static str {
+    let probe = matches!(f, Frame::CompleteAck { m: 0, .. });
+    match (probe, what) {
+        (true, "lost") => "5.3/nostate-answer-lost",
+        (false, "lost") => "dec1/awaiting-nostate-answer-lost",
+        (true, _) => "adv/nostate-answer-duplicated",
+        (false, _) => "adv/awaiting-nostate-answer-duplicated",
     }
 }
 

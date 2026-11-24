@@ -85,6 +85,19 @@ fn probe_crash_after_record_stored_is_safe_and_live() {
     assert!(o.cov.get("5.3/created-after-every-predecessor-confirmed") > 0);
 }
 
+/// Decision 1, awaiting path: a crash between the NONE predecessor storing
+/// the record and answering leaves no invariant violated, and the
+/// successor stops awaiting on a later Query answered 0x0B.
+#[test]
+fn query_crash_after_record_stored_is_safe_and_live() {
+    let cfg = Cfg::gate();
+    let sc = crate::directed::query_crash_after_record_stored(&cfg).expect("scenario builds");
+    let o = run(&cfg, &sc);
+    assert!(o.violation.is_none(), "{:?}", o.violation);
+    assert!(o.cov.get("7.4/query-crash-after-record-stored") > 0);
+    assert!(o.cov.get("6/query-answer/awaiting-cleared/NoState") > 0);
+}
+
 #[test]
 fn coverage_seeds_still_hit_their_rows() {
     let cfg = Cfg::gate();
