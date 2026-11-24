@@ -122,6 +122,10 @@ pub struct Store<'a, H: Host> {
     /// An index was found, in either copy.
     exists: bool,
     mode: Mode,
+    /// At least one index copy was read and passed its checksum in `open`.
+    /// Without that there is no positive evidence of what the partition holds
+    /// (every read may have missed), so nothing destructive runs.
+    verified: bool,
 }
 
 /// A write that took, by its own report or by reading it back.
@@ -140,7 +144,7 @@ impl<'a, H: Host> Store<'a, H> {
         let second = host.get_secret(&n2);
         let d1 = first.as_deref().map(Index::decode);
         let d2 = second.as_deref().map(Index::decode);
-        let (index, on_disk, mode, exists) = match (d1, d2) {
+        let (index, on_disk, mode, exists, verified) = match (d1, d2) {
             (Some(Ok(i1)), _) => {
                 let b1 = first.expect("decoded");
                 // The second copy is brought in line with the first (the
@@ -148,19 +152,19 @@ impl<'a, H: Host> Store<'a, H> {
                 let in_line =
                     second.as_deref() == Some(b1.as_slice()) || write_verified(host, &n2, &b1);
                 let mode = if in_line { Mode::Clean } else { Mode::Unsynced };
-                (i1, Some(b1), mode, true)
+                (i1, Some(b1), mode, true, true)
             }
             // The first copy is there but damaged: restore it from the second.
             (Some(Err(_)), Some(Ok(i2))) => {
                 let b2 = second.expect("decoded");
                 if write_verified(host, &n1, &b2) {
-                    (i2, Some(b2), Mode::Clean, true)
+                    (i2, Some(b2), Mode::Clean, true, true)
                 } else {
-                    (i2, first, Mode::ReadOnly, true)
+                    (i2, first, Mode::ReadOnly, true, true)
                 }
             }
             // Absent first, valid second: ambiguous, so read-only.
-            (None, Some(Ok(i2))) => (i2, None, Mode::ReadOnly, true),
+            (None, Some(Ok(i2))) => (i2, None, Mode::ReadOnly, true, true),
             (None, None) => {
                 let listed = host
                     .get_secret(names::PARTS)
@@ -168,7 +172,10 @@ impl<'a, H: Host> Store<'a, H> {
                 if listed {
                     return Err(StoredIndexMalformed);
                 }
-                (Index::none(), None, Mode::Clean, false)
+                // No index was read: a new partition, or every read missed. Entries
+                // may be written (a new partition must start), but nothing is
+                // removed in this call (`verified` stays false).
+                (Index::none(), None, Mode::Clean, false, false)
             }
             _ => return Err(StoredIndexMalformed),
         };
@@ -179,6 +186,7 @@ impl<'a, H: Host> Store<'a, H> {
             on_disk,
             exists,
             mode,
+            verified,
         })
     }
 
@@ -186,8 +194,10 @@ impl<'a, H: Host> Store<'a, H> {
         self.mode
     }
 
+    /// Writes need both index copies in line: while the backup is stale it
+    /// still names entry copies, and a write could overwrite one of them.
     fn writable(&self) -> Result<(), StorageFailure> {
-        if self.mode == Mode::ReadOnly {
+        if self.mode != Mode::Clean {
             Err(StorageFailure)
         } else {
             Ok(())
@@ -205,7 +215,7 @@ impl<'a, H: Host> Store<'a, H> {
     /// Writes `new` as the index. On a failed write, reads back: the commit
     /// stands if the disk holds exactly `new`.
     pub fn commit(&mut self, new: Index) -> Result<(), CommitFailure> {
-        if self.mode == Mode::ReadOnly {
+        if self.mode != Mode::Clean {
             return Err(CommitFailure { old_intact: true });
         }
         let name = names::index(&self.partition);
@@ -233,6 +243,9 @@ impl<'a, H: Host> Store<'a, H> {
         self.index = new;
         self.on_disk = Some(bytes);
         self.exists = true;
+        // The index just committed is the evidence from here on (a partition
+        // that began blind is a new one once it holds an index of its own).
+        self.verified = true;
         Ok(())
     }
 
@@ -314,7 +327,7 @@ impl<'a, H: Host> Store<'a, H> {
     pub fn process_gc(&mut self) {
         // Only when both index copies are verified identical: otherwise a name
         // that one of them references could be removed.
-        if self.mode != Mode::Clean {
+        if self.mode != Mode::Clean || !self.verified {
             return;
         }
         let list = self.read_gc();

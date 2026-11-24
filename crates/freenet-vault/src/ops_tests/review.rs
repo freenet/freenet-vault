@@ -1540,3 +1540,117 @@ fn every_valid_frame_from_every_origin_obeys_the_same_invariants() {
         }
     }
 }
+
+// ---- round 3: the two sequences that deleted the last acknowledged key ----
+
+/// Replaces `slot`'s seed through `process`; the reply is the page's answer.
+fn import_replace(h: &mut MemHost, rid: u64, slot: &[u8], seed: [u8; 32]) -> Reply {
+    page(
+        h,
+        op(
+            rid,
+            Operation::Import {
+                slot: slot.to_vec(),
+                seed,
+                replace: true,
+            },
+        ),
+    )
+}
+
+/// Sequence 1: a replace succeeds with the backup index write failing; a second
+/// replace must not overwrite the entry copy the backup still names, because a
+/// torn primary write and a restart restore that backup and gc then removes the
+/// acknowledged copy.
+#[test]
+fn an_unsynced_store_refuses_entry_writes_and_never_loses_the_last_acknowledged_seed() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    arm(&mut h);
+    let slot = vec![7; 32];
+    let (a, b, c) = ([0xA1; 32], [0xB2; 32], [0xC3; 32]);
+    let imp = |seed| Operation::Import {
+        slot: slot.clone(),
+        seed,
+        replace: true,
+    };
+    assert!(is_key_result(&page(&mut h, op(1, imp(a)))));
+    let idx = names::index(&p);
+    let idx2 = names::index2(&p);
+    // Step 2: the backup write fails, the replace is acknowledged.
+    let i2 = idx2.clone();
+    h.set_fault(move |n| {
+        if n == i2.as_slice() {
+            WriteFault::Fail
+        } else {
+            WriteFault::None
+        }
+    });
+    assert!(is_key_result(&import_replace(&mut h, 2, &slot, b)));
+    assert_eq!(seed_of(&h, &slot), b);
+    // Steps 3 and 4: the backup still fails and the primary write tears.
+    let i1 = idx.clone();
+    let i2 = idx2.clone();
+    h.set_fault(move |n| {
+        if n == i1.as_slice() {
+            WriteFault::GarbageButFail
+        } else if n == i2.as_slice() {
+            WriteFault::Fail
+        } else {
+            WriteFault::None
+        }
+    });
+    let r = import_replace(&mut h, 3, &slot, c);
+    assert!(!is_key_result(&r), "C must not be acknowledged: {r:?}");
+    // Step 5 and 6: the host recovers, the process restarts, gc runs.
+    h.clear_fault();
+    let mut h = h.restart();
+    recover(&mut h);
+    recover(&mut h);
+    assert_eq!(seed_of(&h, &slot), b, "the acknowledged seed B survives");
+}
+
+/// Sequence 2: a replace crashes after writing its candidate and before the
+/// index commit; both indexes still name the original. On restart every index
+/// read and the partition list miss transiently while a gc list remains
+/// readable. gc must not treat that as a fresh partition and delete the
+/// original.
+#[test]
+fn a_blind_open_never_runs_gc_on_the_committed_original() {
+    let p = domain().partition();
+    let slot = vec![7; 32];
+    let (a, b) = ([0xA1; 32], [0xB2; 32]);
+    let mut total = 0;
+    for n in 0..40 {
+        let mut h = MemHost::new();
+        arm(&mut h);
+        assert!(is_key_result(&import_replace(&mut h, 1, &slot, a)));
+        let start = h.mutations;
+        h.crash_after(n);
+        let _ = import_replace(&mut h, 2, &slot, b);
+        if h.mutations - start < n {
+            break;
+        }
+        total = n;
+        let mut h = h.restart();
+        h.hidden.insert(names::index(&p));
+        h.hidden.insert(names::index2(&p));
+        h.hidden.insert(names::PARTS.to_vec());
+        let _ = from_page_as(
+            &mut h,
+            page_id(),
+            op(
+                900,
+                Operation::List {
+                    after: vec![],
+                    max: 100,
+                },
+            ),
+        );
+        h.hidden.clear();
+        recover(&mut h);
+        let s = seed_of(&h, &slot);
+        assert!(s == a || s == b, "crash point {n}: the key was lost");
+    }
+    assert!(total > 2, "the sweep must reach the commit");
+}
