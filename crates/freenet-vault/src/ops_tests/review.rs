@@ -2316,3 +2316,115 @@ fn reset_is_refused_when_a_newer_build_is_known() {
         refused(80, refused::OPERATION_NOT_ALLOWED)
     );
 }
+
+// ---- undecryptable blobs read as absent without poisoning (core #6323) ----
+
+/// The index is undecryptable while `vault:parts` lists the partition: absent
+/// reads as lost, never as new. Read-only, nothing written, the call is not
+/// poisoned, and signing keeps working by direct read.
+#[test]
+fn an_undecryptable_index_is_read_only_not_fresh() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let pk = crypto::public_key(&seed_of(&h, &slot));
+    h.undecryptable.insert(names::index(&p));
+    let before = h.secrets.clone();
+    let bits = problems_of(&mut h);
+    assert_ne!(bits & problems::INDEX_LOST, 0);
+    assert_eq!(
+        handover(page(&mut h, poke(0, None))).partition_state,
+        partition_state::UNKNOWN_INDEX_LOST
+    );
+    assert_eq!(
+        page(&mut h, op(5, Operation::Delete { slot: slot.clone() })),
+        refused(5, refused::STORAGE_FAILURE)
+    );
+    assert!(is_sig(&sign_batch(&mut h, 6, &slot, pk)));
+    assert!(!h.poisoned());
+    assert_eq!(h.secrets, before);
+}
+
+/// An undecryptable entry copy that the index names reads as absent: the entry
+/// is Missing, nothing is dropped or deleted, and the call is not poisoned.
+#[test]
+fn an_undecryptable_entry_is_missing_and_never_destroyed() {
+    let mut h = MemHost::new();
+    let (slot, pk) = writer_with_key(&mut h);
+    h.undecryptable.insert(entry_name_of(&h, KIND_KEY, &slot));
+    let before = h.secrets.clone();
+    assert_eq!(
+        page(&mut h, op(7, Operation::PublicKey { slot: slot.clone() })),
+        refused(7, refused::STORAGE_FAILURE)
+    );
+    let _ = pk;
+    assert_eq!(h.secrets, before);
+    assert!(!h.poisoned());
+    let ix = crate::storage::index::Index::decode(&h.secrets[&names::index(&domain().partition())])
+        .unwrap();
+    assert_eq!(ix.lost_entries, 0);
+    assert_eq!(ix.entries.len(), 1);
+}
+
+/// An undecryptable caller mark reads as absent: the caller is served at the
+/// compiled-in floor and the mark is not overwritten by an operation.
+#[test]
+fn an_undecryptable_caller_mark_is_not_overwritten() {
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let c = chat(5);
+    assert!(is_key_result(&from_delegate(
+        &mut h,
+        c.key,
+        pk_req(&c, &slot)
+    )));
+    h.undecryptable
+        .insert(entry_name_of(&h, KIND_CALLER_MARK, &mark_key()));
+    let before = h.secrets.clone();
+    let c9 = chat(9);
+    assert!(is_key_result(&from_delegate(
+        &mut h,
+        c9.key,
+        pk_req(&c9, &slot)
+    )));
+    assert_eq!(h.secrets, before, "a corrupt mark was overwritten");
+}
+
+/// Corrupt gc lists read as absent: nothing is removed on that evidence, and
+/// the next write rebuilds them.
+#[test]
+fn undecryptable_gc_lists_remove_nothing() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let stray = names::entry(&p, KIND_KEY, &[9; 32], 0);
+    h.secrets.insert(stray.clone(), vec![1]);
+    let list = crate::storage::encode_gc_for_test(std::slice::from_ref(&stray));
+    h.secrets.insert(names::gc(&p), list.clone());
+    h.secrets.insert(names::gc2(&p), list);
+    h.undecryptable.insert(names::gc(&p));
+    h.undecryptable.insert(names::gc2(&p));
+    let _ = problems_of(&mut h);
+    // Removing nothing is the safe outcome; the stray stays (a bounded leak).
+    assert!(h.secrets.contains_key(&stray));
+    assert!(is_key_result(&import_replace(&mut h, 2, &slot, [0xB2; 32])));
+    assert_eq!(seed_of(&h, &slot), [0xB2; 32]);
+}
+
+/// Pins the stated residual: index AND `vault:parts` both undecryptable looks
+/// like a new partition (reads cannot tell absent from corrupt, core #6323).
+/// The keys stay on disk and Export by direct read still finds them.
+#[test]
+fn double_corruption_of_index_and_parts_looks_fresh_but_keys_stay_exportable() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let seed = seed_of(&h, &slot);
+    h.undecryptable.insert(names::index(&p));
+    h.undecryptable.insert(names::PARTS.to_vec());
+    assert!(!Store::open(&mut h, p).unwrap().has_index());
+    assert_eq!(
+        crate::storage::rescue_export_seed(&h, &p, &slot),
+        Some(seed)
+    );
+}

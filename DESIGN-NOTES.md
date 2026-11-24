@@ -141,6 +141,27 @@ Storage and formats:
   many stores the call opens (a failed removal does not latch; its name stays
   listed). gc list copies are written one after the other and the write stops
   at the first failure, so a torn write damages at most one copy.
+  **Correction (freenet-core #6323, still open):** a blob that cannot be
+  decrypted (corrupt bytes on disk) reads as ABSENT without poisoning the call,
+  so "absent" can also mean corrupt. `MemHost::undecryptable` models it. The
+  vault takes no destructive action on the absence of a secret that a sibling
+  record says should exist: index absent while `vault:parts` lists the
+  partition is read-only, not new (so an undecryptable index never leads to a
+  fresh index); an entry or caller mark the index names but that reads absent
+  is Missing (never dropped, a mark is served at the floor and not overwritten
+  by an operation); absent gc lists remove nothing (the next write rebuilds
+  them; names held only by corrupt lists are leaked, bounded by the 4096-name
+  cap on the list, and a deleted key's bytes can outlive the delete in that
+  case). Double-corruption residual: if the index AND `vault:parts` are both
+  undecryptable at once the partition looks new, and a creation or ARM then
+  writes a fresh index over it and orphans the keys. They stay on disk and
+  Export by direct read finds each slot the UI asks for (pinned by a test).
+  Fixing core #6323 (poison, or a distinct code) closes it. Direct read can also
+  return a stale copy if the newer copy is undecryptable and the older one was
+  never removed. Revision 8 (4.5): a build whose index is lost reports
+  `partition_state` 7 (unknown: index lost) with problems bit 6, answers no
+  handover frame (none are built) and ignores Poke flags (it cannot write); the
+  courier never counts it as NONE.
   Round-5 findings against this model: moot (they need a present secret to read
   as absent in a completed call): blind arming over a transient miss (also the
   skeptical lens's S1: index and `vault:parts` both missing in a completed call

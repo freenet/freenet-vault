@@ -32,6 +32,7 @@ fn frozen_constants_by_value() {
     assert_eq!(partition_state::RETIRED, 4);
     assert_eq!(partition_state::NONE_ARMED, 5);
     assert_eq!(partition_state::WRITER_AWAITING, 6);
+    assert_eq!(partition_state::UNKNOWN_INDEX_LOST, 7);
     assert_eq!(record_state::NONE, 0);
     assert_eq!(record_state::SUCCESSOR, 1);
     assert_eq!(record_state::STOPPED, 2);

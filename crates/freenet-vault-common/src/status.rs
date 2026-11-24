@@ -41,6 +41,8 @@ pub mod partition_state {
     pub const RETIRED: u8 = 4;
     pub const NONE_ARMED: u8 = 5;
     pub const WRITER_AWAITING: u8 = 6;
+    /// The index is lost: read-only, state unknown (protocol 4.5, 12.4).
+    pub const UNKNOWN_INDEX_LOST: u8 = 7;
 }
 
 /// HandoverStatus `record_state`.

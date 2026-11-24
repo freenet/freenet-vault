@@ -896,6 +896,11 @@ fn handover_status<H: Host>(
         h.lost_entries = ix.lost_entries;
     } else {
         h.problems |= problems::STORAGE_FAILURE;
+        // Index lost (bit 6): state 7, unknown (protocol 4.5). A build in this
+        // state is never NONE, so no other build is armed while it holds keys.
+        if h.problems & problems::INDEX_LOST != 0 {
+            h.partition_state = partition_state::UNKNOWN_INDEX_LOST;
+        }
     }
     if !own_page {
         h = h.redacted();

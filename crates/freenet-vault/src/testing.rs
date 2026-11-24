@@ -7,7 +7,11 @@
 //! is really absent. A write or removal that reports failure may or may not
 //! have landed (`WriteFault`, `remove_fault`); that is the uncertainty the
 //! vault defends against, along with crashes between host calls (`crash_after`)
-//! and bytes that are present but corrupt.
+//! and bytes that are present but corrupt. A blob that cannot be decrypted
+//! (corrupt bytes on disk, freenet-core #6323, still open) reads as ABSENT
+//! WITHOUT poisoning the call (`undecryptable`): so "absent" can also mean
+//! corrupt, and the vault never destroys anything on the absence of a secret
+//! that a sibling record says should exist.
 
 use crate::host::Host;
 use std::collections::{BTreeMap, BTreeSet};
@@ -41,6 +45,10 @@ pub struct MemHost {
     /// `None` and poisons the call (see the module docs).
     pub read_fault: BTreeSet<Vec<u8>>,
     poisoned: std::cell::Cell<bool>,
+    /// Secret names whose stored bytes cannot be decrypted: the secret is on
+    /// disk (and a write replaces it) but a read answers `None`, and the call
+    /// is NOT poisoned (core #6323).
+    pub undecryptable: BTreeSet<Vec<u8>>,
     /// Secret names `remove_secret` reports failure for without removing.
     pub undeletable: BTreeSet<Vec<u8>>,
     /// Secret names `remove_secret` removes but reports failure for.
@@ -67,6 +75,7 @@ impl MemHost {
             writes: 0,
             read_fault: BTreeSet::new(),
             poisoned: std::cell::Cell::new(false),
+            undecryptable: BTreeSet::new(),
             undeletable: BTreeSet::new(),
             remove_lands_but_fails: BTreeSet::new(),
             mutations: 0,
@@ -85,6 +94,8 @@ impl MemHost {
     pub fn restart(&self) -> Self {
         let mut h = Self::new();
         h.secrets = self.secrets.clone();
+        // Corrupt bytes on disk stay corrupt across a restart.
+        h.undecryptable = self.undecryptable.clone();
         h
     }
 
@@ -122,6 +133,9 @@ impl Host for MemHost {
     fn get_secret(&self, key: &[u8]) -> Option<Vec<u8>> {
         if self.read_fault.contains(key) {
             self.poisoned.set(true);
+            return None;
+        }
+        if self.undecryptable.contains(key) {
             return None;
         }
         self.secrets.get(key).cloned()
