@@ -30,12 +30,6 @@ const AUTHOR_SEED: [u8; 32] = [0xD0; 32];
 const APP_ID: &[u8] = b"conf.vault";
 const CONTAINER: [u8; 32] = [0xC0; 32];
 const PUBLISHER_SEED: [u8; 32] = [0xB0; 32];
-const CALLER_APPS: [&[u8]; NCALLERS as usize] = [
-    b"conf.caller0",
-    b"conf.caller1",
-    b"conf.caller2",
-    b"conf.caller3",
-];
 const GARBLED: &[u8] = b"\xFFgarbled";
 
 pub fn vk(seed: &[u8; 32]) -> [u8; 32] {
@@ -79,11 +73,24 @@ pub fn page_id() -> [u8; 32] {
 }
 
 pub fn caller_vk(c: u16) -> [u8; 32] {
-    vk(&[0xE0 + c as u8; 32])
+    vk(&[0xE0u8.wrapping_add(c as u8); 32])
 }
 
+/// Caller `c`'s app id, `conf.caller<c>` (any `c`: the world's damage may
+/// flip a key bit, 0x100).
 pub fn caller_app(c: u16) -> &'static [u8] {
-    CALLER_APPS[c as usize]
+    thread_local!(static A: RefCell<HashMap<u16, &'static [u8]>> = RefCell::new(HashMap::new()));
+    A.with(|m| {
+        *m.borrow_mut()
+            .entry(c)
+            .or_insert_with(|| Box::leak(format!("conf.caller{c}").into_bytes().into_boxed_slice()))
+    })
+}
+
+/// The model keys the bridge names: those the generator uses and the same
+/// with bit 0x100 flipped (the world's "changed key field" damage, 15.3).
+fn model_keys() -> impl Iterator<Item = u16> {
+    (0..64u16).chain(0x100..0x140)
 }
 
 pub fn caller_record(c: u16, version: u32) -> [u8; 100] {
@@ -95,7 +102,7 @@ pub fn caller_record(c: u16, version: u32) -> [u8; 100] {
             h.update(&c.to_be_bytes());
             h.update(&version.to_be_bytes());
             sign_record(
-                &[0xE0 + c as u8; 32],
+                &[0xE0u8.wrapping_add(c as u8); 32],
                 caller_app(c),
                 version,
                 *h.finalize().as_bytes(),
@@ -204,7 +211,14 @@ pub fn key_of(kind: u8, key: &[u8]) -> Option<u16> {
             let k = u16::from_be_bytes([s[30], s[31]]);
             (slot32(k) == s).then_some(k)
         }
-        KIND_MARK => (0..NCALLERS).find(|c| key_bytes(KIND_MARK, *c) == key),
+        KIND_MARK => {
+            let app = key.get(32..)?;
+            let c: u16 = std::str::from_utf8(app.strip_prefix(b"conf.caller")?)
+                .ok()?
+                .parse()
+                .ok()?;
+            (key_bytes(KIND_MARK, c) == key).then_some(c)
+        }
         _ => {
             if key.len() != 32 {
                 return None;
@@ -257,8 +271,7 @@ impl Tables {
             put(names::progress(v, &p), SName::X(v));
         }
         for kind in [KIND_KEY, KIND_MARK, KIND_UNKNOWN] {
-            let n = if kind == KIND_MARK { NCALLERS } else { 32 };
-            for key in 0..n {
+            for key in model_keys() {
                 for par in [false, true] {
                     put(
                         names::entry(&p, kind, &key_bytes(kind, key), par as u8),

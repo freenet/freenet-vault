@@ -153,8 +153,9 @@ impl LibHost for BHost<'_, '_> {
     fn set_secret(&mut self, key: &[u8], value: &[u8]) -> bool {
         let n = self.t.borrow_mut().name_of(key).unwrap_or_else(|| {
             panic!(
-                "library wrote an unmapped secret {:?}",
-                String::from_utf8_lossy(key)
+                "library wrote an unmapped secret {:?}: {:?}",
+                String::from_utf8_lossy(key),
+                freenet_vault_common::entry::Entry::decode(value)
             )
         });
         let v = self.t.borrow_mut().decode(self.own, n, value);
