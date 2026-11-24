@@ -1,0 +1,8 @@
+schedules: 2000 (seeds 0..2000) plus 11 coverage seeds and 147 directed scenarios, delivery Core, adversarial false, stale pointer false, global FIFO true, catch-all listing failure continues false, absent vault:parts is a valid list true, mutant None (protocol revision 10)
+violation I4 in the directed scenario for rev9-trace/stated-F5-I4-two-restores-seed88774: build 10 unsealed while its target 20 has taken over from it at the same manifest
+violation I5-after-restore: 2 schedules, first seeds [1762, 1894]
+  shape      1 (first seed   1894) I5-after-restore: build # created the partition while build # holds state (RECEIVING)
+  shape      1 (first seed   1762) I5-after-restore: build # created the partition while build # holds state (WRITER)
+sealed build sent a corrupt entry: 0 times
+schedules run: 2011; handovers (took over): 2374; calls in read-only mode: 19489; direct reads served: 6521, storage failure: 3196; I2 checks in read-only mode: served 55021, storage failure with the copy on disk 32618
+coverage: 345 counters, 0 required missing

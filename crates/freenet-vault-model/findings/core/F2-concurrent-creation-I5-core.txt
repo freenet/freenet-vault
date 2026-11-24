@@ -1,0 +1,51 @@
+seed 44: Some(Violation { inv: "I5", msg: "build 20 created the partition while build 10 holds state (SEALED)", at: 68 })
+
+==== seed 44: shrunk to 5 actions; ledger [Rec { v: 10, withdrawal: false }, Rec { v: 20, withdrawal: false }, Rec { v: 25, withdrawal: true }, Rec { v: 30, withdrawal: false }, Rec { v: 40, withdrawal: false }, Rec { v: 50, withdrawal: false }]
+violation: Some(Violation { inv: "I5", msg: "build 20 created the partition while build 10 holds state (WRITER)", at: 19 })
+[1] Publish
+[2] Load { client: 0, fetch: Newest, ops: [Generate { slot: 0, seed: 840267 }, PutExt { key: 0, content: 1 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[3] Publish
+[4] Load { client: 2, fetch: Newest, ops: [RaiseMark { caller: 2, rec: 2 }, Import { slot: 0, seed: 3, replace: false }, Delete { slot: 1 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 2)" hops [] state NONE -> NONE
+[5] Publish
+== quiescence
+[6] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 2)" hops [] state NONE -> NONE
+[7] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[8] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[9] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[10] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[11] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[12] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(10)
+  10 Poke { flags: 2, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [] state NONE -> NONE(armed)
+[13] Step { pick: 0, fate: Deliver }
+  10 Op(Generate { slot: 0, seed: 840267 }) -> "Key(840267)" hops [] state NONE(armed) -> WRITER
+  op Generate { slot: 0, seed: 840267 } at 10 -> Key(840267)
+[14] Step { pick: 0, fate: Deliver }
+  10 Op(PutExt { key: 0, content: 1 }) -> "Refused(10)" hops [] state WRITER -> WRITER
+  op PutExt { key: 0, content: 1 } at 10 -> Refused(10)
+[15] Step { pick: 0, fate: Deliver }
+[16] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[17] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[18] Step { pick: 0, fate: Deliver }
+  courier client 2 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [] state NONE -> NONE(armed)
+[19] Step { pick: 0, fate: Deliver }
+  20 Op(RaiseMark { caller: 2, rec: 2 }) -> "Ok" hops [] state NONE(armed) -> WRITER
+!! I5: build 20 created the partition while build 10 holds state (WRITER)
+  op RaiseMark { caller: 2, rec: 2 } at 20 -> Ok
+[20] Wakeup { b: 0 }
+[21] Wakeup { b: 1 }
+[22] Wakeup { b: 2 }
+[23] Wakeup { b: 3 }
+[24] Wakeup { b: 4 }
+[25] Wakeup { b: 5 }

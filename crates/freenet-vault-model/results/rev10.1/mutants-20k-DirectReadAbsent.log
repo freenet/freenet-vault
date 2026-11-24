@@ -1,0 +1,4 @@
+mutation check: 20000 seeds from 0 plus 147 directed scenarios, delivery Core
+mutant DirectReadAbsent: caught by I3-direct-read-absent x12 (first seed 2220) (0 candidates rejected)
+mutants surviving: 0
+exit 0 runtime 107s

@@ -1,0 +1,19 @@
+schedules: 20000 (seeds 0..20000) plus 5 coverage seeds and 146 directed scenarios, delivery Core, adversarial false, stale pointer false, global FIFO true, catch-all listing failure continues false, absent vault:parts is a valid list true, mutant None (protocol revision 10)
+violation I4 in the directed scenario for rev9-trace/stated-F5-I4-two-restores-seed88774: build 10 unsealed while its target 20 has taken over from it at the same manifest
+violation I1-restore-unreported: 4 schedules, first seeds [10432, 11110, 12982, 16958]
+violation I2: 1 schedules, first seeds [7220]
+violation I2-two-index-lost: 21 schedules, first seeds [3500, 6628, 6869, 7860, 8324, 8701, 9372, 9972]
+violation I3-retired-parts-malformed: 1 schedules, first seeds [17316]
+violation I5-after-restore: 16 schedules, first seeds [1894, 2750, 2838, 5315, 5566, 8686, 9862, 11426]
+  shape      4 (first seed  10432) I1-restore-unreported: after restores two builds accept changes and neither reports it
+  shape     21 (first seed   3500) I2-two-index-lost: acknowledged keys exist but #.# chooses no writer
+  shape      1 (first seed   7220) I2: acknowledged keys exist but #.# chooses no writer
+  shape      1 (first seed  17316) I3-retired-parts-malformed: build # answered slot # with key #
+  shape      9 (first seed   1894) I5-after-restore: build # created the partition while build # holds state (RECEIVING)
+  shape      1 (first seed  14590) I5-after-restore: build # created the partition while build # holds state (RETIRED)
+  shape      2 (first seed   2750) I5-after-restore: build # created the partition while build # holds state (WRITER(awaiting))
+  shape      4 (first seed   5566) I5-after-restore: build # created the partition while build # holds state (WRITER)
+sealed build sent a corrupt entry: 0 times
+schedules run: 20005; handovers (took over): 23784; calls in read-only mode: 113678; direct reads served: 37805, storage failure: 8970; I2 checks in read-only mode: served 282810, storage failure with the copy on disk 60588
+coverage: 329 counters, 1 required missing
+  MISSING 7.2/outcome-staging-full

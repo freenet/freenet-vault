@@ -1,0 +1,56 @@
+seed 7220: Some(Violation { inv: "I2", msg: "acknowledged keys exist but 5.2 chooses no writer: [\"10:RETIRED\", \"20:NONE\", \"30:NONE\", \"40:NONE\", \"50:NONE\", \"60:NONE\"]", at: 178 })
+
+==== seed 7220: shrunk to 25 actions; ledger [Rec { v: 10, withdrawal: false }, Rec { v: 20, withdrawal: false }, Rec { v: 25, withdrawal: true }, Rec { v: 30, withdrawal: false }, Rec { v: 60, withdrawal: false }]
+violation: Some(Violation { inv: "I2", msg: "acknowledged keys exist but 5.2 chooses no writer: [\"10:RETIRED\", \"20:NONE\", \"30:NONE\", \"40:NONE\", \"50:NONE\", \"60:NONE\"]", at: 27 })
+[1] Publish
+[2] Load { client: 0, fetch: Newest, ops: [Generate { slot: 0, seed: 398761 }, PutExt { key: 0, content: 1 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[3] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[4] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[5] Publish
+[6] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[7] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[8] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[9] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(10)
+  10 Poke { flags: 2, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [] state NONE -> NONE(armed)
+[10] Publish
+[11] Publish
+[12] Step { pick: 0, fate: Deliver }
+  10 Op(Generate { slot: 0, seed: 398761 }) -> "Key(398761)" hops [] state NONE(armed) -> WRITER
+  op Generate { slot: 0, seed: 398761 } at 10 -> Key(398761)
+[13] Crash
+[14] Publish
+[15] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(WRITER, rec 2)" hops [60:Chunk(rec 60, 1 entries)] state WRITER -> WRITER
+[16] Step { pick: 0, fate: Deliver }
+[17] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Chunk { rec: Rec { v: 60, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 398761, ext: [] }], malformed: false } } -> "Ack(Processed, [(15702361074714832486, Stored)], succ None)" hops [] state NONE -> RECEIVING
+[18] Load { client: 3, fetch: Newest, ops: [RaiseMark { caller: 2, rec: 8 }, PutExt { key: 0, content: 415 }] }
+[19] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 60, frame: Ack { tid: (10, Rec { v: 60, withdrawal: false }), status: Processed, succ: None, outcomes: [(15702361074714832486, Stored)] } } -> "-" hops [60:Complete(m a576, 1 digests)] state WRITER -> SEALED
+[20] Quota { limit: Some(3) }
+[21] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 2609065260528346486, digests: [15702361074714832486], malformed: false } } -> "-" hops [] state RECEIVING -> WRITER(awaiting)
+[22] Step { pick: 0, fate: Deliver }
+[23] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [60:Complete(m a576, 1 digests)] state SEALED -> SEALED
+[24] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 2609065260528346486, digests: [15702361074714832486], malformed: false } } -> "CompleteAck(AlreadyWriter, m a576, missing 0, succ None)" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[25] GarbleIndex { b: 5, undecryptable: false }
+== quiescence
+[26] Load { client: 0, fetch: Newest, ops: [] }
+[27] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 60, frame: CompleteAck { tid: (10, Rec { v: 60, withdrawal: false }), m: 2609065260528346486, status: AlreadyWriter, succ: None, missing: [] } } -> "-" hops [60:Retired(m a576)] state SEALED -> RETIRED
+!! I2: acknowledged keys exist but 5.2 chooses no writer: ["10:RETIRED", "20:NONE", "30:NONE", "40:NONE", "50:NONE", "60:NONE"]
+[28] Wakeup { b: 0 }
+[29] Wakeup { b: 1 }
+[30] Wakeup { b: 2 }
+[31] Wakeup { b: 3 }
+[32] Wakeup { b: 4 }
+[33] Wakeup { b: 5 }

@@ -1,0 +1,25 @@
+schedules: 20000 (seeds 0..20000) plus 5 coverage seeds and 146 directed scenarios, delivery Core, adversarial false, stale pointer false, global FIFO true, catch-all listing failure continues false, absent vault:parts is a valid list false, mutant None (protocol revision 10)
+violation I7-receiver-index-lost in the directed scenario for finding/I7-receiver-index-lost: after quiescence build 20 is NONE not WRITER; states ["10:WRITER", "20:NONE", "30:NONE", "40:NONE", "50:NONE", "60:NONE"]
+violation I4 in the directed scenario for rev9-trace/stated-F5-I4-two-restores-seed88774: build 10 unsealed while its target 20 has taken over from it at the same manifest
+violation I1-restore-unreported: 4 schedules, first seeds [10432, 11110, 12982, 16958]
+violation I2-two-index-lost: 32 schedules, first seeds [1764, 3500, 4820, 4908, 6092, 6612, 6628, 6869]
+violation I2-two-index-lost-receiver-state-7: 44 schedules, first seeds [308, 356, 1228, 1588, 1884, 2124, 3396, 4780]
+violation I3-retired-parts-malformed: 1 schedules, first seeds [17316]
+violation I5-after-restore: 16 schedules, first seeds [1894, 2750, 2838, 5315, 5566, 8686, 9862, 11426]
+violation I7-receiver-index-lost: 5 schedules, first seeds [3572, 13844, 15116, 16557, 16933]
+  shape      4 (first seed  10432) I1-restore-unreported: after restores two builds accept changes and neither reports it
+  shape     44 (first seed    308) I2-two-index-lost-receiver-state-7: acknowledged keys exist but #.# chooses no writer
+  shape     32 (first seed   1764) I2-two-index-lost: acknowledged keys exist but #.# chooses no writer
+  shape      1 (first seed  17316) I3-retired-parts-malformed: build # answered slot # with key #
+  shape      9 (first seed   1894) I5-after-restore: build # created the partition while build # holds state (RECEIVING)
+  shape      1 (first seed  14590) I5-after-restore: build # created the partition while build # holds state (RETIRED)
+  shape      2 (first seed   2750) I5-after-restore: build # created the partition while build # holds state (WRITER(awaiting))
+  shape      4 (first seed   5566) I5-after-restore: build # created the partition while build # holds state (WRITER)
+  shape      1 (first seed   3572) I7-receiver-index-lost: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:NONE", "#:WRITER", "#:NONE", "#:NONE"]
+  shape      1 (first seed  16557) I7-receiver-index-lost: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:SEALED", "#:NONE", "#:NONE", "#:NONE"]
+  shape      2 (first seed  15116) I7-receiver-index-lost: after quiescence build # is NONE not WRITER; states ["#:SEALED", "#:NONE", "#:NONE", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed  13844) I7-receiver-index-lost: after quiescence build # is NONE not WRITER; states ["#:WRITER", "#:NONE", "#:NONE", "#:NONE", "#:NONE", "#:NONE"]
+sealed build sent a corrupt entry: 0 times
+schedules run: 20005; handovers (took over): 23663; calls in read-only mode: 165505; direct reads served: 36005, storage failure: 11998; I2 checks in read-only mode: served 270280, storage failure with the copy on disk 72695
+coverage: 329 counters, 1 required missing
+  MISSING 7.2/outcome-staging-full

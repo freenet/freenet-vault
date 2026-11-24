@@ -1,0 +1,1102 @@
+seed 32: Some(Violation { inv: "I7", msg: "after quiescence build 50 is NONE not WRITER; states [\"10:RETIRED\", \"20:NONE\", \"30:NONE\", \"40:WRITER\", \"50:NONE\", \"60:NONE\"]", at: 879 })
+
+==== seed 32: shrunk to 17 actions; ledger [Rec { v: 10, withdrawal: false }, Rec { v: 20, withdrawal: false }, Rec { v: 40, withdrawal: false }, Rec { v: 50, withdrawal: false }]
+violation: Some(Violation { inv: "I7", msg: "after quiescence build 20 is NONE not WRITER; states [\"10:WRITER\", \"20:NONE\", \"30:NONE\", \"40:NONE\", \"50:NONE\", \"60:NONE\"]", at: 705 })
+[1] Publish
+[2] Load { client: 0, fetch: Newest, ops: [Generate { slot: 0, seed: 754128 }, PutExt { key: 0, content: 1 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[3] Load { client: 2, fetch: Newest, ops: [PutExt { key: 1, content: 916 }, Batch { slot: 1, expected: 0 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[4] Step { pick: 15, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[5] Step { pick: 13, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[6] Step { pick: 9, fate: Deliver }
+  courier client 2 route Create(10)
+  10 Poke { flags: 2, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [] state NONE -> NONE(armed)
+[7] Step { pick: 13, fate: Deliver }
+  10 Op(PutExt { key: 1, content: 916 }) -> "Refused(10)" hops [] state NONE(armed) -> WRITER
+  op PutExt { key: 1, content: 916 } at 10 -> Refused(10)
+[8] Cached { op: Generate { slot: 0, seed: 663600 }, b: None }
+  10 Op(Generate { slot: 0, seed: 663600 }) -> "Key(663600)" hops [] state WRITER -> WRITER
+  op Generate { slot: 0, seed: 663600 } at 10 -> Key(663600)
+[9] Load { client: 1, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(WRITER, rec 3)" hops [] state WRITER -> WRITER
+[10] Load { client: 1, fetch: Newest, ops: [Generate { slot: 1, seed: 681611 }, RaiseMark { caller: 1, rec: 1 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(WRITER, rec 3)" hops [] state WRITER -> WRITER
+[11] Publish
+[12] Load { client: 2, fetch: Unreachable, ops: [] }
+  10 Poke { flags: 0, rec: None } -> "Status(WRITER, rec 0)" hops [] state WRITER -> WRITER
+[13] Load { client: 1, fetch: Newest, ops: [PublicKey { slot: 2 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 2)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[14] Step { pick: 0, fate: Deliver }
+[15] ArmWriteFault { after: 2, fault: CrashBefore }
+[16] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> CRASH inside the call
+[17] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+== quiescence
+[18] Load { client: 0, fetch: Newest, ops: [] }
+[19] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[20] Step { pick: 0, fate: Deliver }
+[21] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[22] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[23] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[24] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[25] Step { pick: 0, fate: Deliver }
+[26] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[27] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[28] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[29] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[30] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[31] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[32] Step { pick: 0, fate: Deliver }
+[33] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[34] Step { pick: 0, fate: Deliver }
+[35] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[36] Step { pick: 0, fate: Deliver }
+[37] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[38] Step { pick: 0, fate: Deliver }
+[39] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[40] Step { pick: 0, fate: Deliver }
+[41] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[42] Step { pick: 0, fate: Deliver }
+[43] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[44] Step { pick: 0, fate: Deliver }
+[45] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[46] Step { pick: 0, fate: Deliver }
+[47] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[48] Step { pick: 0, fate: Deliver }
+[49] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[50] Step { pick: 0, fate: Deliver }
+[51] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[52] Step { pick: 0, fate: Deliver }
+[53] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[54] Step { pick: 0, fate: Deliver }
+[55] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[56] Step { pick: 0, fate: Deliver }
+[57] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[58] Step { pick: 0, fate: Deliver }
+[59] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[60] Step { pick: 0, fate: Deliver }
+[61] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[62] Step { pick: 0, fate: Deliver }
+[63] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[64] Step { pick: 0, fate: Deliver }
+[65] Wakeup { b: 0 }
+[66] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[67] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[68] Step { pick: 0, fate: Deliver }
+[69] Wakeup { b: 1 }
+[70] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[71] Wakeup { b: 2 }
+[72] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[73] Wakeup { b: 3 }
+[74] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[75] Wakeup { b: 4 }
+[76] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[77] Wakeup { b: 5 }
+[78] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[79] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[80] Step { pick: 0, fate: Deliver }
+[81] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[82] Step { pick: 0, fate: Deliver }
+[83] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[84] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[85] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[86] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[87] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[88] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[89] Step { pick: 0, fate: Deliver }
+[90] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[91] Step { pick: 0, fate: Deliver }
+[92] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[93] Step { pick: 0, fate: Deliver }
+[94] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[95] Step { pick: 0, fate: Deliver }
+[96] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[97] Step { pick: 0, fate: Deliver }
+[98] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[99] Step { pick: 0, fate: Deliver }
+[100] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[101] Step { pick: 0, fate: Deliver }
+[102] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[103] Step { pick: 0, fate: Deliver }
+[104] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[105] Step { pick: 0, fate: Deliver }
+[106] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[107] Step { pick: 0, fate: Deliver }
+[108] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[109] Step { pick: 0, fate: Deliver }
+[110] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[111] Step { pick: 0, fate: Deliver }
+[112] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[113] Step { pick: 0, fate: Deliver }
+[114] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[115] Step { pick: 0, fate: Deliver }
+[116] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[117] Step { pick: 0, fate: Deliver }
+[118] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[119] Step { pick: 0, fate: Deliver }
+[120] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[121] Step { pick: 0, fate: Deliver }
+[122] Wakeup { b: 0 }
+[123] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[124] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[125] Step { pick: 0, fate: Deliver }
+[126] Wakeup { b: 1 }
+[127] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[128] Wakeup { b: 2 }
+[129] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[130] Wakeup { b: 3 }
+[131] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[132] Wakeup { b: 4 }
+[133] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[134] Wakeup { b: 5 }
+[135] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[136] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[137] Step { pick: 0, fate: Deliver }
+[138] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[139] Step { pick: 0, fate: Deliver }
+[140] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[141] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[142] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[143] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[144] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[145] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[146] Step { pick: 0, fate: Deliver }
+[147] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[148] Step { pick: 0, fate: Deliver }
+[149] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[150] Step { pick: 0, fate: Deliver }
+[151] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[152] Step { pick: 0, fate: Deliver }
+[153] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[154] Step { pick: 0, fate: Deliver }
+[155] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[156] Step { pick: 0, fate: Deliver }
+[157] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[158] Step { pick: 0, fate: Deliver }
+[159] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[160] Step { pick: 0, fate: Deliver }
+[161] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[162] Step { pick: 0, fate: Deliver }
+[163] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[164] Step { pick: 0, fate: Deliver }
+[165] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[166] Step { pick: 0, fate: Deliver }
+[167] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[168] Step { pick: 0, fate: Deliver }
+[169] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[170] Step { pick: 0, fate: Deliver }
+[171] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[172] Step { pick: 0, fate: Deliver }
+[173] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[174] Step { pick: 0, fate: Deliver }
+[175] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[176] Step { pick: 0, fate: Deliver }
+[177] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[178] Step { pick: 0, fate: Deliver }
+[179] Wakeup { b: 0 }
+[180] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[181] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[182] Step { pick: 0, fate: Deliver }
+[183] Wakeup { b: 1 }
+[184] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[185] Wakeup { b: 2 }
+[186] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[187] Wakeup { b: 3 }
+[188] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[189] Wakeup { b: 4 }
+[190] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[191] Wakeup { b: 5 }
+[192] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[193] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[194] Step { pick: 0, fate: Deliver }
+[195] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[196] Step { pick: 0, fate: Deliver }
+[197] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[198] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[199] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[200] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[201] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[202] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[203] Step { pick: 0, fate: Deliver }
+[204] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[205] Step { pick: 0, fate: Deliver }
+[206] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[207] Step { pick: 0, fate: Deliver }
+[208] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[209] Step { pick: 0, fate: Deliver }
+[210] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[211] Step { pick: 0, fate: Deliver }
+[212] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[213] Step { pick: 0, fate: Deliver }
+[214] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[215] Step { pick: 0, fate: Deliver }
+[216] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[217] Step { pick: 0, fate: Deliver }
+[218] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[219] Step { pick: 0, fate: Deliver }
+[220] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[221] Step { pick: 0, fate: Deliver }
+[222] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[223] Step { pick: 0, fate: Deliver }
+[224] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[225] Step { pick: 0, fate: Deliver }
+[226] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[227] Step { pick: 0, fate: Deliver }
+[228] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[229] Step { pick: 0, fate: Deliver }
+[230] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[231] Step { pick: 0, fate: Deliver }
+[232] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[233] Step { pick: 0, fate: Deliver }
+[234] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[235] Step { pick: 0, fate: Deliver }
+[236] Wakeup { b: 0 }
+[237] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[238] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[239] Step { pick: 0, fate: Deliver }
+[240] Wakeup { b: 1 }
+[241] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[242] Wakeup { b: 2 }
+[243] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[244] Wakeup { b: 3 }
+[245] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[246] Wakeup { b: 4 }
+[247] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[248] Wakeup { b: 5 }
+[249] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[250] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[251] Step { pick: 0, fate: Deliver }
+[252] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[253] Step { pick: 0, fate: Deliver }
+[254] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[255] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[256] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[257] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[258] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[259] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[260] Step { pick: 0, fate: Deliver }
+[261] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[262] Step { pick: 0, fate: Deliver }
+[263] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[264] Step { pick: 0, fate: Deliver }
+[265] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[266] Step { pick: 0, fate: Deliver }
+[267] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[268] Step { pick: 0, fate: Deliver }
+[269] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[270] Step { pick: 0, fate: Deliver }
+[271] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[272] Step { pick: 0, fate: Deliver }
+[273] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[274] Step { pick: 0, fate: Deliver }
+[275] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[276] Step { pick: 0, fate: Deliver }
+[277] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[278] Step { pick: 0, fate: Deliver }
+[279] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[280] Step { pick: 0, fate: Deliver }
+[281] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[282] Step { pick: 0, fate: Deliver }
+[283] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[284] Step { pick: 0, fate: Deliver }
+[285] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[286] Step { pick: 0, fate: Deliver }
+[287] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[288] Step { pick: 0, fate: Deliver }
+[289] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[290] Step { pick: 0, fate: Deliver }
+[291] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[292] Step { pick: 0, fate: Deliver }
+[293] Wakeup { b: 0 }
+[294] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[295] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[296] Step { pick: 0, fate: Deliver }
+[297] Wakeup { b: 1 }
+[298] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[299] Wakeup { b: 2 }
+[300] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[301] Wakeup { b: 3 }
+[302] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[303] Wakeup { b: 4 }
+[304] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[305] Wakeup { b: 5 }
+[306] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[307] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[308] Step { pick: 0, fate: Deliver }
+[309] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[310] Step { pick: 0, fate: Deliver }
+[311] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[312] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[313] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[314] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[315] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[316] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[317] Step { pick: 0, fate: Deliver }
+[318] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[319] Step { pick: 0, fate: Deliver }
+[320] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[321] Step { pick: 0, fate: Deliver }
+[322] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[323] Step { pick: 0, fate: Deliver }
+[324] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[325] Step { pick: 0, fate: Deliver }
+[326] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[327] Step { pick: 0, fate: Deliver }
+[328] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[329] Step { pick: 0, fate: Deliver }
+[330] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[331] Step { pick: 0, fate: Deliver }
+[332] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[333] Step { pick: 0, fate: Deliver }
+[334] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[335] Step { pick: 0, fate: Deliver }
+[336] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[337] Step { pick: 0, fate: Deliver }
+[338] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[339] Step { pick: 0, fate: Deliver }
+[340] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[341] Step { pick: 0, fate: Deliver }
+[342] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[343] Step { pick: 0, fate: Deliver }
+[344] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[345] Step { pick: 0, fate: Deliver }
+[346] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[347] Step { pick: 0, fate: Deliver }
+[348] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[349] Step { pick: 0, fate: Deliver }
+[350] Wakeup { b: 0 }
+[351] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[352] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[353] Step { pick: 0, fate: Deliver }
+[354] Wakeup { b: 1 }
+[355] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[356] Wakeup { b: 2 }
+[357] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[358] Wakeup { b: 3 }
+[359] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[360] Wakeup { b: 4 }
+[361] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[362] Wakeup { b: 5 }
+[363] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[364] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[365] Step { pick: 0, fate: Deliver }
+[366] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[367] Step { pick: 0, fate: Deliver }
+[368] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[369] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[370] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[371] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[372] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[373] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[374] Step { pick: 0, fate: Deliver }
+[375] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[376] Step { pick: 0, fate: Deliver }
+[377] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[378] Step { pick: 0, fate: Deliver }
+[379] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[380] Step { pick: 0, fate: Deliver }
+[381] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[382] Step { pick: 0, fate: Deliver }
+[383] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[384] Step { pick: 0, fate: Deliver }
+[385] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[386] Step { pick: 0, fate: Deliver }
+[387] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[388] Step { pick: 0, fate: Deliver }
+[389] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[390] Step { pick: 0, fate: Deliver }
+[391] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[392] Step { pick: 0, fate: Deliver }
+[393] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[394] Step { pick: 0, fate: Deliver }
+[395] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[396] Step { pick: 0, fate: Deliver }
+[397] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[398] Step { pick: 0, fate: Deliver }
+[399] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[400] Step { pick: 0, fate: Deliver }
+[401] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[402] Step { pick: 0, fate: Deliver }
+[403] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[404] Step { pick: 0, fate: Deliver }
+[405] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[406] Step { pick: 0, fate: Deliver }
+[407] Wakeup { b: 0 }
+[408] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[409] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[410] Step { pick: 0, fate: Deliver }
+[411] Wakeup { b: 1 }
+[412] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[413] Wakeup { b: 2 }
+[414] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[415] Wakeup { b: 3 }
+[416] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[417] Wakeup { b: 4 }
+[418] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[419] Wakeup { b: 5 }
+[420] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[421] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[422] Step { pick: 0, fate: Deliver }
+[423] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[424] Step { pick: 0, fate: Deliver }
+[425] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[426] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[427] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[428] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[429] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[430] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[431] Step { pick: 0, fate: Deliver }
+[432] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[433] Step { pick: 0, fate: Deliver }
+[434] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[435] Step { pick: 0, fate: Deliver }
+[436] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[437] Step { pick: 0, fate: Deliver }
+[438] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[439] Step { pick: 0, fate: Deliver }
+[440] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[441] Step { pick: 0, fate: Deliver }
+[442] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[443] Step { pick: 0, fate: Deliver }
+[444] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[445] Step { pick: 0, fate: Deliver }
+[446] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[447] Step { pick: 0, fate: Deliver }
+[448] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[449] Step { pick: 0, fate: Deliver }
+[450] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[451] Step { pick: 0, fate: Deliver }
+[452] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[453] Step { pick: 0, fate: Deliver }
+[454] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[455] Step { pick: 0, fate: Deliver }
+[456] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[457] Step { pick: 0, fate: Deliver }
+[458] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[459] Step { pick: 0, fate: Deliver }
+[460] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[461] Step { pick: 0, fate: Deliver }
+[462] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[463] Step { pick: 0, fate: Deliver }
+[464] Wakeup { b: 0 }
+[465] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[466] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[467] Step { pick: 0, fate: Deliver }
+[468] Wakeup { b: 1 }
+[469] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[470] Wakeup { b: 2 }
+[471] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[472] Wakeup { b: 3 }
+[473] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[474] Wakeup { b: 4 }
+[475] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[476] Wakeup { b: 5 }
+[477] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[478] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[479] Step { pick: 0, fate: Deliver }
+[480] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[481] Step { pick: 0, fate: Deliver }
+[482] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[483] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[484] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[485] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[486] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[487] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[488] Step { pick: 0, fate: Deliver }
+[489] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[490] Step { pick: 0, fate: Deliver }
+[491] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[492] Step { pick: 0, fate: Deliver }
+[493] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[494] Step { pick: 0, fate: Deliver }
+[495] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[496] Step { pick: 0, fate: Deliver }
+[497] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[498] Step { pick: 0, fate: Deliver }
+[499] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[500] Step { pick: 0, fate: Deliver }
+[501] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[502] Step { pick: 0, fate: Deliver }
+[503] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[504] Step { pick: 0, fate: Deliver }
+[505] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[506] Step { pick: 0, fate: Deliver }
+[507] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[508] Step { pick: 0, fate: Deliver }
+[509] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[510] Step { pick: 0, fate: Deliver }
+[511] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[512] Step { pick: 0, fate: Deliver }
+[513] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[514] Step { pick: 0, fate: Deliver }
+[515] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[516] Step { pick: 0, fate: Deliver }
+[517] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[518] Step { pick: 0, fate: Deliver }
+[519] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[520] Step { pick: 0, fate: Deliver }
+[521] Wakeup { b: 0 }
+[522] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[523] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[524] Step { pick: 0, fate: Deliver }
+[525] Wakeup { b: 1 }
+[526] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[527] Wakeup { b: 2 }
+[528] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[529] Wakeup { b: 3 }
+[530] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[531] Wakeup { b: 4 }
+[532] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[533] Wakeup { b: 5 }
+[534] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[535] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[536] Step { pick: 0, fate: Deliver }
+[537] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[538] Step { pick: 0, fate: Deliver }
+[539] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[540] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[541] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[542] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[543] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[544] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[545] Step { pick: 0, fate: Deliver }
+[546] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[547] Step { pick: 0, fate: Deliver }
+[548] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[549] Step { pick: 0, fate: Deliver }
+[550] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[551] Step { pick: 0, fate: Deliver }
+[552] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[553] Step { pick: 0, fate: Deliver }
+[554] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[555] Step { pick: 0, fate: Deliver }
+[556] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[557] Step { pick: 0, fate: Deliver }
+[558] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[559] Step { pick: 0, fate: Deliver }
+[560] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[561] Step { pick: 0, fate: Deliver }
+[562] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[563] Step { pick: 0, fate: Deliver }
+[564] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[565] Step { pick: 0, fate: Deliver }
+[566] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[567] Step { pick: 0, fate: Deliver }
+[568] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[569] Step { pick: 0, fate: Deliver }
+[570] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[571] Step { pick: 0, fate: Deliver }
+[572] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[573] Step { pick: 0, fate: Deliver }
+[574] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[575] Step { pick: 0, fate: Deliver }
+[576] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[577] Step { pick: 0, fate: Deliver }
+[578] Wakeup { b: 0 }
+[579] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[580] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[581] Step { pick: 0, fate: Deliver }
+[582] Wakeup { b: 1 }
+[583] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[584] Wakeup { b: 2 }
+[585] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[586] Wakeup { b: 3 }
+[587] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[588] Wakeup { b: 4 }
+[589] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[590] Wakeup { b: 5 }
+[591] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[592] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[593] Step { pick: 0, fate: Deliver }
+[594] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[595] Step { pick: 0, fate: Deliver }
+[596] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[597] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[598] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[599] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[600] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[601] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[602] Step { pick: 0, fate: Deliver }
+[603] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[604] Step { pick: 0, fate: Deliver }
+[605] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[606] Step { pick: 0, fate: Deliver }
+[607] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[608] Step { pick: 0, fate: Deliver }
+[609] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[610] Step { pick: 0, fate: Deliver }
+[611] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[612] Step { pick: 0, fate: Deliver }
+[613] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[614] Step { pick: 0, fate: Deliver }
+[615] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[616] Step { pick: 0, fate: Deliver }
+[617] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[618] Step { pick: 0, fate: Deliver }
+[619] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[620] Step { pick: 0, fate: Deliver }
+[621] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[622] Step { pick: 0, fate: Deliver }
+[623] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[624] Step { pick: 0, fate: Deliver }
+[625] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[626] Step { pick: 0, fate: Deliver }
+[627] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[628] Step { pick: 0, fate: Deliver }
+[629] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[630] Step { pick: 0, fate: Deliver }
+[631] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[632] Step { pick: 0, fate: Deliver }
+[633] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[634] Step { pick: 0, fate: Deliver }
+[635] Wakeup { b: 0 }
+[636] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[637] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[638] Step { pick: 0, fate: Deliver }
+[639] Wakeup { b: 1 }
+[640] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[641] Wakeup { b: 2 }
+[642] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[643] Wakeup { b: 3 }
+[644] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[645] Wakeup { b: 4 }
+[646] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[647] Wakeup { b: 5 }
+[648] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[649] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[650] Step { pick: 0, fate: Deliver }
+[651] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[652] Step { pick: 0, fate: Deliver }
+[653] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[654] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[655] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[656] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[657] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[658] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[659] Step { pick: 0, fate: Deliver }
+[660] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[661] Step { pick: 0, fate: Deliver }
+[662] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[663] Step { pick: 0, fate: Deliver }
+[664] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[665] Step { pick: 0, fate: Deliver }
+[666] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[667] Step { pick: 0, fate: Deliver }
+[668] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[669] Step { pick: 0, fate: Deliver }
+[670] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[671] Step { pick: 0, fate: Deliver }
+[672] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[673] Step { pick: 0, fate: Deliver }
+[674] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[675] Step { pick: 0, fate: Deliver }
+[676] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[677] Step { pick: 0, fate: Deliver }
+[678] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[679] Step { pick: 0, fate: Deliver }
+[680] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[681] Step { pick: 0, fate: Deliver }
+[682] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[683] Step { pick: 0, fate: Deliver }
+[684] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[685] Step { pick: 0, fate: Deliver }
+[686] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 0)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[687] Step { pick: 0, fate: Deliver }
+[688] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[689] Step { pick: 0, fate: Deliver }
+[690] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[691] Step { pick: 0, fate: Deliver }
+[692] Wakeup { b: 0 }
+[693] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[694] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 663600, ext: [] }], malformed: false } } -> "-" hops [] state NONE -> NONE
+[695] Step { pick: 0, fate: Deliver }
+[696] Wakeup { b: 1 }
+[697] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[698] Wakeup { b: 2 }
+[699] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[700] Wakeup { b: 3 }
+[701] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[702] Wakeup { b: 4 }
+[703] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[704] Wakeup { b: 5 }
+[705] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+!! I7: after quiescence build 20 is NONE not WRITER; states ["10:WRITER", "20:NONE", "30:NONE", "40:NONE", "50:NONE", "60:NONE"]

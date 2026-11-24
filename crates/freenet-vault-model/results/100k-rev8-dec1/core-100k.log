@@ -1,0 +1,361 @@
+schedules: 100000 (seeds 0..100000) plus 1 coverage seeds and 4 directed scenarios, delivery Core, adversarial false, stale pointer false, global FIFO true, parts after index false (protocol revision 8)
+violation I1-reset: 2349 schedules, first seeds [2, 36, 58, 165, 180, 216, 291, 383]
+violation I1-restore-unreported: 61 schedules, first seeds [28, 4021, 9525, 9606, 10432, 11765, 15189, 19165]
+violation I2: 4 schedules, first seeds [27109, 37101, 47005, 70741]
+violation I2-direct-read: 9 schedules, first seeds [10127, 19543, 20029, 40581, 43093, 47141, 66101, 72998]
+violation I2-repair-interrupted: 91 schedules, first seeds [1037, 1237, 2085, 2669, 3053, 3157, 3733, 3941]
+violation I2-two-index-lost: 238 schedules, first seeds [173, 445, 477, 1101, 1597, 2205, 2293, 2485]
+violation I3-direct-read: 2 schedules, first seeds [49797, 74005]
+violation I4: 1 schedules, first seeds [88774]
+violation I5-after-restore: 100 schedules, first seeds [1814, 1894, 2750, 2782, 3262, 3574, 4096, 4502]
+violation I7: 2053 schedules, first seeds [32, 63, 76, 124, 137, 146, 220, 226]
+violation I8: 3 schedules, first seeds [28181, 33279, 99829]
+  shape     21 (first seed     58) I1-reset: build # was reset to WRITER while build # is SEALED
+  shape   2287 (first seed      2) I1-reset: build # was reset to WRITER while build # is WRITER
+  shape     41 (first seed   2765) I1-reset: build # was reset to WRITER while build # is WRITER(awaiting)
+  shape     61 (first seed     28) I1-restore-unreported: after restores two builds accept changes and neither reports it
+  shape      9 (first seed  10127) I2-direct-read: writer # holds Some(Entry { kind: #, key: #, flagged: false, content: #, ext: [] }) for (#, #)
+  shape     91 (first seed   1037) I2-repair-interrupted: writer # holds None for (#, #)
+  shape    238 (first seed    173) I2-two-index-lost: acknowledged keys exist but #.# chooses no writer
+  shape      4 (first seed  27109) I2: writer # holds None for (#, #)
+  shape      2 (first seed  49797) I3-direct-read: build # answered slot # with key #
+  shape      1 (first seed  88774) I4: build # unsealed while its target # has taken over from it at the same manifest
+  shape      8 (first seed  21302) I5-after-restore: build # created the partition while build # holds state (NONE)
+  shape     43 (first seed   1894) I5-after-restore: build # created the partition while build # holds state (RECEIVING)
+  shape      8 (first seed  14590) I5-after-restore: build # created the partition while build # holds state (RETIRED)
+  shape      4 (first seed  44366) I5-after-restore: build # created the partition while build # holds state (SEALED)
+  shape      5 (first seed   2750) I5-after-restore: build # created the partition while build # holds state (WRITER(awaiting))
+  shape     32 (first seed   1814) I5-after-restore: build # created the partition while build # holds state (WRITER)
+  shape      1 (first seed  36002) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:NONE", "#:NONE", "#:NONE", "#:WRITER", "#:NONE"]
+  shape      1 (first seed  69743) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:NONE", "#:NONE", "#:SEALED", "#:NONE", "#:NONE"]
+  shape     12 (first seed   2616) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:NONE", "#:NONE", "#:WRITER", "#:NONE", "#:NONE"]
+  shape      1 (first seed  89186) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:NONE", "#:RETIRED", "#:SEALED", "#:NONE", "#:NONE"]
+  shape     12 (first seed   7167) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:NONE", "#:SEALED", "#:NONE", "#:NONE", "#:NONE"]
+  shape     22 (first seed   6514) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:NONE", "#:WRITER", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed  97507) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:RETIRED", "#:NONE", "#:NONE", "#:SEALED", "#:NONE"]
+  shape      2 (first seed  14283) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:RETIRED", "#:NONE", "#:NONE", "#:WRITER", "#:NONE"]
+  shape      3 (first seed  12153) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:RETIRED", "#:NONE", "#:SEALED", "#:NONE", "#:NONE"]
+  shape      5 (first seed  21683) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:RETIRED", "#:NONE", "#:WRITER", "#:NONE", "#:NONE"]
+  shape      1 (first seed  21786) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:RETIRED", "#:RETIRED", "#:WRITER", "#:NONE", "#:NONE"]
+  shape      7 (first seed    124) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:RETIRED", "#:SEALED", "#:NONE", "#:NONE", "#:NONE"]
+  shape     17 (first seed  11627) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:RETIRED", "#:WRITER", "#:NONE", "#:NONE", "#:NONE"]
+  shape      2 (first seed  42920) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:RETIRED", "#:WRITER", "#:NONE", "#:RECEIVING", "#:NONE"]
+  shape     38 (first seed   7172) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:SEALED", "#:NONE", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed  52905) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:SEALED", "#:NONE", "#:RECEIVING", "#:NONE", "#:NONE"]
+  shape     57 (first seed   2540) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:WRITER", "#:NONE", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed   2779) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:WRITER", "#:NONE", "#:NONE", "#:RECEIVING", "#:NONE"]
+  shape      1 (first seed  73888) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:WRITER", "#:NONE", "#:RECEIVING", "#:NONE", "#:NONE"]
+  shape      1 (first seed   7337) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:WRITER", "#:RECEIVING", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed  59516) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:NONE", "#:NONE", "#:SEALED", "#:NONE"]
+  shape     14 (first seed   2425) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:NONE", "#:NONE", "#:WRITER", "#:NONE"]
+  shape      1 (first seed  57288) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:NONE", "#:RECEIVING", "#:WRITER", "#:NONE"]
+  shape      4 (first seed  30560) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:NONE", "#:RETIRED", "#:WRITER", "#:NONE"]
+  shape      5 (first seed   7492) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:NONE", "#:SEALED", "#:NONE", "#:NONE"]
+  shape     73 (first seed     32) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:NONE", "#:WRITER", "#:NONE", "#:NONE"]
+  shape      1 (first seed  66994) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:RECEIVING", "#:NONE", "#:WRITER", "#:NONE"]
+  shape      4 (first seed   5594) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:RECEIVING", "#:WRITER", "#:NONE", "#:NONE"]
+  shape     10 (first seed   5220) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:RETIRED", "#:NONE", "#:WRITER", "#:NONE"]
+  shape      3 (first seed  23298) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:RETIRED", "#:RETIRED", "#:WRITER", "#:NONE"]
+  shape      3 (first seed  39012) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:RETIRED", "#:SEALED", "#:NONE", "#:NONE"]
+  shape     39 (first seed   2651) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:RETIRED", "#:WRITER", "#:NONE", "#:NONE"]
+  shape     22 (first seed   2867) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:SEALED", "#:NONE", "#:NONE", "#:NONE"]
+  shape    185 (first seed     76) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:WRITER", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed  74180) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:WRITER", "#:NONE", "#:RECEIVING", "#:NONE"]
+  shape      9 (first seed   5584) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:WRITER", "#:RECEIVING", "#:NONE", "#:NONE"]
+  shape      1 (first seed  50603) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RECEIVING", "#:NONE", "#:NONE", "#:WRITER", "#:NONE"]
+  shape     12 (first seed   6832) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RECEIVING", "#:NONE", "#:WRITER", "#:NONE", "#:NONE"]
+  shape      1 (first seed  81900) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RECEIVING", "#:RETIRED", "#:NONE", "#:SEALED", "#:NONE"]
+  shape      2 (first seed  14043) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RECEIVING", "#:RETIRED", "#:NONE", "#:WRITER", "#:NONE"]
+  shape      1 (first seed   6616) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RECEIVING", "#:SEALED", "#:NONE", "#:NONE", "#:NONE"]
+  shape     26 (first seed    137) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RECEIVING", "#:WRITER", "#:NONE", "#:NONE", "#:NONE"]
+  shape      2 (first seed  13504) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:NONE", "#:NONE", "#:SEALED", "#:NONE"]
+  shape     13 (first seed   2219) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:NONE", "#:NONE", "#:WRITER", "#:NONE"]
+  shape      1 (first seed  58186) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:NONE", "#:RECEIVING", "#:WRITER", "#:NONE"]
+  shape      2 (first seed  57944) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:NONE", "#:RETIRED", "#:WRITER", "#:NONE"]
+  shape      5 (first seed   6329) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:NONE", "#:SEALED", "#:NONE", "#:NONE"]
+  shape     54 (first seed    483) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:NONE", "#:WRITER", "#:NONE", "#:NONE"]
+  shape      2 (first seed  22168) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:RECEIVING", "#:NONE", "#:WRITER", "#:NONE"]
+  shape      5 (first seed  35140) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:RECEIVING", "#:WRITER", "#:NONE", "#:NONE"]
+  shape      1 (first seed  18216) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:RETIRED", "#:NONE", "#:SEALED", "#:NONE"]
+  shape      3 (first seed  13856) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:RETIRED", "#:NONE", "#:WRITER", "#:NONE"]
+  shape      1 (first seed  22128) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:RETIRED", "#:RECEIVING", "#:WRITER", "#:NONE"]
+  shape      2 (first seed   2561) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:RETIRED", "#:SEALED", "#:NONE", "#:NONE"]
+  shape     12 (first seed    865) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:RETIRED", "#:WRITER", "#:NONE", "#:NONE"]
+  shape     21 (first seed   5912) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:SEALED", "#:NONE", "#:NONE", "#:NONE"]
+  shape    119 (first seed    146) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:WRITER", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed   5992) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:WRITER", "#:NONE", "#:RECEIVING", "#:NONE"]
+  shape      1 (first seed  26496) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:WRITER", "#:RECEIVING", "#:NONE", "#:NONE"]
+  shape     83 (first seed   1347) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:SEALED", "#:NONE", "#:NONE", "#:NONE", "#:NONE"]
+  shape    381 (first seed     63) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:WRITER", "#:NONE", "#:NONE", "#:NONE", "#:NONE"]
+  shape      2 (first seed  90889) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:WRITER", "#:NONE", "#:NONE", "#:RECEIVING", "#:NONE"]
+  shape      5 (first seed  12409) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:WRITER", "#:NONE", "#:RECEIVING", "#:NONE", "#:NONE"]
+  shape     20 (first seed    740) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:WRITER", "#:RECEIVING", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed  40848) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:WRITER", "#:RECEIVING", "#:RECEIVING", "#:NONE", "#:NONE"]
+  shape    159 (first seed    375) I7: after quiescence build # is NONE not WRITER; states ["#:SEALED", "#:NONE", "#:NONE", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed  46943) I7: after quiescence build # is NONE not WRITER; states ["#:SEALED", "#:NONE", "#:NONE", "#:RECEIVING", "#:NONE", "#:NONE"]
+  shape      1 (first seed  73672) I7: after quiescence build # is NONE not WRITER; states ["#:SEALED", "#:NONE", "#:RECEIVING", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed  44923) I7: after quiescence build # is NONE not WRITER; states ["#:SEALED", "#:RECEIVING", "#:NONE", "#:NONE", "#:NONE", "#:NONE"]
+  shape    439 (first seed    220) I7: after quiescence build # is NONE not WRITER; states ["#:WRITER", "#:NONE", "#:NONE", "#:NONE", "#:NONE", "#:NONE"]
+  shape      6 (first seed  14474) I7: after quiescence build # is NONE not WRITER; states ["#:WRITER", "#:NONE", "#:NONE", "#:NONE", "#:RECEIVING", "#:NONE"]
+  shape     21 (first seed  11633) I7: after quiescence build # is NONE not WRITER; states ["#:WRITER", "#:NONE", "#:NONE", "#:RECEIVING", "#:NONE", "#:NONE"]
+  shape     23 (first seed   4876) I7: after quiescence build # is NONE not WRITER; states ["#:WRITER", "#:NONE", "#:RECEIVING", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed  21450) I7: after quiescence build # is NONE not WRITER; states ["#:WRITER", "#:NONE", "#:RECEIVING", "#:NONE", "#:RECEIVING", "#:NONE"]
+  shape      5 (first seed   5818) I7: after quiescence build # is NONE not WRITER; states ["#:WRITER", "#:NONE", "#:RECEIVING", "#:RECEIVING", "#:NONE", "#:NONE"]
+  shape     50 (first seed    788) I7: after quiescence build # is NONE not WRITER; states ["#:WRITER", "#:RECEIVING", "#:NONE", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed  43968) I7: after quiescence build # is NONE not WRITER; states ["#:WRITER", "#:RECEIVING", "#:NONE", "#:RECEIVING", "#:NONE", "#:NONE"]
+  shape      3 (first seed  22551) I7: after quiescence build # is NONE not WRITER; states ["#:WRITER", "#:RECEIVING", "#:RECEIVING", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed  30698) I7: after quiescence build # is NONE not WRITER; states ["#:WRITER", "#:RECEIVING", "#:RECEIVING", "#:RECEIVING", "#:NONE", "#:NONE"]
+  shape      3 (first seed  28181) I8: writer # holds None for (#, #)
+sealed build sent a corrupt entry: 0 times
+coverage: 250 counters, 0 required missing
+  13.1/arm-already-armed = 181550
+  13.1/armed = 148949
+  13.1/armed-while-stopped = 16089
+  3/creation-bar-refused-arm = 86878
+  3/creation-bar-refused-create = 2501
+  3/not-newer = 7289419
+  3/record-malformed-call = 1163819
+  3/record-malformed-refused-create = 75
+  3/record-malformed-refuses-handover = 693938
+  3/record-stored = 758399
+  3/record-write-failed-but-landed = 12458
+  3/record-write-failed-read-back = 54400
+  3/retry = 8825221
+  3/withdrawal-stored = 163267
+  4.0/call-poisoned = 126620
+  4.0/write-refused-after-failed-read = 18482
+  4.1/parts-written = 248959
+  4.2/commit-failed-but-landed = 10326
+  4.2/commit-failed-read-back = 55436
+  4.2/gc-kept-named = 712660
+  4.2/gc-processed = 742989
+  4.3/corrupt-rewritten-flagged = 3
+  4.3/corrupt-unparseable-removed = 2996
+  4.3/corrupt-while-sealed = 856
+  4.5/courier-selects-damaged-build = 28260
+  4.5/direct-read-two-values = 4
+  4.5/index-lost-call = 1306956
+  4.5/key-held-by-repair-flow = 37253
+  4.5/lost/change-refused = 28047
+  4.5/lost/export = 45041
+  4.5/lost/hop-not-answered = 881015
+  4.5/lost/poke-reports-state-7 = 201046
+  4.5/lost/read = 11141
+  4.5/repair-flow-interrupted-after-reset = 291
+  4.5/repair-import-gave-up = 175
+  4.5/repair-import-retried = 697
+  4.5/repair-key-not-recovered = 2282
+  4.5/repair-reset-done = 8745
+  4.5/reset = 8745
+  4.5/reset-applied = 8798
+  4.5/reset-refused-index-not-lost = 9994
+  4.5/write-refused-after-failed-write = 42916
+  5.1/NONE/change = 523929
+  5.1/NONE/mark = 79819
+  5.1/NONE/read = 150423
+  5.1/RECEIVING/change = 5248
+  5.1/RECEIVING/mark = 1036
+  5.1/RECEIVING/read = 1426
+  5.1/RETIRED/change = 252715
+  5.1/RETIRED/mark = 43116
+  5.1/RETIRED/read = 99920
+  5.1/SEALED/change = 10287
+  5.1/SEALED/mark = 1696
+  5.1/SEALED/read = 4840
+  5.1/WRITER(awaiting)/change = 2862
+  5.1/WRITER(awaiting)/mark = 514
+  5.1/WRITER(awaiting)/read = 1123
+  5.1/WRITER/change = 774942
+  5.1/WRITER/mark = 118658
+  5.1/WRITER/read = 364657
+  5.1/arming-cleared-by-record = 44016
+  5.1/created = 89098
+  5.2/unavailable = 373017
+  5.3/armed-all-confirmed = 351755
+  5.3/arming-cleared-by-state-answer = 2201
+  5.3/confirmed = 151944
+  5.3/confirmed-again = 24
+  5.3/create-refused-unconfirmed = 23385
+  5.3/created-after-every-predecessor-confirmed = 25677
+  5.3/created-while-stopped = 6197
+  5.3/nostate-answer-lost = 3984
+  5.3/probe-answer-other/StorageFailure = 884121
+  5.3/probe-answered-state = 2318
+  5.3/probe-crash-after-record-stored = 48
+  5.3/probe-received = 1066336
+  5.3/probe-sent = 1791772
+  5.3/probe-to-index-lost-build = 3805
+  5.3/two-builds-armed-at-once = 626575
+  6/ack-from-successor = 1061746
+  6/ignored = 7429
+  6/ignored/answer-from-predecessor = 4638
+  6/poke = 16672410
+  6/predecessor-role = 1100147
+  6/query-answer/armed = 1042626
+  6/query-answer/awaiting = 32302
+  6/query-answer/awaiting-cleared/NoState = 620
+  6/query-answer/awaiting-cleared/Noted = 10144
+  6/query-answer/awaiting/AnotherWriter = 19897
+  6/query-answer/awaiting/other/StorageFailure = 1202
+  6/receiver-role = 1135915
+  6/wakeup = 9050769
+  7.2/outcome-identical = 37782
+  7.2/outcome-policy-dropped = 18896
+  7.2/outcome-staging-full = 2
+  7.2/outcome-storage-failure = 23338
+  7.2/outcome-stored = 253937
+  7.3/ack-ignored-no-target = 302
+  7.3/ack/AnotherWriter = 117062
+  7.3/ack/HigherBuild = 3029
+  7.3/ack/Malformed = 4065
+  7.3/ack/Processed = 210568
+  7.3/ack/Stopped = 43
+  7.3/seal-now-staging-full = 1
+  7.4/awaiting-cleared-by-retired = 120802
+  7.4/missing = 384
+  7.4/query-crash-after-record-stored = 2
+  7.4/retired = 131986
+  7.4/sealed = 604770
+  7.4/took-over = 132384
+  7.4/unlisted-dropped = 412
+  7.5/completeack-ignored-not-sealed = 117242
+  7.5/completeack/Aborted = 1895
+  7.5/completeack/Accepted = 127282
+  7.5/completeack/AlreadyWriter = 4270
+  7.5/completeack/AnotherWriter = 463822
+  7.5/completeack/DifferentManifest = 5837
+  7.5/completeack/HigherBuild = 1884
+  7.5/completeack/Malformed = 2080
+  7.5/completeack/Missing = 853
+  7.5/completeack/Noted = 20
+  7.5/completeack/Stopped = 16
+  7.5/completeack/StorageFailure = 1476
+  7.5/pause-cleared-by-ack = 8
+  7.5/pause-cleared-by-poke = 117693
+  7.5/pause-set = 36028
+  7.5/step-abort = 92309
+  7.5/step-resend-complete = 111100
+  7.5/unsealed = 470994
+  7.6/NONE/Abort = 602
+  7.6/NONE/Chunk = 138631
+  7.6/NONE/Complete = 14800
+  7.6/NONE/Retired = 238
+  7.6/RECEIVING(P)/Abort = 1434
+  7.6/RECEIVING(P)/Chunk = 95815
+  7.6/RECEIVING(P)/Complete = 122123
+  7.6/RECEIVING(P)/Retired = 42
+  7.6/RECEIVING(higher)/Chunk = 3030
+  7.6/RECEIVING(higher)/Complete = 2023
+  7.6/RECEIVING(lower)/Chunk = 32
+  7.6/RECEIVING(lower)/Complete = 6
+  7.6/malformed/Abort = 73
+  7.6/malformed/Chunk = 4620
+  7.6/malformed/Complete = 2268
+  7.6/malformed/Retired = 8
+  7.6/other-writer-or-not-from-P/Abort = 32
+  7.6/other-writer-or-not-from-P/Chunk = 90965
+  7.6/other-writer-or-not-from-P/Complete = 497962
+  7.6/other-writer-or-not-from-P/Retired = 1
+  7.6/stopped/Abort = 85
+  7.6/stopped/Chunk = 51
+  7.6/stopped/Complete = 19
+  7.6/stopped/Retired = 1
+  7.6/taken-over-from-P/Abort = 2919
+  7.6/taken-over-from-P/Chunk = 26201
+  7.6/taken-over-from-P/Complete = 7713
+  7.6/taken-over-from-P/Retired = 124221
+  7.6/taken-over-from-P/Retired-other-m-ignored = 1600
+  7.6q/NONE-record-below-withdrawal-floor = 887547
+  7.6q/NONE-record-stored = 178088
+  7.6q/NONE-storage-failure = 887807
+  7.6q/NONE/probe = 1064018
+  7.6q/NONE/query = 1974
+  7.6q/RETIRED-to-querier-same-m = 9668
+  7.6q/SEALED-toward-querier-same-m = 2211
+  7.6q/anything-else = 22276
+  7.6q/anything-else/RETIRED-elsewhere-or-other-m = 9003
+  7.6q/index-lost = 26122
+  7.7/step-copy = 646430
+  7.7/step-query = 75509
+  8/quota-refused = 21493
+  9/mark-raised = 93158
+  I5/creation = 89569
+  I7/checked = 53251
+  client/cached-caller = 768698
+  client/old-lineage = 508804
+  core/claim-runs-unit-first = 63024
+  core/forwarded-to-loop = 1358042
+  core/handed-off-unit = 1638197
+  core/hop-dropped-nested-unit = 3
+  core/hop-dropped-target-mid-round-trip = 5544
+  core/hop-runs-target-unit-first = 5936
+  core/lane-call = 16225518
+  core/reply-dropped-no-iterations-left = 34773
+  dec1/awaiting-nostate-answer-lost = 47
+  dec1/nostate-answers-awaiting-query = 751
+  dec1/two-queriers-got-nostate-from-same-predecessor = 38666
+  dec1/two-queriers-same-predecessor-one-awaiting = 32
+  fault/crash-after-write = 23935
+  fault/crash-before-write = 24043
+  fault/crash-between-calls = 181918
+  fault/durable-but-error = 24454
+  fault/garble-equivalent-to-wipe-or-restore = 17780
+  fault/garble-secret = 63604
+  fault/garbled-hop = 23313
+  fault/hop-cap = 4162
+  fault/hop-lost = 27350
+  fault/landed-but-error = 24318
+  fault/malformed/entry = 2776
+  fault/malformed/gc = 1999
+  fault/malformed/index = 6067
+  fault/malformed/parts = 2860
+  fault/malformed/progress = 95
+  fault/malformed/rx = 973
+  fault/malformed/succ = 16925
+  fault/pointer-unreachable = 193471
+  fault/quota = 68291
+  fault/read-poisoned = 126620
+  fault/reply-lost = 19070
+  fault/restore-secret = 16471
+  fault/restore-whole = 76479
+  fault/storage-failure = 24402
+  fault/storage-failure-seen = 157131
+  fault/undecryptable/entry = 2808
+  fault/undecryptable/gc = 1962
+  fault/undecryptable/index = 6097
+  fault/undecryptable/parts = 2856
+  fault/undecryptable/progress = 91
+  fault/undecryptable/rx = 942
+  fault/undecryptable/succ = 17153
+  fault/unregister = 158480
+  fault/wipe = 68583
+  finding/I3-read-in-repair-window = 5
+  finding/I3-state-in-repair-window = 3955
+  finding/creation-probe-blocked-by-withdrawal = 886358
+  ops/delete = 64000
+  ops/key-written = 310639
+  ops/unknown-kind-written = 48352
+  ops/unknown-op-refused = 117158
+  oracle/acked-change = 454071
+  publish/rollback = 41111
+  publish/withdrawal = 75843
+  restore/acknowledged-value-destroyed = 42949
+  runtime/hop-to-unregistered = 42072
+  sent/Ack/AnotherWriter = 117166
+  sent/Ack/HigherBuild = 3030
+  sent/Ack/Malformed = 4620
+  sent/Ack/Processed = 224874
+  sent/Ack/Stopped = 51
+  sent/CompleteAck/Aborted = 2153
+  sent/CompleteAck/Accepted = 132384
+  sent/CompleteAck/AlreadyWriter = 4776
+  sent/CompleteAck/AnotherWriter = 520238
+  sent/CompleteAck/DifferentManifest = 5856
+  sent/CompleteAck/HigherBuild = 2023
+  sent/CompleteAck/Malformed = 2349
+  sent/CompleteAck/Missing = 1044
+  sent/CompleteAck/NoState = 178088
+  sent/CompleteAck/Noted = 133818
+  sent/CompleteAck/Stopped = 19
+  sent/CompleteAck/StorageFailure = 890317
+exit 1

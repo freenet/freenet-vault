@@ -1,0 +1,1430 @@
+seed 0: Some(Violation { inv: "I7", msg: "after quiescence build 50 is NONE not WRITER; states [\"10:RETIRED\", \"20:WRITER(awaiting)\", \"30:NONE\", \"40:NONE\", \"50:NONE\", \"60:NONE\"]", at: 1184 })
+
+==== seed 0: shrunk to 18 actions; ledger [Rec { v: 10, withdrawal: false }, Rec { v: 20, withdrawal: false }, Rec { v: 30, withdrawal: false }, Rec { v: 35, withdrawal: true }, Rec { v: 40, withdrawal: false }, Rec { v: 50, withdrawal: false }]
+violation: Some(Violation { inv: "I7", msg: "after quiescence build 20 is WRITER(awaiting) not WRITER; states [\"10:RETIRED\", \"20:WRITER(awaiting)\", \"30:NONE\", \"40:NONE\", \"50:NONE\", \"60:NONE\"]", at: 879 })
+[1] Publish
+[2] Load { client: 0, fetch: Newest, ops: [Generate { slot: 0, seed: 1929 }, PutExt { key: 0, content: 1 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[3] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[4] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[5] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[6] Publish
+[7] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[8] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[9] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(10)
+  10 Poke { flags: 2, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [] state NONE -> NONE(armed)
+[10] Step { pick: 0, fate: Deliver }
+  10 Op(Generate { slot: 0, seed: 1929 }) -> "Key(1929)" hops [] state NONE(armed) -> WRITER
+  op Generate { slot: 0, seed: 1929 } at 10 -> Key(1929)
+[11] Load { client: 0, fetch: Newest, ops: [RaiseMark { caller: 1, rec: 5 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 2)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[12] Step { pick: 0, fate: Deliver }
+[13] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 1929, ext: [] }], malformed: false } } -> "Ack(Processed, [(18331251430155738523, Stored)], succ None)" hops [] state NONE -> RECEIVING
+[14] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Ack { tid: (10, Rec { v: 20, withdrawal: false }), status: Processed, succ: None, outcomes: [(18331251430155738523, Stored)] } } -> "-" hops [20:Complete(m 8966, 1 digests)] state WRITER -> SEALED
+[15] Step { pick: 61, fate: Deliver }
+[16] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Complete { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542, digests: [18331251430155738523], malformed: false } } -> "CompleteAck(Accepted, m 8966, missing 0, succ None)" hops [] state RECEIVING -> WRITER(awaiting)
+[17] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Accepted, succ: None, missing: [] } } -> "-" hops [20:Retired(m 8966)] state SEALED -> RETIRED
+[18] Step { pick: 0, fate: Garble }
+  20 Hop { from: 10, frame: Retired { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542, malformed: true } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+== quiescence
+[19] Load { client: 0, fetch: Newest, ops: [] }
+[20] Step { pick: 0, fate: Deliver }
+[21] Step { pick: 0, fate: Deliver }
+  10 Op(PutExt { key: 0, content: 1 }) -> "Moved(Rec { v: 20, withdrawal: false })" hops [] state RETIRED -> RETIRED
+  op PutExt { key: 0, content: 1 } at 10 -> Moved(Rec { v: 20, withdrawal: false })
+[22] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(RETIRED, rec 0)" hops [] state RETIRED -> RETIRED
+[23] Step { pick: 0, fate: Deliver }
+[24] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[25] Step { pick: 0, fate: Deliver }
+[26] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[27] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[28] Step { pick: 0, fate: Deliver }
+[29] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[30] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[31] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[32] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[33] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(RETIRED, rec 0)" hops [] state RETIRED -> RETIRED
+[34] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[35] Step { pick: 0, fate: Deliver }
+[36] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[37] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[38] Step { pick: 0, fate: Deliver }
+[39] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[40] Step { pick: 0, fate: Deliver }
+[41] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[42] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[43] Step { pick: 0, fate: Deliver }
+[44] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[45] Step { pick: 0, fate: Deliver }
+[46] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[47] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[48] Step { pick: 0, fate: Deliver }
+[49] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[50] Step { pick: 0, fate: Deliver }
+[51] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[52] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[53] Step { pick: 0, fate: Deliver }
+[54] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[55] Step { pick: 0, fate: Deliver }
+[56] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[57] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[58] Step { pick: 0, fate: Deliver }
+[59] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[60] Step { pick: 0, fate: Deliver }
+[61] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[62] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[63] Step { pick: 0, fate: Deliver }
+[64] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[65] Step { pick: 0, fate: Deliver }
+[66] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[67] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[68] Step { pick: 0, fate: Deliver }
+[69] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[70] Step { pick: 0, fate: Deliver }
+[71] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[72] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[73] Step { pick: 0, fate: Deliver }
+[74] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(20)
+[75] Step { pick: 0, fate: Deliver }
+  20 Op(RaiseMark { caller: 1, rec: 5 }) -> "Busy" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+  op RaiseMark { caller: 1, rec: 5 } at 20 -> Busy
+[76] Step { pick: 0, fate: Deliver }
+[77] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[78] Step { pick: 0, fate: Deliver }
+[79] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[80] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[81] Step { pick: 0, fate: Deliver }
+[82] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[83] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[84] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[85] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[86] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[87] Step { pick: 0, fate: Deliver }
+[88] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[89] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[90] Step { pick: 0, fate: Deliver }
+[91] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[92] Step { pick: 0, fate: Deliver }
+[93] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[94] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[95] Step { pick: 0, fate: Deliver }
+[96] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[97] Step { pick: 0, fate: Deliver }
+[98] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[99] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[100] Step { pick: 0, fate: Deliver }
+[101] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[102] Step { pick: 0, fate: Deliver }
+[103] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[104] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[105] Step { pick: 0, fate: Deliver }
+[106] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[107] Step { pick: 0, fate: Deliver }
+[108] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[109] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[110] Step { pick: 0, fate: Deliver }
+[111] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[112] Step { pick: 0, fate: Deliver }
+[113] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[114] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[115] Step { pick: 0, fate: Deliver }
+[116] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[117] Step { pick: 0, fate: Deliver }
+[118] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[119] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[120] Step { pick: 0, fate: Deliver }
+[121] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[122] Step { pick: 0, fate: Deliver }
+[123] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[124] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[125] Step { pick: 0, fate: Deliver }
+[126] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(20)
+[127] Step { pick: 0, fate: Deliver }
+[128] Wakeup { b: 0 }
+[129] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state RETIRED -> RETIRED
+[130] Wakeup { b: 1 }
+[131] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[132] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[133] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[134] Step { pick: 0, fate: Deliver }
+[135] Wakeup { b: 2 }
+[136] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[137] Wakeup { b: 3 }
+[138] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[139] Wakeup { b: 4 }
+[140] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[141] Wakeup { b: 5 }
+[142] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[143] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(RETIRED, rec 0)" hops [] state RETIRED -> RETIRED
+[144] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[145] Step { pick: 0, fate: Deliver }
+[146] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[147] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[148] Step { pick: 0, fate: Deliver }
+[149] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[150] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[151] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[152] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[153] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[154] Step { pick: 0, fate: Deliver }
+[155] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[156] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[157] Step { pick: 0, fate: Deliver }
+[158] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[159] Step { pick: 0, fate: Deliver }
+[160] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[161] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[162] Step { pick: 0, fate: Deliver }
+[163] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[164] Step { pick: 0, fate: Deliver }
+[165] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[166] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[167] Step { pick: 0, fate: Deliver }
+[168] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[169] Step { pick: 0, fate: Deliver }
+[170] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[171] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[172] Step { pick: 0, fate: Deliver }
+[173] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[174] Step { pick: 0, fate: Deliver }
+[175] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[176] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[177] Step { pick: 0, fate: Deliver }
+[178] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[179] Step { pick: 0, fate: Deliver }
+[180] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[181] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[182] Step { pick: 0, fate: Deliver }
+[183] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[184] Step { pick: 0, fate: Deliver }
+[185] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[186] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[187] Step { pick: 0, fate: Deliver }
+[188] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[189] Step { pick: 0, fate: Deliver }
+[190] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[191] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[192] Step { pick: 0, fate: Deliver }
+[193] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(20)
+[194] Step { pick: 0, fate: Deliver }
+[195] Wakeup { b: 0 }
+[196] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state RETIRED -> RETIRED
+[197] Wakeup { b: 1 }
+[198] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[199] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[200] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[201] Step { pick: 0, fate: Deliver }
+[202] Wakeup { b: 2 }
+[203] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[204] Wakeup { b: 3 }
+[205] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[206] Wakeup { b: 4 }
+[207] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[208] Wakeup { b: 5 }
+[209] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[210] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(RETIRED, rec 0)" hops [] state RETIRED -> RETIRED
+[211] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[212] Step { pick: 0, fate: Deliver }
+[213] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[214] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[215] Step { pick: 0, fate: Deliver }
+[216] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[217] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[218] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[219] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[220] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[221] Step { pick: 0, fate: Deliver }
+[222] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[223] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[224] Step { pick: 0, fate: Deliver }
+[225] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[226] Step { pick: 0, fate: Deliver }
+[227] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[228] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[229] Step { pick: 0, fate: Deliver }
+[230] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[231] Step { pick: 0, fate: Deliver }
+[232] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[233] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[234] Step { pick: 0, fate: Deliver }
+[235] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[236] Step { pick: 0, fate: Deliver }
+[237] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[238] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[239] Step { pick: 0, fate: Deliver }
+[240] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[241] Step { pick: 0, fate: Deliver }
+[242] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[243] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[244] Step { pick: 0, fate: Deliver }
+[245] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[246] Step { pick: 0, fate: Deliver }
+[247] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[248] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[249] Step { pick: 0, fate: Deliver }
+[250] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[251] Step { pick: 0, fate: Deliver }
+[252] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[253] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[254] Step { pick: 0, fate: Deliver }
+[255] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[256] Step { pick: 0, fate: Deliver }
+[257] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[258] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[259] Step { pick: 0, fate: Deliver }
+[260] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(20)
+[261] Step { pick: 0, fate: Deliver }
+[262] Wakeup { b: 0 }
+[263] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state RETIRED -> RETIRED
+[264] Wakeup { b: 1 }
+[265] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[266] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[267] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[268] Step { pick: 0, fate: Deliver }
+[269] Wakeup { b: 2 }
+[270] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[271] Wakeup { b: 3 }
+[272] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[273] Wakeup { b: 4 }
+[274] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[275] Wakeup { b: 5 }
+[276] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[277] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(RETIRED, rec 0)" hops [] state RETIRED -> RETIRED
+[278] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[279] Step { pick: 0, fate: Deliver }
+[280] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[281] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[282] Step { pick: 0, fate: Deliver }
+[283] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[284] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[285] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[286] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[287] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[288] Step { pick: 0, fate: Deliver }
+[289] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[290] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[291] Step { pick: 0, fate: Deliver }
+[292] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[293] Step { pick: 0, fate: Deliver }
+[294] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[295] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[296] Step { pick: 0, fate: Deliver }
+[297] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[298] Step { pick: 0, fate: Deliver }
+[299] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[300] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[301] Step { pick: 0, fate: Deliver }
+[302] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[303] Step { pick: 0, fate: Deliver }
+[304] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[305] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[306] Step { pick: 0, fate: Deliver }
+[307] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[308] Step { pick: 0, fate: Deliver }
+[309] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[310] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[311] Step { pick: 0, fate: Deliver }
+[312] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[313] Step { pick: 0, fate: Deliver }
+[314] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[315] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[316] Step { pick: 0, fate: Deliver }
+[317] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[318] Step { pick: 0, fate: Deliver }
+[319] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[320] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[321] Step { pick: 0, fate: Deliver }
+[322] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[323] Step { pick: 0, fate: Deliver }
+[324] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[325] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[326] Step { pick: 0, fate: Deliver }
+[327] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(20)
+[328] Step { pick: 0, fate: Deliver }
+[329] Wakeup { b: 0 }
+[330] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state RETIRED -> RETIRED
+[331] Wakeup { b: 1 }
+[332] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[333] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[334] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[335] Step { pick: 0, fate: Deliver }
+[336] Wakeup { b: 2 }
+[337] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[338] Wakeup { b: 3 }
+[339] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[340] Wakeup { b: 4 }
+[341] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[342] Wakeup { b: 5 }
+[343] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[344] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(RETIRED, rec 0)" hops [] state RETIRED -> RETIRED
+[345] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[346] Step { pick: 0, fate: Deliver }
+[347] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[348] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[349] Step { pick: 0, fate: Deliver }
+[350] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[351] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[352] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[353] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[354] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[355] Step { pick: 0, fate: Deliver }
+[356] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[357] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[358] Step { pick: 0, fate: Deliver }
+[359] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[360] Step { pick: 0, fate: Deliver }
+[361] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[362] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[363] Step { pick: 0, fate: Deliver }
+[364] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[365] Step { pick: 0, fate: Deliver }
+[366] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[367] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[368] Step { pick: 0, fate: Deliver }
+[369] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[370] Step { pick: 0, fate: Deliver }
+[371] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[372] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[373] Step { pick: 0, fate: Deliver }
+[374] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[375] Step { pick: 0, fate: Deliver }
+[376] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[377] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[378] Step { pick: 0, fate: Deliver }
+[379] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[380] Step { pick: 0, fate: Deliver }
+[381] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[382] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[383] Step { pick: 0, fate: Deliver }
+[384] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[385] Step { pick: 0, fate: Deliver }
+[386] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[387] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[388] Step { pick: 0, fate: Deliver }
+[389] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[390] Step { pick: 0, fate: Deliver }
+[391] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[392] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[393] Step { pick: 0, fate: Deliver }
+[394] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(20)
+[395] Step { pick: 0, fate: Deliver }
+[396] Wakeup { b: 0 }
+[397] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state RETIRED -> RETIRED
+[398] Wakeup { b: 1 }
+[399] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[400] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[401] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[402] Step { pick: 0, fate: Deliver }
+[403] Wakeup { b: 2 }
+[404] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[405] Wakeup { b: 3 }
+[406] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[407] Wakeup { b: 4 }
+[408] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[409] Wakeup { b: 5 }
+[410] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[411] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(RETIRED, rec 0)" hops [] state RETIRED -> RETIRED
+[412] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[413] Step { pick: 0, fate: Deliver }
+[414] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[415] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[416] Step { pick: 0, fate: Deliver }
+[417] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[418] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[419] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[420] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[421] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[422] Step { pick: 0, fate: Deliver }
+[423] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[424] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[425] Step { pick: 0, fate: Deliver }
+[426] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[427] Step { pick: 0, fate: Deliver }
+[428] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[429] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[430] Step { pick: 0, fate: Deliver }
+[431] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[432] Step { pick: 0, fate: Deliver }
+[433] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[434] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[435] Step { pick: 0, fate: Deliver }
+[436] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[437] Step { pick: 0, fate: Deliver }
+[438] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[439] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[440] Step { pick: 0, fate: Deliver }
+[441] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[442] Step { pick: 0, fate: Deliver }
+[443] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[444] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[445] Step { pick: 0, fate: Deliver }
+[446] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[447] Step { pick: 0, fate: Deliver }
+[448] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[449] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[450] Step { pick: 0, fate: Deliver }
+[451] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[452] Step { pick: 0, fate: Deliver }
+[453] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[454] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[455] Step { pick: 0, fate: Deliver }
+[456] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[457] Step { pick: 0, fate: Deliver }
+[458] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[459] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[460] Step { pick: 0, fate: Deliver }
+[461] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(20)
+[462] Step { pick: 0, fate: Deliver }
+[463] Wakeup { b: 0 }
+[464] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state RETIRED -> RETIRED
+[465] Wakeup { b: 1 }
+[466] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[467] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[468] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[469] Step { pick: 0, fate: Deliver }
+[470] Wakeup { b: 2 }
+[471] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[472] Wakeup { b: 3 }
+[473] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[474] Wakeup { b: 4 }
+[475] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[476] Wakeup { b: 5 }
+[477] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[478] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(RETIRED, rec 0)" hops [] state RETIRED -> RETIRED
+[479] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[480] Step { pick: 0, fate: Deliver }
+[481] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[482] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[483] Step { pick: 0, fate: Deliver }
+[484] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[485] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[486] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[487] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[488] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[489] Step { pick: 0, fate: Deliver }
+[490] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[491] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[492] Step { pick: 0, fate: Deliver }
+[493] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[494] Step { pick: 0, fate: Deliver }
+[495] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[496] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[497] Step { pick: 0, fate: Deliver }
+[498] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[499] Step { pick: 0, fate: Deliver }
+[500] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[501] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[502] Step { pick: 0, fate: Deliver }
+[503] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[504] Step { pick: 0, fate: Deliver }
+[505] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[506] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[507] Step { pick: 0, fate: Deliver }
+[508] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[509] Step { pick: 0, fate: Deliver }
+[510] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[511] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[512] Step { pick: 0, fate: Deliver }
+[513] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[514] Step { pick: 0, fate: Deliver }
+[515] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[516] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[517] Step { pick: 0, fate: Deliver }
+[518] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[519] Step { pick: 0, fate: Deliver }
+[520] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[521] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[522] Step { pick: 0, fate: Deliver }
+[523] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[524] Step { pick: 0, fate: Deliver }
+[525] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[526] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[527] Step { pick: 0, fate: Deliver }
+[528] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(20)
+[529] Step { pick: 0, fate: Deliver }
+[530] Wakeup { b: 0 }
+[531] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state RETIRED -> RETIRED
+[532] Wakeup { b: 1 }
+[533] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[534] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[535] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[536] Step { pick: 0, fate: Deliver }
+[537] Wakeup { b: 2 }
+[538] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[539] Wakeup { b: 3 }
+[540] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[541] Wakeup { b: 4 }
+[542] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[543] Wakeup { b: 5 }
+[544] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[545] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(RETIRED, rec 0)" hops [] state RETIRED -> RETIRED
+[546] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[547] Step { pick: 0, fate: Deliver }
+[548] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[549] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[550] Step { pick: 0, fate: Deliver }
+[551] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[552] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[553] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[554] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[555] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[556] Step { pick: 0, fate: Deliver }
+[557] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[558] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[559] Step { pick: 0, fate: Deliver }
+[560] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[561] Step { pick: 0, fate: Deliver }
+[562] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[563] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[564] Step { pick: 0, fate: Deliver }
+[565] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[566] Step { pick: 0, fate: Deliver }
+[567] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[568] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[569] Step { pick: 0, fate: Deliver }
+[570] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[571] Step { pick: 0, fate: Deliver }
+[572] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[573] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[574] Step { pick: 0, fate: Deliver }
+[575] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[576] Step { pick: 0, fate: Deliver }
+[577] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[578] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[579] Step { pick: 0, fate: Deliver }
+[580] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[581] Step { pick: 0, fate: Deliver }
+[582] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[583] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[584] Step { pick: 0, fate: Deliver }
+[585] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[586] Step { pick: 0, fate: Deliver }
+[587] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[588] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[589] Step { pick: 0, fate: Deliver }
+[590] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[591] Step { pick: 0, fate: Deliver }
+[592] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[593] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[594] Step { pick: 0, fate: Deliver }
+[595] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(20)
+[596] Step { pick: 0, fate: Deliver }
+[597] Wakeup { b: 0 }
+[598] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state RETIRED -> RETIRED
+[599] Wakeup { b: 1 }
+[600] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[601] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[602] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[603] Step { pick: 0, fate: Deliver }
+[604] Wakeup { b: 2 }
+[605] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[606] Wakeup { b: 3 }
+[607] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[608] Wakeup { b: 4 }
+[609] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[610] Wakeup { b: 5 }
+[611] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[612] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(RETIRED, rec 0)" hops [] state RETIRED -> RETIRED
+[613] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[614] Step { pick: 0, fate: Deliver }
+[615] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[616] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[617] Step { pick: 0, fate: Deliver }
+[618] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[619] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[620] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[621] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[622] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[623] Step { pick: 0, fate: Deliver }
+[624] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[625] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[626] Step { pick: 0, fate: Deliver }
+[627] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[628] Step { pick: 0, fate: Deliver }
+[629] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[630] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[631] Step { pick: 0, fate: Deliver }
+[632] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[633] Step { pick: 0, fate: Deliver }
+[634] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[635] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[636] Step { pick: 0, fate: Deliver }
+[637] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[638] Step { pick: 0, fate: Deliver }
+[639] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[640] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[641] Step { pick: 0, fate: Deliver }
+[642] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[643] Step { pick: 0, fate: Deliver }
+[644] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[645] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[646] Step { pick: 0, fate: Deliver }
+[647] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[648] Step { pick: 0, fate: Deliver }
+[649] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[650] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[651] Step { pick: 0, fate: Deliver }
+[652] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[653] Step { pick: 0, fate: Deliver }
+[654] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[655] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[656] Step { pick: 0, fate: Deliver }
+[657] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[658] Step { pick: 0, fate: Deliver }
+[659] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[660] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[661] Step { pick: 0, fate: Deliver }
+[662] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(20)
+[663] Step { pick: 0, fate: Deliver }
+[664] Wakeup { b: 0 }
+[665] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state RETIRED -> RETIRED
+[666] Wakeup { b: 1 }
+[667] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[668] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[669] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[670] Step { pick: 0, fate: Deliver }
+[671] Wakeup { b: 2 }
+[672] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[673] Wakeup { b: 3 }
+[674] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[675] Wakeup { b: 4 }
+[676] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[677] Wakeup { b: 5 }
+[678] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[679] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(RETIRED, rec 0)" hops [] state RETIRED -> RETIRED
+[680] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[681] Step { pick: 0, fate: Deliver }
+[682] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[683] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[684] Step { pick: 0, fate: Deliver }
+[685] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[686] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[687] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[688] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[689] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[690] Step { pick: 0, fate: Deliver }
+[691] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[692] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[693] Step { pick: 0, fate: Deliver }
+[694] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[695] Step { pick: 0, fate: Deliver }
+[696] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[697] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[698] Step { pick: 0, fate: Deliver }
+[699] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[700] Step { pick: 0, fate: Deliver }
+[701] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[702] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[703] Step { pick: 0, fate: Deliver }
+[704] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[705] Step { pick: 0, fate: Deliver }
+[706] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[707] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[708] Step { pick: 0, fate: Deliver }
+[709] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[710] Step { pick: 0, fate: Deliver }
+[711] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[712] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[713] Step { pick: 0, fate: Deliver }
+[714] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[715] Step { pick: 0, fate: Deliver }
+[716] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[717] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[718] Step { pick: 0, fate: Deliver }
+[719] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[720] Step { pick: 0, fate: Deliver }
+[721] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[722] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[723] Step { pick: 0, fate: Deliver }
+[724] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[725] Step { pick: 0, fate: Deliver }
+[726] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[727] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[728] Step { pick: 0, fate: Deliver }
+[729] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(20)
+[730] Step { pick: 0, fate: Deliver }
+[731] Wakeup { b: 0 }
+[732] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state RETIRED -> RETIRED
+[733] Wakeup { b: 1 }
+[734] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[735] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[736] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[737] Step { pick: 0, fate: Deliver }
+[738] Wakeup { b: 2 }
+[739] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[740] Wakeup { b: 3 }
+[741] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[742] Wakeup { b: 4 }
+[743] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[744] Wakeup { b: 5 }
+[745] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[746] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(RETIRED, rec 0)" hops [] state RETIRED -> RETIRED
+[747] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[748] Step { pick: 0, fate: Deliver }
+[749] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[750] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[751] Step { pick: 0, fate: Deliver }
+[752] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[753] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[754] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[755] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[756] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[757] Step { pick: 0, fate: Deliver }
+[758] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[759] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[760] Step { pick: 0, fate: Deliver }
+[761] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[762] Step { pick: 0, fate: Deliver }
+[763] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[764] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[765] Step { pick: 0, fate: Deliver }
+[766] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[767] Step { pick: 0, fate: Deliver }
+[768] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[769] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[770] Step { pick: 0, fate: Deliver }
+[771] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[772] Step { pick: 0, fate: Deliver }
+[773] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[774] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[775] Step { pick: 0, fate: Deliver }
+[776] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[777] Step { pick: 0, fate: Deliver }
+[778] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[779] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[780] Step { pick: 0, fate: Deliver }
+[781] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[782] Step { pick: 0, fate: Deliver }
+[783] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[784] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[785] Step { pick: 0, fate: Deliver }
+[786] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[787] Step { pick: 0, fate: Deliver }
+[788] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[789] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[790] Step { pick: 0, fate: Deliver }
+[791] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[792] Step { pick: 0, fate: Deliver }
+[793] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[794] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[795] Step { pick: 0, fate: Deliver }
+[796] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(20)
+[797] Step { pick: 0, fate: Deliver }
+[798] Wakeup { b: 0 }
+[799] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state RETIRED -> RETIRED
+[800] Wakeup { b: 1 }
+[801] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[802] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[803] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[804] Step { pick: 0, fate: Deliver }
+[805] Wakeup { b: 2 }
+[806] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[807] Wakeup { b: 3 }
+[808] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[809] Wakeup { b: 4 }
+[810] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[811] Wakeup { b: 5 }
+[812] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[813] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(RETIRED, rec 0)" hops [] state RETIRED -> RETIRED
+[814] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[815] Step { pick: 0, fate: Deliver }
+[816] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[817] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[818] Step { pick: 0, fate: Deliver }
+[819] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[820] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[821] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[822] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[823] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[824] Step { pick: 0, fate: Deliver }
+[825] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[826] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[827] Step { pick: 0, fate: Deliver }
+[828] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[829] Step { pick: 0, fate: Deliver }
+[830] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[831] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[832] Step { pick: 0, fate: Deliver }
+[833] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[834] Step { pick: 0, fate: Deliver }
+[835] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[836] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[837] Step { pick: 0, fate: Deliver }
+[838] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[839] Step { pick: 0, fate: Deliver }
+[840] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[841] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[842] Step { pick: 0, fate: Deliver }
+[843] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[844] Step { pick: 0, fate: Deliver }
+[845] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[846] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[847] Step { pick: 0, fate: Deliver }
+[848] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[849] Step { pick: 0, fate: Deliver }
+[850] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[851] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[852] Step { pick: 0, fate: Deliver }
+[853] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[854] Step { pick: 0, fate: Deliver }
+[855] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[856] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[857] Step { pick: 0, fate: Deliver }
+[858] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER(awaiting), rec 3)" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[859] Step { pick: 0, fate: Deliver }
+[860] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[861] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[862] Step { pick: 0, fate: Deliver }
+[863] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(20)
+[864] Step { pick: 0, fate: Deliver }
+[865] Wakeup { b: 0 }
+[866] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state RETIRED -> RETIRED
+[867] Wakeup { b: 1 }
+[868] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [10:Query(m 8966)] state WRITER(awaiting) -> WRITER(awaiting)
+[869] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 11560826928892381542 } } -> "CompleteAck(Noted, m 8966, missing 0, succ Some(Rec { v: 20, withdrawal: false }))" hops [] state RETIRED -> RETIRED
+[870] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 11560826928892381542, status: Noted, succ: Some(Rec { v: 20, withdrawal: false }), missing: [] } } -> "-" hops [] state WRITER(awaiting) -> WRITER(awaiting)
+[871] Step { pick: 0, fate: Deliver }
+[872] Wakeup { b: 2 }
+[873] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[874] Wakeup { b: 3 }
+[875] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[876] Wakeup { b: 4 }
+[877] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[878] Wakeup { b: 5 }
+[879] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+!! I7: after quiescence build 20 is WRITER(awaiting) not WRITER; states ["10:RETIRED", "20:WRITER(awaiting)", "30:NONE", "40:NONE", "50:NONE", "60:NONE"]

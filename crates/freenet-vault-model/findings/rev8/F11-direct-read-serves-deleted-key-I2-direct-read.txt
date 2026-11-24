@@ -1,0 +1,37 @@
+seed 10127: Some(Violation { inv: "I2-direct-read", msg: "writer 10 holds Some(Entry { kind: 1, key: 3, flagged: false, content: 524362, ext: [] }) for (1, 3); acknowledged Possible { acked: None, maybe: [] }", at: 68 })
+
+==== seed 10127: shrunk to 14 actions; ledger [Rec { v: 10, withdrawal: false }, Rec { v: 20, withdrawal: false }, Rec { v: 40, withdrawal: false }, Rec { v: 50, withdrawal: false }, Rec { v: 60, withdrawal: false }]
+violation: Some(Violation { inv: "I2-direct-read", msg: "writer 10 holds Some(Entry { kind: 1, key: 3, flagged: false, content: 373095, ext: [] }) for (1, 3); acknowledged Possible { acked: None, maybe: [] }", at: 14 })
+[1] Publish
+[2] Load { client: 0, fetch: Newest, ops: [Generate { slot: 0, seed: 686044 }, Generate { slot: 1, seed: 863055 }, Generate { slot: 2, seed: 829197 }, Generate { slot: 3, seed: 373095 }, PutExt { key: 1, content: 2 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[3] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[4] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[5] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[6] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[7] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[8] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(10)
+  10 Poke { flags: 2, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [] state NONE -> NONE(armed)
+[9] Step { pick: 0, fate: Deliver }
+  10 Op(Generate { slot: 0, seed: 686044 }) -> "Key(686044)" hops [] state NONE(armed) -> WRITER
+  op Generate { slot: 0, seed: 686044 } at 10 -> Key(686044)
+[10] Step { pick: 0, fate: Deliver }
+  10 Op(Generate { slot: 1, seed: 863055 }) -> "Key(863055)" hops [] state WRITER -> WRITER
+  op Generate { slot: 1, seed: 863055 } at 10 -> Key(863055)
+[11] Step { pick: 0, fate: Drop }
+  10 Op(Generate { slot: 2, seed: 829197 }) -> "Key(829197)" hops [] state WRITER -> WRITER
+  op Generate { slot: 2, seed: 829197 } at 10 -> Key(829197)
+[12] Step { pick: 0, fate: Deliver }
+  10 Op(Generate { slot: 3, seed: 373095 }) -> "Key(373095)" hops [] state WRITER -> WRITER
+  op Generate { slot: 3, seed: 373095 } at 10 -> Key(373095)
+[13] Cached { op: Delete { slot: 3 }, b: None }
+  10 Op(Delete { slot: 3 }) -> "Ok" hops [] state WRITER -> WRITER
+  op Delete { slot: 3 } at 10 -> Ok
+[14] Garble { b: 0, pick: 0, undecryptable: false }
+!! I2-direct-read: writer 10 holds Some(Entry { kind: 1, key: 3, flagged: false, content: 373095, ext: [] }) for (1, 3); acknowledged Possible { acked: None, maybe: [] }

@@ -1,0 +1,23 @@
+mutation check: 20000 seeds from 0 plus 147 directed scenarios, delivery Core
+mutant RetiredBeforeUnlist: caught by I3-retired-listed x1 (first directed client/old-lineage) (0 candidates rejected)
+mutant NeverUnlist: caught by I2 x2 (first seed 3204), I2-two-index-lost-unlisted-state-7 x4 (first seed 2837), I3-retired-listed x5 (first seed 13964) (0 candidates rejected)
+mutant RelistRetired: caught by I2 x1 (first seed 3204), I2-two-index-lost-unlisted-state-7 x4 (first seed 2837), I3-retired-listed x5 (first seed 13964) (0 candidates rejected)
+mutant PartsBeforeIndex: caught by I2-two-index-lost-listed-non-writer x1 (first seed 5628) (0 candidates rejected)
+mutant CreateWhileStopped: caught by I5-stopped x737 (first seed 12) (0 candidates rejected)
+mutant NoState0x0BWithoutStoring: caught by I5 x2 (first seed 10616) (0 candidates rejected)
+mutant MirrorBeforeCommit: caught by I2 x82 (first seed 681), I2-direct-read-gc-lost x1 (first directed 4.2/step-1/leftover-found), I2-orphan-direct-read x1 (first seed 15324), I3-orphan-direct-read x12 (first seed 2252), I6 x59 (first seed 277), I8 x3 (first seed 7113) (0 candidates rejected)
+mutant NoStep1: caught by I2-direct-read-gc-lost x2 (first directed 4.2/step-1/leftover-found) (0 candidates rejected)
+mutant DeleteCommitBeforeMirrorAbsent: caught by I2-orphan-direct-read x4 (first directed 4.2/delete/fault-at-step-3) (0 candidates rejected)
+mutant SweepUncheckedDigest: caught by I3-orphan-direct-read x2 (first seed 2765) (0 candidates rejected)
+mutant DirectReadSingleCopy: caught by I3-direct-read x1 (first seed 8629), I3-direct-read-gc-lost x3 (first directed 4.2/entry-write/fault-at-step-1), I3-orphan-direct-read x17 (first seed 157) (0 candidates rejected)
+mutant DirectReadChooses: caught by I3-direct-read x7 (first seed 4132), I3-orphan-direct-read x6 (first seed 2765) (0 candidates rejected)
+mutant DirectReadIgnoresEflagsOrKey: caught by I3-direct-read x2 (first seed 3053), I3-orphan-direct-read x1 (first seed 9277) (0 candidates rejected)
+mutant DirectReadAbsent: SURVIVED (0 candidates rejected: their shrunk traces fail the unmutated model too)
+mutant ListNoneOrReceiving: caught by I2-two-index-lost-listed-non-writer x74 (first seed 284), I2-two-index-lost-unlisted-state-7 x1 (first seed 18652), I7-listed-non-writer-index-lost x18 (first seed 1476) (1 candidates rejected)
+mutant AnswerBeforeListing: caught by I2 x1 (first seed 15164) (0 candidates rejected)
+mutant MalformedListedIsNone: caught by I2 x77 (first seed 372), I2-direct-read x4 (first directed 4.2/delete/fault-at-step-2), I5 x48 (first seed 77) (0 candidates rejected)
+mutant MalformedUnlistedIsLost: caught by I3 x3 (first seed 14716), I7-receiver-index-lost x8 (first seed 1468) (0 candidates rejected)
+mutant WriteWithoutRemove: caught by I7-control-damage x62 (first seed 1108), I7-receiver-index-lost x9 (first seed 1476) (0 candidates rejected)
+mutant DirectReadDespiteSuccessor: caught by I3-retired-parts-malformed x1 (first seed 17316) (0 candidates rejected)
+mutants surviving: 1
+exit 1 runtime 1106s

@@ -4,6 +4,7 @@ members = [
     "crates/freenet-vault-common",
     "crates/freenet-vault",
     "domains/river",
+    "crates/freenet-vault-model",
 ]
 
 [workspace.package]

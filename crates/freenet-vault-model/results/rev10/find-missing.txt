@@ -1,0 +1,17 @@
+    (2092, "4.2/delete/fault-at-step-2/Fail"),
+    (5190, "7.6/RECEIVING(higher)/Chunk"),
+    (9558, "7.6q/SEALED/probe-0x07"),
+    (11363, "7.6/stopped/Chunk"),
+    (11363, "7.3/ack/Stopped"),
+    (13750, "7.4/query-crash-after-record-stored"),
+    (16590, "7.6/stopped/Complete"),
+    (16590, "7.5/completeack/Stopped"),
+    (31534, "7.6/other-writer-or-not-from-P/Abort"),
+    (35358, "7.6/RECEIVING(higher)/Complete"),
+    (35358, "7.5/completeack/HigherBuild"),
+    (35358, "sent/CompleteAck/HigherBuild"),
+    (41526, "4.2/remove-before-write/entry"),
+    (47871, "4.3/corrupt-rewritten-flagged"),
+    (48486, "7.6/RECEIVING(lower)/Complete"),
+    // not found: 7.6/other-writer-or-not-from-P/Retired
+    // not found: 7.2/outcome-staging-full

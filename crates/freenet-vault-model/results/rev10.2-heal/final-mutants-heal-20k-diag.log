@@ -1,0 +1,5 @@
+mutation check: 20000 seeds from 0 plus 184 directed scenarios, delivery Core
+mutant HealWithoutDigestCheck: caught by I3-orphan-direct-read x6 (first directed 4.3/heal-skipped-mirror-fails-digest) (0 candidates rejected)
+mutant HealWhileSealed: SURVIVED (0 candidates rejected: their shrunk traces fail the unmutated model too)
+mutants surviving: 1
+exit 1 runtime 169s
