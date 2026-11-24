@@ -799,7 +799,7 @@ fn the_catch_all_lists_a_writer_index_and_open_does_not() {
     h.secrets.remove(names::PARTS);
     assert!(Store::open(&mut h, P).is_ok());
     assert!(!h.secrets.contains_key(names::PARTS), "open listed");
-    ensure_part_listed(&mut h, &P).unwrap();
+    fix_listing(&mut h, &P).unwrap();
     assert!(h.secrets[names::PARTS].chunks(32).any(|c| c == P));
 }
 
@@ -1217,7 +1217,7 @@ fn a_failed_listing_refuses_the_creating_change_and_the_catch_all_lists_it() {
         Store::open(&mut h.restart(), P).unwrap().index.state,
         State::Writer
     );
-    ensure_part_listed(&mut h, &P).unwrap();
+    fix_listing(&mut h, &P).unwrap();
     assert!(h.secrets[names::PARTS].chunks(32).any(|c| c == P));
     // And a catch-all whose write fails reports it (the call answers nothing).
     let mut h2 = MemHost::new();
@@ -1229,7 +1229,7 @@ fn a_failed_listing_refuses_the_creating_change_and_the_catch_all_lists_it() {
         }
     });
     let _ = put(&mut h2, &key_entry(1, 9));
-    assert!(ensure_part_listed(&mut h2, &P).is_err());
+    assert!(fix_listing(&mut h2, &P).is_err());
 }
 
 /// A malformed index counts as index loss only while `vault:parts` lists the
@@ -1353,7 +1353,7 @@ fn the_catch_all_never_lists_a_non_writer_index() {
         let mut s = Store::open(&mut h, P).unwrap();
         s.update(|ix| ix.state = state).unwrap();
         drop(s);
-        ensure_part_listed(&mut h, &P).unwrap();
+        fix_listing(&mut h, &P).unwrap();
         assert!(
             !h.secrets.contains_key(names::PARTS),
             "{state:?} was listed"
@@ -1366,7 +1366,7 @@ fn the_catch_all_never_lists_a_non_writer_index() {
         s.update(|ix| ix.state = state).unwrap();
         drop(s);
         h.secrets.remove(names::PARTS);
-        ensure_part_listed(&mut h, &P).unwrap();
+        fix_listing(&mut h, &P).unwrap();
         assert!(
             h.secrets[names::PARTS].chunks(32).any(|c| c == P),
             "{state:?}"

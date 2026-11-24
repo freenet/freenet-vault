@@ -522,7 +522,7 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
         Some(f)
             if f.0.parts_malformed()
                 && succ.as_ref().is_some_and(|s| s.successor().is_some())
-                && !(trace::mutant(Mutant::DirectReadDespiteSuccessor) && !is_change) =>
+                && (is_change || !trace::mutant(Mutant::DirectReadDespiteSuccessor)) =>
         {
             hit!(
                 "{}",
@@ -767,7 +767,12 @@ fn ask<H: Host>(
         request_id: rid,
         slot: slot.to_vec(),
     };
-    if !host.write_context(&pending.encode()) {
+    // The prompt rides in the delegate context next to the handover's
+    // volatile state (ctx.rs), which it must not clobber.
+    let before = crate::ctx::Ctx::load(&*host);
+    let mut ctx = before.clone();
+    ctx.pending = Some(pending);
+    if !ctx.store(host, &before) {
         return refusal(rid, refused::STORAGE_FAILURE);
     }
     Outcome::Prompt {
@@ -841,11 +846,14 @@ pub fn export_answer<H: Host>(
     prompt_id: u32,
     response: &[u8],
 ) -> Option<Outcome> {
-    let pending = Pending::decode(&host.read_context())?;
+    let before = crate::ctx::Ctx::load(&*host);
+    let pending = before.pending.clone()?;
     if pending.prompt_id != prompt_id || &pending.origin != origin {
         return None;
     }
-    host.write_context(&[]);
+    let mut ctx = before.clone();
+    ctx.pending = None;
+    ctx.store(host, &before);
     let rid = pending.request_id;
     if response != consent::ALLOW || !domain.is_own_page(origin) {
         return Some(refusal(rid, refused::CONSENT_DENIED));
@@ -1062,8 +1070,10 @@ fn submit_record<H: Host>(
         // A domain record (3), as on a Poke: no record storage while the
         // index is lost (4.5) or while `vault:succ` is malformed (3).
         let mut st = crate::handover::submit_domain_record(domain, host, &s.record, own_page);
-        if let Status::Handover(h) = &mut st {
-            h.request_id = rid;
+        match &mut st {
+            Status::Handover(h) => h.request_id = rid,
+            Status::Refused { request_id, .. } => *request_id = rid,
+            _ => {}
         }
         return status(st);
     }

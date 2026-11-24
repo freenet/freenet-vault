@@ -93,6 +93,7 @@ impl Store {
     /// an entry of kind 0x01 with eflags 0 and the key of the slot, and
     /// their bytes are identical; then that value, else Err (storage
     /// failure). Never Absent; vault:gc is not read.
+    #[allow(clippy::result_unit_err)]
     pub fn direct_value(&self, id: Ident) -> Result<Option<Entry>, ()> {
         let auth = |par: bool| match self.secrets.get(&SName::E(id, par)) {
             Some(SVal::E(e)) if e.kind == KIND_KEY && !e.flagged && e.ident() == id => {

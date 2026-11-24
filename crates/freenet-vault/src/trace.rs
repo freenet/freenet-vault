@@ -146,5 +146,17 @@ macro_rules! hit {
         {
             $crate::trace::emit($crate::trace::Ev::Hit(format!($($arg)*)));
         }
+        // Without the feature the counter name is still an expression, so
+        // branches that differ only in their counter stay distinct (clippy's
+        // identical-blocks check) and nothing is formatted or allocated.
+        #[cfg(not(feature = "trace"))]
+        {
+            $crate::trace::off(format_args!($($arg)*));
+        }
     }};
 }
+
+/// The sink of [`hit!`] without the `trace` feature: does nothing.
+#[cfg(not(feature = "trace"))]
+#[inline(always)]
+pub fn off(_: core::fmt::Arguments<'_>) {}

@@ -615,11 +615,10 @@ impl World {
                     Note::EntryStep(_, id) | Note::DeleteStep(_, id) | Note::HealStep(id, _) => {
                         pending.insert(*id);
                     }
-                    Note::Mirrored(id) => {
-                        if pending.remove(id) {
-                            self.incomplete.remove(&(v, *id));
-                        }
+                    Note::Mirrored(id) if pending.remove(id) => {
+                        self.incomplete.remove(&(v, *id));
                     }
+                    Note::Mirrored(_) => {}
                     Note::Faulted => {
                         for id in std::mem::take(&mut pending) {
                             self.incomplete.insert((v, id));

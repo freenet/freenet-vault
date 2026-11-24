@@ -266,16 +266,8 @@ impl<'a, H: Host> Cx<'a, H> {
         Succ::load(self.d, &*self.h).unwrap_or_default()
     }
 
-    fn succ_malformed(&self) -> bool {
-        Succ::load(self.d, &*self.h).is_err()
-    }
-
     fn parts_listed(&self) -> bool {
         storage::parts_lists(&*self.h, &self.part)
-    }
-
-    fn ro(&self) -> bool {
-        self.h.writes_refused()
     }
 
     /// Commits an index (4.2). After a failed write the index is read back:
@@ -363,7 +355,7 @@ impl<'a, H: Host> Cx<'a, H> {
     /// stored. Storing one clears any creation arming and confirmations.
     fn accept_record(&mut self, rec: &Rec) -> (u8, bool) {
         let before = Succ::load(self.d, &*self.h);
-        let mut s = before.clone().unwrap_or_default();
+        let mut s = before.unwrap_or_default();
         let r = PointerRecord::decode(rec);
         let floor = s.floor(self.own());
         if r.verify(&self.d.author_vk, self.d.app_id).is_ok() {
@@ -1487,19 +1479,18 @@ impl<'a, H: Host> Cx<'a, H> {
         let idx = self.idx();
         let m = sm;
         match a.status {
-            cstatus::ACCEPTED | cstatus::ALREADY_WRITER => {
-                if self.retire(&idx, &target, m) {
-                    let r = Short {
-                        record: target,
-                        partition: self.part,
-                        manifest_digest: m,
-                        ext: vec![],
-                    };
-                    if let Ok(f) = r.encode(types::RETIRED) {
-                        self.send(code_of(&target), f);
-                    }
+            cstatus::ACCEPTED | cstatus::ALREADY_WRITER if self.retire(&idx, &target, m) => {
+                let r = Short {
+                    record: target,
+                    partition: self.part,
+                    manifest_digest: m,
+                    ext: vec![],
+                };
+                if let Ok(f) = r.encode(types::RETIRED) {
+                    self.send(code_of(&target), f);
                 }
             }
+            cstatus::ACCEPTED | cstatus::ALREADY_WRITER => {}
             cstatus::MISSING => {
                 self.vol.complete_in_flight = false;
                 let tv = version(&target);
@@ -1782,14 +1773,6 @@ impl<'a, H: Host> Cx<'a, H> {
             hit!("5.3/probe-answer-other/{status}");
         }
     }
-
-    // -------------------------------------------------------- status (12.4)
-
-    fn status(&self, step: u8, own_page: bool) -> Status {
-        let idx = self.idx();
-        let succ = Succ::load(self.d, &*self.h);
-        handover_status(self.d, succ.as_ref().ok(), Some(&idx), step, 0, own_page)
-    }
 }
 
 /// HandoverStatus (12.4). `idx` is `None` when the index is lost (state 7).
@@ -2062,9 +2045,15 @@ pub fn submit_domain_record<H: Host>(d: &Domain, h: &mut H, rec: &Rec, own_page:
         )
         .unwrap_or_else(|_| Index::none())
     };
+    // A malformed stored record is never read as "no record" (3): nothing
+    // replaces it, not even a record that verifies (the floor it held is
+    // unknown, so any record could lower it). Refused(7), as before.
     if Succ::load(d, &*h).is_err() {
-        let ix = read_ix(h);
-        return handover_status(d, None, Some(&ix), step_result::NOTHING, 0, own_page);
+        hit!("3/record-malformed-call");
+        return Status::Refused {
+            request_id: 0,
+            reason: refused::STORED_RECORD_MALFORMED,
+        };
     }
     let ((step, _), _) = with_cx(d, h, |cx| cx.accept_record(rec));
     let extra = if h.writes_refused() {

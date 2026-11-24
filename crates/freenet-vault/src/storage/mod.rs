@@ -694,7 +694,9 @@ impl<'a, H: Host> Store<'a, H> {
     /// `budget` identities, starting after `cursor`, and stops at the first
     /// failed write (which leaves the call read-only).
     pub fn mirror_sweep(&mut self, budget: usize, cursor: Option<&(u8, Vec<u8>)>) -> Sweep {
-        if self.is_read_only() || !self.verified {
+        // Only a WRITER sweeps (7.7: never while sealed); the caller checks
+        // too, this keeps the store from being driven into it.
+        if self.is_read_only() || !self.verified || self.index.state != index::State::Writer {
             return Sweep::Stopped;
         }
         let mut examined = 0usize;

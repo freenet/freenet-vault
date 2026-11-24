@@ -614,10 +614,12 @@ fn a_stored_successor_that_no_longer_verifies_is_never_returned() {
     );
 }
 
-/// A permanently unusable `vault:succ` does not block creation for ever: a
-/// verified, newer record replaces it.
+/// A malformed `vault:succ` is never read as "no record" (protocol 3), so a
+/// verified, newer record does not replace it and nothing is created. This
+/// reverses the storage-and-ops repair, which the handover model does not have
+/// (a replacement could lower a floor the lost store held).
 #[test]
-fn a_verified_record_replaces_an_unusable_vault_succ() {
+fn a_verified_record_does_not_replace_a_malformed_vault_succ() {
     let mut h = MemHost::new();
     arm(&mut h);
     h.secrets.insert(names::SUCC.to_vec(), vec![9, 9, 9]);
@@ -634,8 +636,9 @@ fn a_verified_record_replaces_an_unusable_vault_succ() {
     let s = handover(page(&mut h, poke(0, Some(domain_record(1, [0x11; 32])))));
     assert_eq!(s.record_state, record_state::STORED_MALFORMED);
     let s = handover(page(&mut h, poke(0, Some(domain_record(2, [0x22; 32])))));
-    assert_eq!(s.step_result, step_result::RECORD_ACCEPTED);
-    assert_eq!(s.record_state, record_state::SUCCESSOR);
+    assert_eq!(s.step_result, step_result::NOTHING);
+    assert_eq!(s.record_state, record_state::STORED_MALFORMED);
+    assert_eq!(h.secrets[names::SUCC], vec![9, 9, 9]);
 }
 
 #[test]
@@ -1421,6 +1424,7 @@ fn check_one(
     h.secrets = base.secrets.clone();
     let before = h.secrets.clone();
     // No panic: process returns, Ok or Err.
+    let origin_dbg = format!("{origin:?}");
     let out = process(&domain(), &mut h, &[], origin.as_ref(), msg);
     let mut may_change = false;
     if let Ok(out) = &out {
@@ -1430,6 +1434,16 @@ fn check_one(
                 OutboundDelegateMsg::SendDelegateMessage(d) => &d.payload,
                 _ => continue,
             };
+            // A Chunk is the copy toward the successor build (7.2): it carries
+            // the entries, seeds included, vault to vault by design. Every
+            // other message must not.
+            if let OutboundDelegateMsg::SendDelegateMessage(_) = m {
+                if freenet_vault_common::frame::Frame::decode(bytes)
+                    .is_ok_and(|f| f.frame_type == freenet_vault_common::frame::types::CHUNK)
+                {
+                    continue;
+                }
+            }
             for s in &seed_bytes {
                 assert!(
                     !bytes.windows(32).any(|w| w == s),
@@ -1437,13 +1451,30 @@ fn check_one(
                 );
             }
             match decode_reply(bytes) {
-                Reply::Op(..) | Reply::St(Status::Handover(_)) => may_change = true,
+                // Absent is an answer, not a refusal: a change to an absent
+                // slot from an armed build creates the partition first (5.1,
+                // 5.3: an empty WRITER index, listed) and then answers it.
+                Reply::Op(..) | Reply::St(Status::Handover(_) | Status::Absent { .. }) => {
+                    may_change = true
+                }
                 Reply::St(_) => {}
             }
         }
     }
     if !may_change {
-        assert_eq!(h.secrets, before, "{state}: a refusal changed storage");
+        assert!(
+            h.secrets == before,
+            "{state}: a refusal changed storage; origin {:?}, reply {:?}",
+            origin_dbg,
+            out.as_ref().map(|o| o
+                .iter()
+                .map(|m| match m {
+                    OutboundDelegateMsg::ApplicationMessage(a) => Some(decode_reply(&a.payload)),
+                    OutboundDelegateMsg::SendDelegateMessage(d) => Some(decode_reply(&d.payload)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>())
+        );
     }
 }
 
@@ -1460,7 +1491,7 @@ fn persisted_state_decoders_never_panic() {
     writer_with_key(&mut h);
     let slot = seed_slot_of(&h);
     chat_pk(&mut h, 5, &slot);
-    page(&mut h, poke(0, Some(domain_record(2, [0x22; 32]))));
+    page_poke(&mut h, poke(0, Some(domain_record(2, [0x22; 32]))));
     let index = h.secrets[&names::index(&domain().partition())].clone();
     let succ = h.secrets[names::SUCC].clone();
     let pending = Pending {
@@ -2504,7 +2535,7 @@ fn a_malformed_parts_list_and_a_newer_record_answer_moved() {
         let mut h = MemHost::new();
         let (slot, pk) = writer_with_key(&mut h);
         // A newer record becomes known.
-        let _ = page(&mut h, poke(0, Some(domain_record(2, [0x22; 32]))));
+        let _ = page_poke(&mut h, poke(0, Some(domain_record(2, [0x22; 32]))));
         let newer = domain_record(2, [0x22; 32]);
         if torn {
             let b = h.secrets[&names::index(&p)].clone();
@@ -2624,7 +2655,7 @@ fn the_export_answer_is_moved_in_the_g2_state() {
     let mut h = MemHost::new();
     let (slot, _) = writer_with_key(&mut h);
     let id = export_prompt(&mut h, &slot, 21);
-    let _ = page(&mut h, poke(0, Some(domain_record(2, [0x22; 32]))));
+    let _ = page_poke(&mut h, poke(0, Some(domain_record(2, [0x22; 32]))));
     h.secrets.remove(&names::index(&p));
     h.secrets.insert(names::PARTS.to_vec(), vec![1; 33]);
     assert_eq!(
@@ -2647,9 +2678,9 @@ fn a_stopped_domain_neither_arms_nor_creates() {
     // Armed first, withdrawn after: creation is refused (NotHere), nothing written.
     let mut h = MemHost::new();
     arm(&mut h);
-    let _ = page(&mut h, poke(0, Some(domain_record(2, [0; 32]))));
+    let _ = page_poke(&mut h, poke(0, Some(domain_record(2, [0; 32]))));
     assert_eq!(
-        handover(page(&mut h, poke(0, None))).record_state,
+        handover(page_poke(&mut h, poke(0, None))).record_state,
         record_state::STOPPED
     );
     assert!(matches!(
@@ -2781,7 +2812,7 @@ fn g2_with_a_lost_or_undecryptable_succ_direct_reads() {
     for undecryptable in [false, true] {
         let mut h = MemHost::new();
         let (slot, pk) = writer_with_key(&mut h);
-        let _ = page(&mut h, poke(0, Some(domain_record(2, [0x22; 32]))));
+        let _ = page_poke(&mut h, poke(0, Some(domain_record(2, [0x22; 32]))));
         h.secrets.remove(&names::index(&p));
         h.secrets.insert(names::PARTS.to_vec(), vec![1; 33]);
         if undecryptable {
@@ -2803,11 +2834,14 @@ fn an_undecryptable_succ_is_replaced_when_a_record_is_accepted() {
     let mut h = MemHost::new();
     arm(&mut h);
     h.undecryptable.insert(names::SUCC.to_vec());
-    let st = handover(page(&mut h, poke(0, Some(domain_record(2, [0x22; 32])))));
+    let st = handover(page_poke(
+        &mut h,
+        poke(0, Some(domain_record(2, [0x22; 32]))),
+    ));
     assert_eq!(st.step_result, step_result::RECORD_ACCEPTED);
     assert!(!h.undecryptable.contains(names::SUCC));
     assert_eq!(
-        handover(page(&mut h, poke(0, None))).record_state,
+        handover(page_poke(&mut h, poke(0, None))).record_state,
         record_state::SUCCESSOR
     );
 }
@@ -2824,6 +2858,9 @@ fn a_missing_named_entry_is_reported_in_the_poke_status() {
     for parity in 0..2u8 {
         h.secrets.remove(&names::entry(&p, KIND_KEY, &slot, parity));
     }
+    // The sweep runs once per start (7.7) and already ran in `problems_of`; a
+    // restart loses the context, so the next Poke sweeps and sees the loss.
+    h.context.clear();
     let st = handover(page(&mut h, poke(0, None)));
     assert_ne!(st.problems & problems::CORRUPT_OR_LOST, 0);
     assert_eq!(st.lost_entries, 0);
