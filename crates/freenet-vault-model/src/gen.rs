@@ -87,19 +87,70 @@ fn gen_op(rng: &mut Rng) -> Op {
     }
 }
 
+/// A change that adds or removes an identity (Busy family).
+fn gen_change(rng: &mut Rng) -> Op {
+    match rng.below(5) {
+        0 | 1 => Op::Delete {
+            slot: rng.below(4) as u16,
+        },
+        2 => Op::Generate {
+            slot: rng.below(4) as u16,
+            seed: 100 + rng.below(1_000_000) as u32,
+        },
+        3 => Op::PutExt {
+            key: rng.below(2) as u16,
+            content: rng.below(1000) as u32,
+        },
+        _ => Op::RaiseMark {
+            caller: rng.below(3) as u16,
+            rec: rng.below(10) as u32,
+        },
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Profile {
     pub fault: f64,
     pub restores: bool,
+    pub family: Family,
+}
+
+/// Scenario families, chosen by seed so that one PR run of consecutive
+/// seeds covers each. General seeds generate exactly what they did before
+/// the families existed (committed traces stay reproducible).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Family {
+    General,
+    /// Restores, wipes and crashes at a high rate, so that a build is set
+    /// back while its successors move on (the RECEIVING(lower/higher) and
+    /// "not from P" rows of 7.6 are reachable only that way).
+    RestoreHeavy,
+    /// Many changes per load, so that a writer runs near the entry
+    /// maximum while copying and the receiver's staging fills (8).
+    Busy,
+}
+
+pub fn family_of(seed: u64) -> Family {
+    match seed % 8 {
+        6 => Family::RestoreHeavy,
+        7 => Family::Busy,
+        _ => Family::General,
+    }
 }
 
 pub fn gen_scenario(seed: u64, cfg: &Cfg) -> Scenario {
     let mut rng = Rng::new(seed);
     let ledger = gen_ledger(&mut rng, cfg.withdrawals);
-    let prof = Profile {
+    let family = family_of(seed);
+    let mut prof = Profile {
         fault: [0.0, 0.03, 0.08, 0.15][rng.below(4) as usize],
         restores: rng.chance(0.2),
+        family,
     };
+    if family == Family::RestoreHeavy {
+        prof.restores = true;
+        prof.fault = prof.fault.max(0.08);
+    }
     let n = 60 + rng.below(241) as usize;
     let mut actions = vec![
         Action::Publish,
@@ -135,7 +186,11 @@ pub fn gen_scenario(seed: u64, cfg: &Cfg) -> Scenario {
                 fate,
             }
         } else if r < 0.65 {
-            let nops = rng.below(4) as usize;
+            let nops = if prof.family == Family::Busy {
+                rng.below(9) as usize
+            } else {
+                rng.below(4) as usize
+            };
             Action::Load {
                 client: rng.below(CLIENTS.len() as u64) as u8,
                 fetch: if rng.chance(f + 0.02) {
@@ -153,14 +208,38 @@ pub fn gen_scenario(seed: u64, cfg: &Cfg) -> Scenario {
             }
         } else if r < 0.77 {
             Action::Publish
-        } else if r < 0.80 {
+        } else if r < 0.80 || (prof.family == Family::Busy && r < 0.90) {
             Action::Cached {
-                op: gen_op(&mut rng),
+                op: if prof.family == Family::Busy {
+                    gen_change(&mut rng)
+                } else {
+                    gen_op(&mut rng)
+                },
                 b: if rng.chance(0.5) {
                     Some(rng.below(NBUILDS as u64) as u8)
                 } else {
                     None
                 },
+            }
+        } else if prof.family == Family::RestoreHeavy && rng.chance(0.5) {
+            match rng.below(5) {
+                0 | 1 => Action::Restore {
+                    b: rng.below(NBUILDS as u64) as u8,
+                    snap: rng.below(64) as u16,
+                    secret: if rng.chance(0.3) {
+                        Some(rng.below(64) as u16)
+                    } else {
+                        None
+                    },
+                },
+                2 => Action::Wipe {
+                    b: rng.below(NBUILDS as u64) as u8,
+                },
+                3 => Action::Garble {
+                    b: rng.below(NBUILDS as u64) as u8,
+                    pick: rng.below(64) as u16,
+                },
+                _ => Action::Crash,
             }
         } else if !rng.chance(f * 4.0) {
             continue;
