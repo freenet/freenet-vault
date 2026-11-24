@@ -36,7 +36,6 @@ mod tests;
 use crate::hit;
 use crate::host::Host;
 use crate::trace::{self, Mutant, Note};
-use freenet_vault_common::bounds::{MAX_PARTITION_BYTES, MAX_PARTITION_ENTRIES};
 use freenet_vault_common::codec::{Malformed, Reader, Writer};
 use freenet_vault_common::entry::{Entry, EFLAG_CORRUPT, KIND_CALLER_MARK, KIND_KEY};
 use freenet_vault_common::hash::entry_digest;
@@ -633,11 +632,15 @@ impl<'a, H: Host> Store<'a, H> {
                 }
                 _ => false,
             };
-            if full || self.index.entries.len() >= MAX_PARTITION_ENTRIES {
+            // The same maximums a receiver stages against (8, 11): a writer
+            // never holds more than its successor can take.
+            if full || self.index.entries.len() >= crate::limits::get().max_entries {
                 return Err(PutError::Quota);
             }
         }
-        if self.index.total_bytes() - existing.unwrap_or(0) + bytes.len() > MAX_PARTITION_BYTES {
+        if self.index.total_bytes() - existing.unwrap_or(0) + bytes.len()
+            > crate::limits::get().max_bytes
+        {
             return Err(PutError::Quota);
         }
         self.write_entry(entry.kind, &entry.key, &bytes, meta)?;

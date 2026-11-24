@@ -1528,3 +1528,38 @@ fn gc_needs_a_verified_index_and_the_sweep_stops_after_an_uncertain_commit() {
         "swept after an uncertain commit"
     );
 }
+
+/// A writer is held to the same maximums its successor stages against
+/// (`limits`, protocol 8 and 11), for every kind including one this build
+/// does not serve. Found by the conformance harness: with the receiver's
+/// maximum lowered, a writer that counted only the frozen constant held
+/// more entries than its successor could stage, and the copy never
+/// completed (I7).
+#[test]
+fn the_writer_quota_is_the_staging_maximum() {
+    let lim = crate::limits::Limits {
+        max_entries: 3,
+        ..crate::limits::V1
+    };
+    crate::limits::set_for_tests(Some(lim));
+    let big = Quota {
+        max_key_slots: usize::MAX,
+        max_caller_marks: usize::MAX,
+    };
+    let mut h = MemHost::new();
+    let mut s = Store::open(&mut h, P).unwrap();
+    for i in 0..3u8 {
+        s.put(&Entry::new(0x10, vec![i], vec![1]), &big, |ix| {
+            ix.state = State::Writer
+        })
+        .unwrap();
+    }
+    assert_eq!(
+        s.put(&Entry::new(0x10, vec![9], vec![1]), &big, |_| {}),
+        Err(PutError::Quota)
+    );
+    // A replace of an existing identity still fits.
+    s.put(&Entry::new(0x10, vec![0], vec![2]), &big, |_| {})
+        .unwrap();
+    crate::limits::set_for_tests(None);
+}
