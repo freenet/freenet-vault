@@ -5,6 +5,7 @@
 //! row.
 
 use crate::build::Op;
+use crate::store::WriteFault;
 use crate::types::*;
 use crate::world::*;
 
@@ -146,6 +147,54 @@ pub fn fresh_install_while_stopped(cfg: &Cfg) -> Scenario {
     r.done()
 }
 
+/// Decision 1 (2026-11-24) condition: the older build crashes between
+/// storing the newer build's record and answering its creation probe. 20
+/// is armed; the node crashes right after 10's write of vault:succ, so 20
+/// gets no answer. Later loads re-probe 10, which answers 0x0B from the
+/// record already stored; 20 then creates, and 10 can never create.
+pub fn probe_crash_after_record_stored(cfg: &Cfg) -> Option<Scenario> {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10), Rec::build(20)]);
+    r.act(Action::Publish);
+    r.act(Action::Publish);
+    // 10's write of record 20 from the courier's poke fails, so the probe
+    // is what stores it
+    r.act(Action::ArmWriteFault {
+        after: 0,
+        fault: WriteFault::Fail,
+    });
+    r.act(Action::Load {
+        client: 0,
+        fetch: Fetch::Newest,
+        ops: vec![Op::Generate { slot: 0, seed: 5 }],
+    });
+    let armed = |r: &Rec_| matches!(r.state(20), PState::None { armed: Some(_), .. });
+    for _ in 0..200 {
+        if armed(&r) || r.w.idle() {
+            break;
+        }
+        r.step();
+    }
+    if !armed(&r) {
+        return None;
+    }
+    // the next call is 10 answering the probe: its first write is vault:succ
+    r.act(Action::ArmWriteFault {
+        after: 0,
+        fault: WriteFault::CrashAfter,
+    });
+    r.drain();
+    for _ in 0..4 {
+        r.load(vec![Op::Generate { slot: 0, seed: 5 }]);
+    }
+    r.act(Action::Load {
+        client: 2,
+        fetch: Fetch::Newest,
+        ops: vec![Op::Generate { slot: 1, seed: 6 }],
+    });
+    r.drain();
+    Some(r.done())
+}
+
 /// Every directed scenario with the row it exists to reach.
 pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
     let mut v = vec![];
@@ -156,5 +205,8 @@ pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
         "finding/creation-probe-blocked-by-withdrawal",
         fresh_install_while_stopped(cfg),
     ));
+    if let Some(sc) = probe_crash_after_record_stored(cfg) {
+        v.push(("5.3/probe-crash-after-record-stored", sc));
+    }
     v
 }

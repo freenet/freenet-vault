@@ -417,4 +417,5 @@ pub const COVERAGE_SEEDS: &[(u64, &str)] = &[
     (64534, "7.6/RECEIVING(higher)/Complete"),
     (64534, "7.5/completeack/HigherBuild"),
     (64534, "sent/CompleteAck/HigherBuild"),
+    (104831, "7.2/outcome-staging-full"),
 ];

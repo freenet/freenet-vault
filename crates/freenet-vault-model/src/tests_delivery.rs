@@ -72,6 +72,19 @@ fn fresh_install_while_stopped_never_creates() {
     assert!(o.cov.get("finding/creation-probe-blocked-by-withdrawal") > 0);
 }
 
+/// Decision 1 condition: a crash between the older build storing the
+/// record and answering "no state" leaves no second writer and no lost
+/// key, and the newer build still creates on a later load.
+#[test]
+fn probe_crash_after_record_stored_is_safe_and_live() {
+    let cfg = Cfg::gate();
+    let sc = crate::directed::probe_crash_after_record_stored(&cfg).expect("scenario builds");
+    let o = run(&cfg, &sc);
+    assert!(o.violation.is_none(), "{:?}", o.violation);
+    assert!(o.cov.get("5.3/probe-crash-after-record-stored") > 0);
+    assert!(o.cov.get("5.3/created-after-every-predecessor-confirmed") > 0);
+}
+
 #[test]
 fn coverage_seeds_still_hit_their_rows() {
     let cfg = Cfg::gate();
