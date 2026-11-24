@@ -1906,7 +1906,9 @@ impl World {
                 let acked = self.oracle.get(&id).is_some_and(|p| p.acked.is_some());
                 let cause = if !acked {
                     "no-acknowledged-key"
-                } else if self.entry_damaged.contains(&(v, id)) {
+                } else if self.entry_damaged.contains(&(v, id)) || self.tainted.contains(&id) {
+                    // damaged here, or a flagged (corrupt) entry copied from
+                    // a build where it was damaged
                     "corruption"
                 } else if self.incomplete.contains(&(v, id)) {
                     "last-change-unfinished"

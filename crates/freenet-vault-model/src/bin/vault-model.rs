@@ -301,7 +301,15 @@ fn run_mutants(cfg: &Cfg, start: u64, seeds: u64, shrink_n: usize) {
         cfg.delivery
     );
     let mut survivors = 0;
+    let only: Option<Vec<String>> = std::env::var("MUTANTS_ONLY")
+        .ok()
+        .map(|v| v.split(',').map(str::to_string).collect());
     for m in Mutant::ALL {
+        if let Some(o) = &only {
+            if !o.contains(&m.name()) {
+                continue;
+            }
+        }
         let mut c = cfg.clone();
         c.params.mutant = Some(m);
         // a candidate: a blocking violation where the unmutated model has

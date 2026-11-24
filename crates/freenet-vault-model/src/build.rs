@@ -734,6 +734,21 @@ impl<'a> Cx<'a> {
     // ------------------------------------------------------------ dispatch
 
     fn dispatch(&mut self, input: Input) -> R<Reply> {
+        // rule (c) of the mutation check needs to see the mutated branch
+        if matches!(self.host.read(&SName::Idx), Some(v) if !matches!(v, SVal::Idx(_))) {
+            let parts = self.host.read(&SName::Parts);
+            let listed = matches!(parts, Some(SVal::Parts));
+            let valid = crate::store::parts_valid_list(parts.as_ref());
+            match self.p.mutant {
+                Some(Mutant::MalformedListedIsNone) if listed => {
+                    self.hit("mutant/malformed-listed-index-read-as-none");
+                }
+                Some(Mutant::MalformedUnlistedIsLost) if !listed && valid => {
+                    self.hit("mutant/malformed-unlisted-index-read-as-lost");
+                }
+                _ => {}
+            }
+        }
         if self.index_lost() {
             return self.lost(input);
         }
