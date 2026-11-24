@@ -336,6 +336,8 @@ impl Possible {
 
 pub struct World {
     pub cfg: Cfg,
+    /// The build implementation every call goes to (build::set_build_impl).
+    imp: Box<dyn build::BuildImpl>,
     pub defs: Vec<BuildDef>,
     pub stores: Vec<Store>,
     vols: Vec<Volatile>,
@@ -422,6 +424,7 @@ impl World {
     pub fn new(cfg: Cfg, ledger: Vec<Rec>) -> World {
         crate::store::ABSENT_PARTS_IS_VALID_LIST.with(|c| c.set(cfg.absent_parts_valid_list));
         World {
+            imp: build::new_build_impl(),
             defs: build_defs(),
             stores: vec![Store::default(); NBUILDS],
             vols: vec![Volatile::default(); NBUILDS],
@@ -552,7 +555,7 @@ impl World {
             String::new()
         };
         let mut notes = Vec::new();
-        let res = build::call(
+        let res = self.imp.call(
             &self.defs[b],
             &self.cfg.params,
             &mut self.stores[b],
@@ -1542,8 +1545,7 @@ impl World {
         let had_state = self.stores[b].has_state();
         let before_idx = self.stores[b].idx().cloned();
         let idx_valid = before_idx.is_some() && !self.stores[b].index_lost();
-        let gc_names =
-            matches!(self.stores[b].secrets.get(&SName::Gc), Some(SVal::Gc(g)) if !g.is_empty());
+        let gc_names = !self.gc_names(b).is_empty();
         self.cov.hit("fault/garble-secret");
         let kind = sname_kind_w(&n);
         self.cov.hit(&format!(
@@ -2183,9 +2185,22 @@ impl World {
     /// counts any I2 or I3 failure of that shape.
     fn incomplete_delete(&self, b: usize, id: Ident) -> bool {
         let acked = self.oracle.get(&id).is_some_and(|p| p.acked.is_some());
-        acked
-            && matches!(self.stores[b].secrets.get(&SName::Gc),
-                Some(SVal::Gc(g)) if g.contains(&SName::E(id, false)) && g.contains(&SName::E(id, true)))
+        acked && {
+            let g = self.gc_names(b);
+            g.contains(&SName::E(id, false)) && g.contains(&SName::E(id, true))
+        }
+    }
+
+    /// The names build `b`'s gc lists hold: vault:gc, plus vault:gc2 when an
+    /// implementation keeps a second copy (the library reads the union).
+    fn gc_names(&self, b: usize) -> BTreeSet<SName> {
+        let mut out = BTreeSet::new();
+        for n in [SName::Gc, SName::Gc2] {
+            if let Some(SVal::Gc(g)) = self.stores[b].secrets.get(&n) {
+                out.extend(g.iter().copied());
+            }
+        }
+        out
     }
 
     /// Finding F16 (revision 9) shape: build `b` is a damaged partial
@@ -3026,6 +3041,6 @@ fn sname_kind_w(n: &SName) -> &'static str {
         SName::E(..) => "entry",
         SName::X(_) => "progress",
         SName::Rx => "rx",
-        SName::Gc => "gc",
+        SName::Gc | SName::Gc2 => "gc",
     }
 }

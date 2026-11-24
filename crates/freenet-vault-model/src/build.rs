@@ -40,6 +40,10 @@ pub struct Params {
     /// answer (true, the literal reading and the one most likely to fail),
     /// or answers nothing (false, as for an unlist that fails).
     pub catchall_fail_continues: bool,
+    /// Revision 10.2 S1 (4.3): heal a named copy from a digest-matching
+    /// mirror. DROPPED from v1, so off by default; `--heal` turns it on to
+    /// replay the revision 10.2 runs.
+    pub heal: bool,
 }
 
 impl Default for Params {
@@ -54,6 +58,7 @@ impl Default for Params {
             mutant: None,
             list_cap: 8,
             catchall_fail_continues: false,
+            heal: false,
         }
     }
 }
@@ -171,6 +176,13 @@ impl Mutant {
     pub fn name(self) -> String {
         format!("{self:?}")
     }
+    /// A mutant of the 4.3 heal, meaningful only with `Params::heal`.
+    pub fn is_heal(self) -> bool {
+        matches!(
+            self,
+            Mutant::HealWithoutDigestCheck | Mutant::HealWhileSealed
+        )
+    }
     pub fn parse(s: &str) -> Option<Mutant> {
         Mutant::ALL
             .iter()
@@ -199,6 +211,10 @@ pub struct Volatile {
     /// The mirror sweep (7.7) has finished since this build started or
     /// took over. Volatile: a restart sweeps again.
     pub swept: bool,
+    /// Volatile state an implementation keeps beyond the model's (the
+    /// library's delegate context, for the conformance bridge). Opaque to
+    /// the model; a crash clears it with the rest.
+    pub ext: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -353,6 +369,64 @@ pub const POKE_ARM: u8 = 1 << 1;
 /// Bit 4 was "discard an abandoned partial copy" until revision 8; it is
 /// reserved (F6) and a build ignores it.
 pub const POKE_RESERVED_4: u8 = 1 << 4;
+
+/// One vault build's call, as the world drives it. The model's own state
+/// machine is [`ModelBuild`]; the conformance crate plugs in the library.
+pub trait BuildImpl {
+    #[allow(clippy::too_many_arguments)]
+    fn call(
+        &mut self,
+        def: &BuildDef,
+        p: &Params,
+        store: &mut Store,
+        vol: &mut Volatile,
+        faults: &mut FaultPlan,
+        events: &mut Vec<Event>,
+        cov: &mut Cov,
+        notes: &mut Vec<Note>,
+        input: Input,
+    ) -> Result<Output, Crash>;
+}
+
+/// The model's build: [`call`].
+pub struct ModelBuild;
+
+impl BuildImpl for ModelBuild {
+    fn call(
+        &mut self,
+        def: &BuildDef,
+        p: &Params,
+        store: &mut Store,
+        vol: &mut Volatile,
+        faults: &mut FaultPlan,
+        events: &mut Vec<Event>,
+        cov: &mut Cov,
+        notes: &mut Vec<Note>,
+        input: Input,
+    ) -> Result<Output, Crash> {
+        call(def, p, store, vol, faults, events, cov, notes, input)
+    }
+}
+
+type Factory = std::rc::Rc<dyn Fn() -> Box<dyn BuildImpl>>;
+
+thread_local! {
+    static FACTORY: std::cell::RefCell<Option<Factory>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Sets the build implementation every new [`crate::world::World`] on this
+/// thread uses (None: the model's own).
+pub fn set_build_impl(f: Option<Factory>) {
+    FACTORY.with(|c| *c.borrow_mut() = f);
+}
+
+/// A new build implementation, as set by [`set_build_impl`].
+pub fn new_build_impl() -> Box<dyn BuildImpl> {
+    FACTORY.with(|c| match &*c.borrow() {
+        Some(f) => f(),
+        None => Box::new(ModelBuild),
+    })
+}
 
 /// Run one vault call against `store`. Err(Crash) means the node crashed
 /// inside the call: the writes made so far stand, outputs are lost.
@@ -1395,7 +1469,7 @@ impl<'a> Cx<'a> {
         // read the other parity copy; if it parses and matches the index
         // digest, rewrite the named copy from it (remove-before-write) and
         // serve it. Nothing is rewritten while sealed (4.3).
-        if !sealed || self.p.mutant == Some(Mutant::HealWhileSealed) {
+        if self.p.heal && (!sealed || self.p.mutant == Some(Mutant::HealWhileSealed)) {
             let mn = SName::E(id, !ie.parity);
             if let Some(SVal::E(m)) = self.host.read(&mn) {
                 let ok = if m.digest() == ie.digest {
@@ -2828,7 +2902,7 @@ pub fn sname_kind(n: &SName) -> &'static str {
         SName::E(..) => "entry",
         SName::X(_) => "progress",
         SName::Rx => "rx",
-        SName::Gc => "gc",
+        SName::Gc | SName::Gc2 => "gc",
     }
 }
 

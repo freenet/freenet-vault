@@ -11,6 +11,7 @@
 //! here: the document is fixed first, then the model.
 
 pub mod build;
+pub mod cli;
 pub mod cov;
 pub mod directed;
 pub mod gen;

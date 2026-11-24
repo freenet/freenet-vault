@@ -475,6 +475,9 @@ pub enum SName {
     X(Ver),
     Rx,
     Gc,
+    /// vault:gc2, the library's second copy of the gc list. The model's own
+    /// build never writes it; the conformance bridge stores it here.
+    Gc2,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
