@@ -211,6 +211,18 @@ Storage and formats:
   other lineage build is WRITER or SEALED is the courier's check (the library
   cannot see other builds). Spec 4.3: an absent entry the index names answers
   Missing and is not dropped, which the code already does.
+- **Round 7.** Unknown `eflags` bits are rejected on every serving path,
+  including an entry whose bytes parse but fail the index digest (it answers
+  Unusable, is not flagged or rewritten, and Export cannot return it). Direct
+  read checks disagreement BEFORE filtering flags: two different decodable
+  copies are a storage failure whatever their flags. Presence is separate from
+  choosing a value: if any parity copy of the requested slot decodes the slot is
+  present, so with no index and no parts listing PublicKey answers storage
+  failure (never NotHere) on ambiguity and nothing is created over it. Reset
+  overwrites a READABLE malformed `vault:parts` in place; it removes a list
+  first only when it reads as absent (possibly undecryptable), and then only
+  while the damaged index still reads, so a crash leaves a damaged index and
+  never a partition that looks new (a sweep checks every crash point).
 - **A secret that is gone is Missing, never corrupt.** When the index
   names an entry but `get_secret` returns nothing (a wipe or restore of that
   secret), the vault changes and

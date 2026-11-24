@@ -2692,3 +2692,156 @@ fn reset_is_rechecked_at_the_answer() {
     );
     assert!(!h.secrets.contains_key(&names::index(&p)));
 }
+
+// ---- round 7 ---------------------------------------------------------------
+
+/// Unknown flag bits escape on no serving path: here the digest does not match
+/// (the bytes still parse), which used to hand the entry to Export.
+#[test]
+fn unknown_flags_are_never_served_after_a_digest_mismatch_either() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, pk) = writer_with_key(&mut h);
+    let name = entry_name_of(&h, KIND_KEY, &slot);
+    let mut b = h.secrets[&name].clone();
+    b[1] |= 0x80; // an unknown flag bit; the index digest is NOT updated
+    h.secrets.insert(name.clone(), b.clone());
+    let unusable_reply = |rid| {
+        Reply::St(Status::Unusable {
+            request_id: rid,
+            partition: p,
+            slot: slot.clone(),
+            reason: unusable::CORRUPT,
+        })
+    };
+    assert_eq!(
+        page(&mut h, op(3, Operation::PublicKey { slot: slot.clone() })),
+        unusable_reply(3)
+    );
+    assert_eq!(sign_batch(&mut h, 4, &slot, pk), unusable_reply(4));
+    // Export: the prompt is refused up front (nothing to export), and an answer
+    // never carries the seed.
+    let r = page(&mut h, op(5, Operation::Export { slot: slot.clone() }));
+    assert_eq!(r, unusable_reply(5));
+    assert_eq!(h.secrets[&name], b, "the bytes were changed");
+}
+
+/// Reset overwrites a READABLE malformed parts list in place, so a crash at
+/// any point never leaves the partition looking new; with an undecryptable
+/// list, a damaged index still reads when the list is removed.
+#[test]
+fn a_crash_during_reset_never_makes_the_partition_look_fresh() {
+    let p = domain().partition();
+    for case in [
+        "malformed parts, index absent",
+        "undecryptable parts, torn index",
+    ] {
+        let mut max_seen = 0;
+        for n in 0..14 {
+            let mut h = MemHost::new();
+            let _ = writer_with_key(&mut h);
+            if case.starts_with("malformed") {
+                h.secrets.remove(&names::index(&p));
+                h.secrets.insert(names::PARTS.to_vec(), vec![1; 33]);
+            } else {
+                let b = h.secrets[&names::index(&p)].clone();
+                h.secrets
+                    .insert(names::index(&p), b[..b.len() - 4].to_vec());
+                h.undecryptable.insert(names::PARTS.to_vec());
+            }
+            let start = h.mutations;
+            h.crash_after(n);
+            let out = from_page_as(&mut h, page_id(), reset_op(40));
+            if let [OutboundDelegateMsg::RequestUserInput(r)] = out.as_slice() {
+                let _ = answer(&mut h, page_id(), r.request_id, b"Allow");
+            }
+            max_seen = max_seen.max(h.mutations - start);
+            let h = h.restart();
+            let unknown = Store::fault(&h, &p).is_some();
+            let valid = h
+                .secrets
+                .get(&names::index(&p))
+                .is_some_and(|b| crate::storage::index::Index::decode(b).is_ok());
+            assert!(
+                unknown || valid,
+                "{case}, crash point {n}: the partition looks new"
+            );
+        }
+        assert!(
+            max_seen >= 4,
+            "{case}: the sweep must reach the index write"
+        );
+    }
+}
+
+/// Two parity copies that decode to different entries are a storage failure
+/// whatever their flags: the disagreement is checked before unknown flags are
+/// filtered, so the copy with known flags is not served.
+#[test]
+fn two_different_copies_disagree_whatever_their_flags() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, pk) = writer_with_key(&mut h);
+    // Lose the index: the slot is read by direct read.
+    h.secrets.remove(&names::index(&p));
+    let c0 = names::entry(&p, KIND_KEY, &slot, 0);
+    let c1 = names::entry(&p, KIND_KEY, &slot, 1);
+    let mut other = Entry::new(KIND_KEY, slot.clone(), vec![0x77; 32]);
+    other.eflags = 0x80;
+    let live = h
+        .secrets
+        .get(&c0)
+        .cloned()
+        .or_else(|| h.secrets.get(&c1).cloned());
+    let live = live.unwrap();
+    h.secrets.insert(c0, live);
+    h.secrets.insert(c1, other.encode().unwrap());
+    assert_eq!(
+        sign_batch(&mut h, 3, &slot, pk),
+        refused(3, refused::STORAGE_FAILURE)
+    );
+    assert_eq!(
+        page(&mut h, op(4, Operation::PublicKey { slot: slot.clone() })),
+        refused(4, refused::STORAGE_FAILURE)
+    );
+}
+
+/// Presence is separate from choosing a value: with no index and no parts
+/// listing, a slot whose two copies disagree is still present: PublicKey
+/// answers storage failure (never NotHere) and nothing is created over it.
+#[test]
+fn an_ambiguous_slot_is_present_and_never_created_over() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    h.secrets.remove(&names::index(&p));
+    h.secrets.remove(names::PARTS);
+    let c0 = names::entry(&p, KIND_KEY, &slot, 0);
+    let c1 = names::entry(&p, KIND_KEY, &slot, 1);
+    let a = Entry::new(KIND_KEY, slot.clone(), vec![0x55; 32])
+        .encode()
+        .unwrap();
+    let b = Entry::new(KIND_KEY, slot.clone(), vec![0x66; 32])
+        .encode()
+        .unwrap();
+    h.secrets.insert(c0, a);
+    h.secrets.insert(c1, b);
+    let before = h.secrets.clone();
+    assert_eq!(
+        page(&mut h, op(3, Operation::PublicKey { slot: slot.clone() })),
+        refused(3, refused::STORAGE_FAILURE)
+    );
+    for o in [
+        Operation::Import {
+            slot: slot.clone(),
+            seed: [4; 32],
+            replace: true,
+        },
+        Operation::Generate {
+            slot: Some(slot.clone()),
+        },
+    ] {
+        assert_eq!(page(&mut h, op(4, o)), refused(4, refused::STORAGE_FAILURE));
+    }
+    assert_eq!(h.secrets, before);
+}

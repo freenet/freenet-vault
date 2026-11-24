@@ -202,8 +202,14 @@ impl<'a, H: Host> Store<'a, H> {
             return Some(f);
         }
         let slot = slot?;
+        // Presence is separate from choosing a value: any copy that decodes
+        // makes the slot present, even when the copies disagree or carry flags
+        // this build will not serve.
         if host.get_secret(&names::index(partition)).is_none()
-            && direct_entry(host, partition, KIND_KEY, slot).is_some()
+            && !matches!(
+                direct_lookup(host, partition, KIND_KEY, slot),
+                Direct::Absent
+            )
         {
             return Some(StoredIndexMalformed(IndexFault::LostWhileListed));
         }
@@ -486,10 +492,12 @@ impl<'a, H: Host> Store<'a, H> {
     /// counted. While sealed nothing is rewritten or removed.
     pub fn read(&mut self, kind: u8, key: &[u8], sealed: bool) -> Read {
         if self.blind {
-            return match direct_entry(self.host, &self.partition, kind, key) {
-                Some(e) if e.is_flagged_corrupt() => Read::Corrupt(Some(e)),
-                Some(e) => Read::Ok(e),
-                None => Read::Missing,
+            return match direct_lookup(self.host, &self.partition, kind, key) {
+                Direct::One(e) if e.has_unknown_flags() => Read::Corrupt(None),
+                Direct::One(e) if e.is_flagged_corrupt() => Read::Corrupt(Some(e)),
+                Direct::One(e) => Read::Ok(e),
+                // Nothing decodes, or the copies disagree: storage failure.
+                Direct::Absent | Direct::Ambiguous => Read::Missing,
             };
         }
         // A read-only store changes nothing, like a sealed one.
@@ -525,6 +533,11 @@ impl<'a, H: Host> Store<'a, H> {
                 .filter(|e| e.kind == kind && e.key == key)
                 .map(|e| (e, b.clone()))
         });
+        // Unknown flag bits are never served, whichever path found the entry
+        // (spec 11): not flagged, not rewritten, not dropped, not exportable.
+        if parsed.as_ref().is_some_and(|(e, _)| e.has_unknown_flags()) {
+            return Read::Corrupt(None);
+        }
         if sealed {
             return Read::Corrupt(parsed.map(|(e, _)| e));
         }
@@ -622,37 +635,51 @@ pub fn encode_gc_for_test(names: &[Vec<u8>]) -> Vec<u8> {
     encode_names(names).expect("short list")
 }
 
+/// What a direct read of a slot's two parity copies finds.
+enum Direct {
+    /// Neither copy decodes as an entry for this slot.
+    Absent,
+    /// Two different entries decode (an interrupted replace), whatever their
+    /// flags: disagreement is checked before anything is filtered.
+    Ambiguous,
+    /// One distinct entry decodes (two identical copies are one).
+    One(Entry),
+}
+
 /// Finds the entry `(kind, key)` with no index: reads both parity copies and
-/// uses the entry only when exactly one distinct value decodes as a valid
-/// entry for that slot (two identical copies are one value). None when neither
-/// decodes or the two differ (an interrupted replace).
-fn direct_entry<H: Host>(host: &H, partition: &[u8; 32], kind: u8, key: &[u8]) -> Option<Entry> {
+/// decodes them. Flags are not looked at here: whether an entry may be served
+/// is the caller's decision, made after ambiguity is ruled out.
+fn direct_lookup<H: Host>(host: &H, partition: &[u8; 32], kind: u8, key: &[u8]) -> Direct {
     let mut found: Vec<Entry> = Vec::new();
     for parity in 0..2u8 {
         let Some(bytes) = host.get_secret(&names::entry(partition, kind, key, parity)) else {
             continue;
         };
         if let Ok(e) = Entry::decode(&bytes) {
-            if e.kind == kind && e.key == key && !e.has_unknown_flags() && !found.contains(&e) {
+            if e.kind == kind && e.key == key && !found.contains(&e) {
                 found.push(e);
             }
         }
     }
     match found.len() {
-        1 => found.pop(),
-        _ => None,
+        0 => Direct::Absent,
+        1 => Direct::One(found.remove(0)),
+        _ => Direct::Ambiguous,
     }
 }
 
 /// Export while the index state is unknown: the seed of the slot's entry found
-/// by [`direct_entry`] (a flagged-corrupt entry is exportable, protocol 4.3).
+/// by [`direct_lookup`] (a flagged-corrupt entry is exportable, protocol 4.3;
+/// one with unknown flags, or two that disagree, is not).
 pub fn rescue_export_seed<H: Host>(
     host: &H,
     partition: &[u8; 32],
     slot: &[u8],
 ) -> Option<[u8; 32]> {
-    let e = direct_entry(host, partition, KIND_KEY, slot)?;
-    <[u8; 32]>::try_from(e.content.as_slice()).ok()
+    match direct_lookup(host, partition, KIND_KEY, slot) {
+        Direct::One(e) if !e.has_unknown_flags() => <[u8; 32]>::try_from(e.content.as_slice()).ok(),
+        _ => None,
+    }
 }
 
 /// ResetPartition (protocol 4.5): writes a fresh, empty, checksummed WRITER
@@ -680,20 +707,31 @@ pub fn reset_partition<H: Host>(host: &mut H, partition: &[u8; 32]) -> Result<()
     // 2. `vault:parts` lists the partition before the index is replaced, so a
     //    crash between the removal and the write of the index leaves the index
     //    absent while listed (read-only, Reset can run again), never "new". A
-    //    list that parses is kept; one that is malformed or reads as absent
-    //    (maybe undecryptable) is replaced by this partition alone (this build
-    //    has one partition).
+    //    list that parses is kept. One that READS is overwritten in place
+    //    (never removed first: a crash between the removal and the write would
+    //    leave no list, and with the index absent the partition would look
+    //    new). Only a list that reads as absent (possibly undecryptable, where
+    //    a write is refused) is removed first, and only while the damaged
+    //    index still reads, so a crash leaves a damaged index, not a fresh
+    //    partition. This build has one partition, so the list is replaced by it.
     let parts = host.get_secret(names::PARTS);
     let parts_ok = parts
         .as_ref()
         .is_some_and(|l| l.len() % 32 == 0 && l.chunks(32).any(|c| c == partition));
     if !parts_ok {
-        let mut list = match parts {
-            Some(l) if l.len() % 32 == 0 => l,
+        let mut list = match &parts {
+            Some(l) if l.len() % 32 == 0 => l.clone(),
             _ => Vec::new(),
         };
         list.extend_from_slice(partition);
-        let _ = host.remove_secret(names::PARTS);
+        if parts.is_none() {
+            if host.get_secret(&names::index(partition)).is_none() {
+                // Neither reads: removing the list would make the partition
+                // look new.
+                return Err(StorageFailure);
+            }
+            let _ = host.remove_secret(names::PARTS);
+        }
         if !host.set_secret(names::PARTS, &list) {
             return Err(StorageFailure);
         }
