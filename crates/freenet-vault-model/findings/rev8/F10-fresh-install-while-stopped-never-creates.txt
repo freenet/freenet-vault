@@ -1,0 +1,1637 @@
+==== directed scenario for finding/creation-probe-blocked-by-withdrawal: hit 151 times
+violation: None
+[1] Publish
+[2] Publish
+[3] Publish
+[4] Load { client: 0, fetch: Newest, ops: [Generate { slot: 0, seed: 77 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 2)" hops [] state NONE -> NONE
+[5] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 2)" hops [] state NONE -> NONE
+[6] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[7] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[8] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[9] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[10] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE -> NONE(armed)
+[11] Step { pick: 0, fate: Deliver }
+[12] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[13] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[14] Step { pick: 0, fate: Deliver }
+[15] Step { pick: 0, fate: Deliver }
+  20 Op(Generate { slot: 0, seed: 77 }) -> "NotHere" hops [] state NONE(armed) -> NONE(armed)
+  op Generate { slot: 0, seed: 77 } at 20 -> NotHere
+[16] Step { pick: 0, fate: Deliver }
+[17] Load { client: 0, fetch: Newest, ops: [Generate { slot: 0, seed: 77 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[18] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[19] Step { pick: 0, fate: Deliver }
+[20] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[21] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[22] Step { pick: 0, fate: Deliver }
+[23] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[24] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[25] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[26] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[27] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[28] Step { pick: 0, fate: Deliver }
+[29] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[30] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[31] Step { pick: 0, fate: Deliver }
+[32] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[33] Step { pick: 0, fate: Deliver }
+[34] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[35] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[36] Step { pick: 0, fate: Deliver }
+[37] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[38] Step { pick: 0, fate: Deliver }
+[39] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[40] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[41] Step { pick: 0, fate: Deliver }
+[42] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[43] Step { pick: 0, fate: Deliver }
+[44] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[45] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[46] Step { pick: 0, fate: Deliver }
+[47] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[48] Step { pick: 0, fate: Deliver }
+[49] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[50] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[51] Step { pick: 0, fate: Deliver }
+[52] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[53] Step { pick: 0, fate: Deliver }
+[54] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[55] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[56] Step { pick: 0, fate: Deliver }
+[57] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[58] Step { pick: 0, fate: Deliver }
+[59] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[60] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[61] Step { pick: 0, fate: Deliver }
+[62] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[63] Step { pick: 0, fate: Deliver }
+[64] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[65] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[66] Step { pick: 0, fate: Deliver }
+[67] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[68] Step { pick: 0, fate: Deliver }
+[69] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[70] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[71] Step { pick: 0, fate: Deliver }
+[72] Step { pick: 0, fate: Deliver }
+  20 Op(Generate { slot: 0, seed: 77 }) -> "NotHere" hops [] state NONE(armed) -> NONE(armed)
+  op Generate { slot: 0, seed: 77 } at 20 -> NotHere
+[73] Step { pick: 0, fate: Deliver }
+[74] Load { client: 0, fetch: Newest, ops: [Generate { slot: 0, seed: 77 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[75] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[76] Step { pick: 0, fate: Deliver }
+[77] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[78] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[79] Step { pick: 0, fate: Deliver }
+[80] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[81] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[82] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[83] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[84] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[85] Step { pick: 0, fate: Deliver }
+[86] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[87] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[88] Step { pick: 0, fate: Deliver }
+[89] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[90] Step { pick: 0, fate: Deliver }
+[91] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[92] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[93] Step { pick: 0, fate: Deliver }
+[94] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[95] Step { pick: 0, fate: Deliver }
+[96] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[97] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[98] Step { pick: 0, fate: Deliver }
+[99] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[100] Step { pick: 0, fate: Deliver }
+[101] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[102] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[103] Step { pick: 0, fate: Deliver }
+[104] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[105] Step { pick: 0, fate: Deliver }
+[106] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[107] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[108] Step { pick: 0, fate: Deliver }
+[109] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[110] Step { pick: 0, fate: Deliver }
+[111] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[112] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[113] Step { pick: 0, fate: Deliver }
+[114] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[115] Step { pick: 0, fate: Deliver }
+[116] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[117] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[118] Step { pick: 0, fate: Deliver }
+[119] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[120] Step { pick: 0, fate: Deliver }
+[121] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[122] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[123] Step { pick: 0, fate: Deliver }
+[124] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[125] Step { pick: 0, fate: Deliver }
+[126] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[127] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[128] Step { pick: 0, fate: Deliver }
+[129] Step { pick: 0, fate: Deliver }
+  20 Op(Generate { slot: 0, seed: 77 }) -> "NotHere" hops [] state NONE(armed) -> NONE(armed)
+  op Generate { slot: 0, seed: 77 } at 20 -> NotHere
+[130] Step { pick: 0, fate: Deliver }
+[131] Load { client: 0, fetch: Newest, ops: [Generate { slot: 0, seed: 77 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[132] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[133] Step { pick: 0, fate: Deliver }
+[134] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[135] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[136] Step { pick: 0, fate: Deliver }
+[137] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[138] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[139] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[140] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[141] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[142] Step { pick: 0, fate: Deliver }
+[143] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[144] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[145] Step { pick: 0, fate: Deliver }
+[146] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[147] Step { pick: 0, fate: Deliver }
+[148] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[149] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[150] Step { pick: 0, fate: Deliver }
+[151] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[152] Step { pick: 0, fate: Deliver }
+[153] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[154] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[155] Step { pick: 0, fate: Deliver }
+[156] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[157] Step { pick: 0, fate: Deliver }
+[158] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[159] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[160] Step { pick: 0, fate: Deliver }
+[161] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[162] Step { pick: 0, fate: Deliver }
+[163] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[164] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[165] Step { pick: 0, fate: Deliver }
+[166] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[167] Step { pick: 0, fate: Deliver }
+[168] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[169] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[170] Step { pick: 0, fate: Deliver }
+[171] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[172] Step { pick: 0, fate: Deliver }
+[173] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[174] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[175] Step { pick: 0, fate: Deliver }
+[176] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[177] Step { pick: 0, fate: Deliver }
+[178] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[179] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[180] Step { pick: 0, fate: Deliver }
+[181] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[182] Step { pick: 0, fate: Deliver }
+[183] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[184] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[185] Step { pick: 0, fate: Deliver }
+[186] Step { pick: 0, fate: Deliver }
+  20 Op(Generate { slot: 0, seed: 77 }) -> "NotHere" hops [] state NONE(armed) -> NONE(armed)
+  op Generate { slot: 0, seed: 77 } at 20 -> NotHere
+[187] Step { pick: 0, fate: Deliver }
+== quiescence
+[188] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[189] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[190] Step { pick: 0, fate: Deliver }
+[191] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[192] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[193] Step { pick: 0, fate: Deliver }
+[194] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[195] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[196] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[197] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[198] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[199] Step { pick: 0, fate: Deliver }
+[200] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[201] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[202] Step { pick: 0, fate: Deliver }
+[203] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[204] Step { pick: 0, fate: Deliver }
+[205] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[206] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[207] Step { pick: 0, fate: Deliver }
+[208] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[209] Step { pick: 0, fate: Deliver }
+[210] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[211] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[212] Step { pick: 0, fate: Deliver }
+[213] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[214] Step { pick: 0, fate: Deliver }
+[215] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[216] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[217] Step { pick: 0, fate: Deliver }
+[218] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[219] Step { pick: 0, fate: Deliver }
+[220] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[221] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[222] Step { pick: 0, fate: Deliver }
+[223] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[224] Step { pick: 0, fate: Deliver }
+[225] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[226] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[227] Step { pick: 0, fate: Deliver }
+[228] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[229] Step { pick: 0, fate: Deliver }
+[230] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[231] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[232] Step { pick: 0, fate: Deliver }
+[233] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[234] Step { pick: 0, fate: Deliver }
+[235] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[236] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[237] Step { pick: 0, fate: Deliver }
+[238] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[239] Step { pick: 0, fate: Deliver }
+[240] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[241] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[242] Step { pick: 0, fate: Deliver }
+[243] Step { pick: 0, fate: Deliver }
+[244] Wakeup { b: 0 }
+[245] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state NONE -> NONE
+[246] Wakeup { b: 1 }
+[247] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE(armed) -> NONE(armed)
+[248] Wakeup { b: 2 }
+[249] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[250] Wakeup { b: 3 }
+[251] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[252] Wakeup { b: 4 }
+[253] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[254] Wakeup { b: 5 }
+[255] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[256] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[257] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[258] Step { pick: 0, fate: Deliver }
+[259] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[260] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[261] Step { pick: 0, fate: Deliver }
+[262] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[263] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[264] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[265] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[266] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[267] Step { pick: 0, fate: Deliver }
+[268] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[269] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[270] Step { pick: 0, fate: Deliver }
+[271] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[272] Step { pick: 0, fate: Deliver }
+[273] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[274] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[275] Step { pick: 0, fate: Deliver }
+[276] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[277] Step { pick: 0, fate: Deliver }
+[278] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[279] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[280] Step { pick: 0, fate: Deliver }
+[281] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[282] Step { pick: 0, fate: Deliver }
+[283] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[284] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[285] Step { pick: 0, fate: Deliver }
+[286] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[287] Step { pick: 0, fate: Deliver }
+[288] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[289] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[290] Step { pick: 0, fate: Deliver }
+[291] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[292] Step { pick: 0, fate: Deliver }
+[293] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[294] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[295] Step { pick: 0, fate: Deliver }
+[296] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[297] Step { pick: 0, fate: Deliver }
+[298] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[299] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[300] Step { pick: 0, fate: Deliver }
+[301] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[302] Step { pick: 0, fate: Deliver }
+[303] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[304] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[305] Step { pick: 0, fate: Deliver }
+[306] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[307] Step { pick: 0, fate: Deliver }
+[308] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[309] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[310] Step { pick: 0, fate: Deliver }
+[311] Step { pick: 0, fate: Deliver }
+[312] Wakeup { b: 0 }
+[313] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state NONE -> NONE
+[314] Wakeup { b: 1 }
+[315] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE(armed) -> NONE(armed)
+[316] Wakeup { b: 2 }
+[317] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[318] Wakeup { b: 3 }
+[319] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[320] Wakeup { b: 4 }
+[321] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[322] Wakeup { b: 5 }
+[323] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[324] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[325] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[326] Step { pick: 0, fate: Deliver }
+[327] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[328] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[329] Step { pick: 0, fate: Deliver }
+[330] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[331] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[332] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[333] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[334] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[335] Step { pick: 0, fate: Deliver }
+[336] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[337] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[338] Step { pick: 0, fate: Deliver }
+[339] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[340] Step { pick: 0, fate: Deliver }
+[341] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[342] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[343] Step { pick: 0, fate: Deliver }
+[344] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[345] Step { pick: 0, fate: Deliver }
+[346] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[347] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[348] Step { pick: 0, fate: Deliver }
+[349] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[350] Step { pick: 0, fate: Deliver }
+[351] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[352] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[353] Step { pick: 0, fate: Deliver }
+[354] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[355] Step { pick: 0, fate: Deliver }
+[356] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[357] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[358] Step { pick: 0, fate: Deliver }
+[359] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[360] Step { pick: 0, fate: Deliver }
+[361] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[362] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[363] Step { pick: 0, fate: Deliver }
+[364] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[365] Step { pick: 0, fate: Deliver }
+[366] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[367] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[368] Step { pick: 0, fate: Deliver }
+[369] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[370] Step { pick: 0, fate: Deliver }
+[371] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[372] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[373] Step { pick: 0, fate: Deliver }
+[374] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[375] Step { pick: 0, fate: Deliver }
+[376] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[377] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[378] Step { pick: 0, fate: Deliver }
+[379] Step { pick: 0, fate: Deliver }
+[380] Wakeup { b: 0 }
+[381] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state NONE -> NONE
+[382] Wakeup { b: 1 }
+[383] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE(armed) -> NONE(armed)
+[384] Wakeup { b: 2 }
+[385] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[386] Wakeup { b: 3 }
+[387] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[388] Wakeup { b: 4 }
+[389] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[390] Wakeup { b: 5 }
+[391] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[392] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[393] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[394] Step { pick: 0, fate: Deliver }
+[395] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[396] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[397] Step { pick: 0, fate: Deliver }
+[398] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[399] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[400] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[401] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[402] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[403] Step { pick: 0, fate: Deliver }
+[404] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[405] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[406] Step { pick: 0, fate: Deliver }
+[407] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[408] Step { pick: 0, fate: Deliver }
+[409] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[410] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[411] Step { pick: 0, fate: Deliver }
+[412] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[413] Step { pick: 0, fate: Deliver }
+[414] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[415] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[416] Step { pick: 0, fate: Deliver }
+[417] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[418] Step { pick: 0, fate: Deliver }
+[419] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[420] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[421] Step { pick: 0, fate: Deliver }
+[422] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[423] Step { pick: 0, fate: Deliver }
+[424] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[425] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[426] Step { pick: 0, fate: Deliver }
+[427] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[428] Step { pick: 0, fate: Deliver }
+[429] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[430] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[431] Step { pick: 0, fate: Deliver }
+[432] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[433] Step { pick: 0, fate: Deliver }
+[434] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[435] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[436] Step { pick: 0, fate: Deliver }
+[437] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[438] Step { pick: 0, fate: Deliver }
+[439] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[440] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[441] Step { pick: 0, fate: Deliver }
+[442] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[443] Step { pick: 0, fate: Deliver }
+[444] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[445] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[446] Step { pick: 0, fate: Deliver }
+[447] Step { pick: 0, fate: Deliver }
+[448] Wakeup { b: 0 }
+[449] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state NONE -> NONE
+[450] Wakeup { b: 1 }
+[451] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE(armed) -> NONE(armed)
+[452] Wakeup { b: 2 }
+[453] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[454] Wakeup { b: 3 }
+[455] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[456] Wakeup { b: 4 }
+[457] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[458] Wakeup { b: 5 }
+[459] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[460] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[461] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[462] Step { pick: 0, fate: Deliver }
+[463] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[464] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[465] Step { pick: 0, fate: Deliver }
+[466] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[467] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[468] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[469] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[470] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[471] Step { pick: 0, fate: Deliver }
+[472] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[473] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[474] Step { pick: 0, fate: Deliver }
+[475] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[476] Step { pick: 0, fate: Deliver }
+[477] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[478] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[479] Step { pick: 0, fate: Deliver }
+[480] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[481] Step { pick: 0, fate: Deliver }
+[482] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[483] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[484] Step { pick: 0, fate: Deliver }
+[485] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[486] Step { pick: 0, fate: Deliver }
+[487] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[488] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[489] Step { pick: 0, fate: Deliver }
+[490] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[491] Step { pick: 0, fate: Deliver }
+[492] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[493] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[494] Step { pick: 0, fate: Deliver }
+[495] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[496] Step { pick: 0, fate: Deliver }
+[497] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[498] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[499] Step { pick: 0, fate: Deliver }
+[500] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[501] Step { pick: 0, fate: Deliver }
+[502] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[503] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[504] Step { pick: 0, fate: Deliver }
+[505] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[506] Step { pick: 0, fate: Deliver }
+[507] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[508] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[509] Step { pick: 0, fate: Deliver }
+[510] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[511] Step { pick: 0, fate: Deliver }
+[512] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[513] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[514] Step { pick: 0, fate: Deliver }
+[515] Step { pick: 0, fate: Deliver }
+[516] Wakeup { b: 0 }
+[517] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state NONE -> NONE
+[518] Wakeup { b: 1 }
+[519] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE(armed) -> NONE(armed)
+[520] Wakeup { b: 2 }
+[521] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[522] Wakeup { b: 3 }
+[523] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[524] Wakeup { b: 4 }
+[525] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[526] Wakeup { b: 5 }
+[527] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[528] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[529] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[530] Step { pick: 0, fate: Deliver }
+[531] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[532] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[533] Step { pick: 0, fate: Deliver }
+[534] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[535] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[536] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[537] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[538] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[539] Step { pick: 0, fate: Deliver }
+[540] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[541] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[542] Step { pick: 0, fate: Deliver }
+[543] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[544] Step { pick: 0, fate: Deliver }
+[545] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[546] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[547] Step { pick: 0, fate: Deliver }
+[548] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[549] Step { pick: 0, fate: Deliver }
+[550] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[551] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[552] Step { pick: 0, fate: Deliver }
+[553] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[554] Step { pick: 0, fate: Deliver }
+[555] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[556] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[557] Step { pick: 0, fate: Deliver }
+[558] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[559] Step { pick: 0, fate: Deliver }
+[560] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[561] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[562] Step { pick: 0, fate: Deliver }
+[563] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[564] Step { pick: 0, fate: Deliver }
+[565] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[566] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[567] Step { pick: 0, fate: Deliver }
+[568] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[569] Step { pick: 0, fate: Deliver }
+[570] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[571] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[572] Step { pick: 0, fate: Deliver }
+[573] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[574] Step { pick: 0, fate: Deliver }
+[575] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[576] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[577] Step { pick: 0, fate: Deliver }
+[578] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[579] Step { pick: 0, fate: Deliver }
+[580] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[581] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[582] Step { pick: 0, fate: Deliver }
+[583] Step { pick: 0, fate: Deliver }
+[584] Wakeup { b: 0 }
+[585] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state NONE -> NONE
+[586] Wakeup { b: 1 }
+[587] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE(armed) -> NONE(armed)
+[588] Wakeup { b: 2 }
+[589] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[590] Wakeup { b: 3 }
+[591] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[592] Wakeup { b: 4 }
+[593] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[594] Wakeup { b: 5 }
+[595] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[596] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[597] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[598] Step { pick: 0, fate: Deliver }
+[599] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[600] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[601] Step { pick: 0, fate: Deliver }
+[602] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[603] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[604] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[605] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[606] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[607] Step { pick: 0, fate: Deliver }
+[608] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[609] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[610] Step { pick: 0, fate: Deliver }
+[611] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[612] Step { pick: 0, fate: Deliver }
+[613] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[614] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[615] Step { pick: 0, fate: Deliver }
+[616] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[617] Step { pick: 0, fate: Deliver }
+[618] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[619] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[620] Step { pick: 0, fate: Deliver }
+[621] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[622] Step { pick: 0, fate: Deliver }
+[623] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[624] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[625] Step { pick: 0, fate: Deliver }
+[626] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[627] Step { pick: 0, fate: Deliver }
+[628] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[629] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[630] Step { pick: 0, fate: Deliver }
+[631] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[632] Step { pick: 0, fate: Deliver }
+[633] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[634] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[635] Step { pick: 0, fate: Deliver }
+[636] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[637] Step { pick: 0, fate: Deliver }
+[638] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[639] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[640] Step { pick: 0, fate: Deliver }
+[641] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[642] Step { pick: 0, fate: Deliver }
+[643] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[644] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[645] Step { pick: 0, fate: Deliver }
+[646] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[647] Step { pick: 0, fate: Deliver }
+[648] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[649] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[650] Step { pick: 0, fate: Deliver }
+[651] Step { pick: 0, fate: Deliver }
+[652] Wakeup { b: 0 }
+[653] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state NONE -> NONE
+[654] Wakeup { b: 1 }
+[655] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE(armed) -> NONE(armed)
+[656] Wakeup { b: 2 }
+[657] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[658] Wakeup { b: 3 }
+[659] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[660] Wakeup { b: 4 }
+[661] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[662] Wakeup { b: 5 }
+[663] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[664] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[665] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[666] Step { pick: 0, fate: Deliver }
+[667] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[668] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[669] Step { pick: 0, fate: Deliver }
+[670] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[671] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[672] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[673] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[674] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[675] Step { pick: 0, fate: Deliver }
+[676] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[677] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[678] Step { pick: 0, fate: Deliver }
+[679] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[680] Step { pick: 0, fate: Deliver }
+[681] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[682] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[683] Step { pick: 0, fate: Deliver }
+[684] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[685] Step { pick: 0, fate: Deliver }
+[686] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[687] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[688] Step { pick: 0, fate: Deliver }
+[689] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[690] Step { pick: 0, fate: Deliver }
+[691] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[692] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[693] Step { pick: 0, fate: Deliver }
+[694] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[695] Step { pick: 0, fate: Deliver }
+[696] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[697] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[698] Step { pick: 0, fate: Deliver }
+[699] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[700] Step { pick: 0, fate: Deliver }
+[701] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[702] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[703] Step { pick: 0, fate: Deliver }
+[704] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[705] Step { pick: 0, fate: Deliver }
+[706] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[707] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[708] Step { pick: 0, fate: Deliver }
+[709] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[710] Step { pick: 0, fate: Deliver }
+[711] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[712] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[713] Step { pick: 0, fate: Deliver }
+[714] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[715] Step { pick: 0, fate: Deliver }
+[716] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[717] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[718] Step { pick: 0, fate: Deliver }
+[719] Step { pick: 0, fate: Deliver }
+[720] Wakeup { b: 0 }
+[721] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state NONE -> NONE
+[722] Wakeup { b: 1 }
+[723] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE(armed) -> NONE(armed)
+[724] Wakeup { b: 2 }
+[725] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[726] Wakeup { b: 3 }
+[727] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[728] Wakeup { b: 4 }
+[729] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[730] Wakeup { b: 5 }
+[731] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[732] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[733] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[734] Step { pick: 0, fate: Deliver }
+[735] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[736] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[737] Step { pick: 0, fate: Deliver }
+[738] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[739] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[740] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[741] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[742] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[743] Step { pick: 0, fate: Deliver }
+[744] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[745] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[746] Step { pick: 0, fate: Deliver }
+[747] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[748] Step { pick: 0, fate: Deliver }
+[749] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[750] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[751] Step { pick: 0, fate: Deliver }
+[752] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[753] Step { pick: 0, fate: Deliver }
+[754] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[755] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[756] Step { pick: 0, fate: Deliver }
+[757] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[758] Step { pick: 0, fate: Deliver }
+[759] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[760] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[761] Step { pick: 0, fate: Deliver }
+[762] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[763] Step { pick: 0, fate: Deliver }
+[764] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[765] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[766] Step { pick: 0, fate: Deliver }
+[767] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[768] Step { pick: 0, fate: Deliver }
+[769] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[770] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[771] Step { pick: 0, fate: Deliver }
+[772] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[773] Step { pick: 0, fate: Deliver }
+[774] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[775] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[776] Step { pick: 0, fate: Deliver }
+[777] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[778] Step { pick: 0, fate: Deliver }
+[779] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[780] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[781] Step { pick: 0, fate: Deliver }
+[782] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[783] Step { pick: 0, fate: Deliver }
+[784] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[785] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[786] Step { pick: 0, fate: Deliver }
+[787] Step { pick: 0, fate: Deliver }
+[788] Wakeup { b: 0 }
+[789] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state NONE -> NONE
+[790] Wakeup { b: 1 }
+[791] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE(armed) -> NONE(armed)
+[792] Wakeup { b: 2 }
+[793] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[794] Wakeup { b: 3 }
+[795] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[796] Wakeup { b: 4 }
+[797] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[798] Wakeup { b: 5 }
+[799] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[800] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[801] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[802] Step { pick: 0, fate: Deliver }
+[803] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[804] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[805] Step { pick: 0, fate: Deliver }
+[806] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[807] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[808] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[809] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[810] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[811] Step { pick: 0, fate: Deliver }
+[812] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[813] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[814] Step { pick: 0, fate: Deliver }
+[815] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[816] Step { pick: 0, fate: Deliver }
+[817] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[818] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[819] Step { pick: 0, fate: Deliver }
+[820] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[821] Step { pick: 0, fate: Deliver }
+[822] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[823] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[824] Step { pick: 0, fate: Deliver }
+[825] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[826] Step { pick: 0, fate: Deliver }
+[827] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[828] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[829] Step { pick: 0, fate: Deliver }
+[830] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[831] Step { pick: 0, fate: Deliver }
+[832] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[833] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[834] Step { pick: 0, fate: Deliver }
+[835] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[836] Step { pick: 0, fate: Deliver }
+[837] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[838] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[839] Step { pick: 0, fate: Deliver }
+[840] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[841] Step { pick: 0, fate: Deliver }
+[842] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[843] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[844] Step { pick: 0, fate: Deliver }
+[845] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[846] Step { pick: 0, fate: Deliver }
+[847] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[848] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[849] Step { pick: 0, fate: Deliver }
+[850] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[851] Step { pick: 0, fate: Deliver }
+[852] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[853] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[854] Step { pick: 0, fate: Deliver }
+[855] Step { pick: 0, fate: Deliver }
+[856] Wakeup { b: 0 }
+[857] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state NONE -> NONE
+[858] Wakeup { b: 1 }
+[859] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE(armed) -> NONE(armed)
+[860] Wakeup { b: 2 }
+[861] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[862] Wakeup { b: 3 }
+[863] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[864] Wakeup { b: 4 }
+[865] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[866] Wakeup { b: 5 }
+[867] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[868] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[869] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[870] Step { pick: 0, fate: Deliver }
+[871] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[872] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[873] Step { pick: 0, fate: Deliver }
+[874] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[875] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[876] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[877] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[878] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[879] Step { pick: 0, fate: Deliver }
+[880] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[881] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[882] Step { pick: 0, fate: Deliver }
+[883] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[884] Step { pick: 0, fate: Deliver }
+[885] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[886] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[887] Step { pick: 0, fate: Deliver }
+[888] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[889] Step { pick: 0, fate: Deliver }
+[890] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[891] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[892] Step { pick: 0, fate: Deliver }
+[893] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[894] Step { pick: 0, fate: Deliver }
+[895] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[896] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[897] Step { pick: 0, fate: Deliver }
+[898] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[899] Step { pick: 0, fate: Deliver }
+[900] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[901] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[902] Step { pick: 0, fate: Deliver }
+[903] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[904] Step { pick: 0, fate: Deliver }
+[905] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[906] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[907] Step { pick: 0, fate: Deliver }
+[908] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[909] Step { pick: 0, fate: Deliver }
+[910] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[911] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[912] Step { pick: 0, fate: Deliver }
+[913] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[914] Step { pick: 0, fate: Deliver }
+[915] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[916] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[917] Step { pick: 0, fate: Deliver }
+[918] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[919] Step { pick: 0, fate: Deliver }
+[920] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[921] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[922] Step { pick: 0, fate: Deliver }
+[923] Step { pick: 0, fate: Deliver }
+[924] Wakeup { b: 0 }
+[925] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state NONE -> NONE
+[926] Wakeup { b: 1 }
+[927] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE(armed) -> NONE(armed)
+[928] Wakeup { b: 2 }
+[929] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[930] Wakeup { b: 3 }
+[931] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[932] Wakeup { b: 4 }
+[933] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[934] Wakeup { b: 5 }
+[935] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[936] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[937] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[938] Step { pick: 0, fate: Deliver }
+[939] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[940] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[941] Step { pick: 0, fate: Deliver }
+[942] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[943] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[944] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[945] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[946] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[947] Step { pick: 0, fate: Deliver }
+[948] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[949] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[950] Step { pick: 0, fate: Deliver }
+[951] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[952] Step { pick: 0, fate: Deliver }
+[953] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[954] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[955] Step { pick: 0, fate: Deliver }
+[956] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[957] Step { pick: 0, fate: Deliver }
+[958] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[959] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[960] Step { pick: 0, fate: Deliver }
+[961] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[962] Step { pick: 0, fate: Deliver }
+[963] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[964] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[965] Step { pick: 0, fate: Deliver }
+[966] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[967] Step { pick: 0, fate: Deliver }
+[968] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[969] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[970] Step { pick: 0, fate: Deliver }
+[971] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[972] Step { pick: 0, fate: Deliver }
+[973] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[974] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[975] Step { pick: 0, fate: Deliver }
+[976] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[977] Step { pick: 0, fate: Deliver }
+[978] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[979] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[980] Step { pick: 0, fate: Deliver }
+[981] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE(armed), rec 0)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[982] Step { pick: 0, fate: Deliver }
+[983] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[984] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[985] Step { pick: 0, fate: Deliver }
+[986] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [10:Query(m 0000)] state NONE(armed) -> NONE(armed)
+[987] Step { pick: 0, fate: Deliver }
+[988] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Query { rec: Rec { v: 20, withdrawal: false }, m: 0 } } -> "CompleteAck(StorageFailure, m 0000, missing 0, succ Some(Rec { v: 25, withdrawal: true }))" hops [] state NONE -> NONE
+[989] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 0, status: StorageFailure, succ: Some(Rec { v: 25, withdrawal: true }), missing: [] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[990] Step { pick: 0, fate: Deliver }
+[991] Step { pick: 0, fate: Deliver }
+[992] Wakeup { b: 0 }
+[993] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state NONE -> NONE
+[994] Wakeup { b: 1 }
+[995] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE(armed) -> NONE(armed)
+[996] Wakeup { b: 2 }
+[997] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[998] Wakeup { b: 3 }
+[999] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[1000] Wakeup { b: 4 }
+[1001] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[1002] Wakeup { b: 5 }
+[1003] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+
