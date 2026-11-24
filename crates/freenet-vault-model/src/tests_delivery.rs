@@ -46,6 +46,20 @@ fn core_mode_exercises_its_delivery_paths() {
 }
 
 #[test]
+fn directed_scenarios_hit_their_rows() {
+    let cfg = Cfg::gate();
+    let ds = crate::directed::directed(&cfg);
+    assert!(!ds.is_empty());
+    for (k, sc) in ds {
+        let o = run(&cfg, &sc);
+        assert!(
+            o.cov.get(k) > 0,
+            "directed scenario for {k} no longer hits it"
+        );
+    }
+}
+
+#[test]
 fn coverage_seeds_still_hit_their_rows() {
     let cfg = Cfg::gate();
     for (seed, k) in crate::gen::COVERAGE_SEEDS {

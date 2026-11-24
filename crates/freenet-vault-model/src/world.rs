@@ -1810,6 +1810,20 @@ impl World {
         }
     }
 
+    /// Nothing left for a Step to do.
+    pub fn idle(&self) -> bool {
+        self.candidates().is_empty()
+    }
+
+    /// The index states in build `b`'s snapshot history, in the order a
+    /// `Restore { snap }` indexes them.
+    pub fn snapshot_states(&self, b: usize) -> Vec<PState> {
+        self.history[b]
+            .iter()
+            .map(|s| s.idx_or_none().state)
+            .collect()
+    }
+
     /// Process every pending hop and session call, delivering everything.
     pub fn drain(&mut self) {
         for _ in 0..2000 {

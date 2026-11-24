@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 
 use freenet_vault_model::cov::Cov;
+use freenet_vault_model::directed::directed;
 use freenet_vault_model::gen::{gen_scenario, run, shrink, COVERAGE_SEEDS};
 use freenet_vault_model::world::{Cfg, Delivery};
 
@@ -18,6 +19,7 @@ fn main() {
     let mut trace: Option<u64> = None;
     let mut shrink_n = 1usize;
     let mut find: Option<String> = None;
+    let mut directed_trace = false;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -33,6 +35,7 @@ fn main() {
                 trace = Some(args[i + 1].parse().unwrap());
                 i += 1;
             }
+            "--directed-trace" => directed_trace = true,
             "--find" => {
                 find = Some(args[i + 1].clone());
                 i += 1;
@@ -64,6 +67,23 @@ fn main() {
         if let Some(inv) = inv {
             let small = shrink(&cfg, &sc, inv);
             print_trace(&cfg, &small, seed);
+        }
+        return;
+    }
+
+    if directed_trace {
+        let mut c = cfg.clone();
+        c.trace = true;
+        for (k, sc) in directed(&cfg) {
+            let o = run(&c, &sc);
+            println!(
+                "\n==== directed scenario for {k}: hit {} times",
+                o.cov.get(k)
+            );
+            println!("violation: {:?}", o.violation);
+            for l in o.trace {
+                println!("{l}");
+            }
         }
         return;
     }
@@ -120,18 +140,35 @@ fn main() {
             by_inv.entry(v.inv).or_default().push(seed);
         }
     }
+    let mut directed_violations = vec![];
+    let ds = directed(&cfg);
+    let n_directed = ds.len();
+    for (k, sc) in ds {
+        let o = run(&cfg, &sc);
+        cov.merge(&o.cov);
+        if let Some(v) = o.violation {
+            directed_violations.push((k, v));
+        }
+    }
     println!(
-        "schedules: {seeds} (seeds {start}..{}) plus {} coverage seeds, delivery {:?}, adversarial {}, stale pointer {}, global FIFO {}, accept-query-answer {}",
+        "schedules: {seeds} (seeds {start}..{}) plus {} coverage seeds and {} directed scenarios, delivery {:?}, adversarial {}, stale pointer {}, global FIFO {}, accept-query-answer {}",
         start + seeds,
         extra.len(),
+        n_directed,
         cfg.delivery,
         cfg.adversarial,
         cfg.stale_pointer,
         cfg.d_global_fifo,
         cfg.params.spec.accept_query_answer
     );
-    if by_inv.is_empty() {
+    if by_inv.is_empty() && directed_violations.is_empty() {
         println!("violations: none");
+    }
+    for (k, v) in &directed_violations {
+        println!(
+            "violation {} in the directed scenario for {k}: {}",
+            v.inv, v.msg
+        );
     }
     for (inv, s) in &by_inv {
         println!(
@@ -162,7 +199,7 @@ fn main() {
             print_trace(&cfg, &small, *seed);
         }
     }
-    if !by_inv.is_empty() || !missing.is_empty() {
+    if !by_inv.is_empty() || !directed_violations.is_empty() || !missing.is_empty() {
         std::process::exit(1);
     }
 }

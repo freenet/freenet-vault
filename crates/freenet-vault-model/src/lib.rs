@@ -12,6 +12,7 @@
 
 pub mod build;
 pub mod cov;
+pub mod directed;
 pub mod gen;
 pub mod store;
 pub mod types;
