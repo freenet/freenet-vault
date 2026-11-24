@@ -397,6 +397,9 @@ pub struct World {
     /// write or finished mirror sweep has repaired: the slots 4.5 allows to
     /// be unavailable after an index loss.
     incomplete: BTreeSet<(Ver, Ident)>,
+    /// Per build, whether its mirror sweep had finished at the end of its
+    /// last call with a readable index.
+    last_swept: BTreeMap<Ver, bool>,
     /// Entry copies damaged by the operator, per build.
     entry_damaged: BTreeSet<(Ver, Ident)>,
     /// Slots excluded from I3 because a restore rolled their bytes back
@@ -451,6 +454,7 @@ impl World {
             orphans: BTreeSet::new(),
             incomplete: BTreeSet::new(),
             entry_damaged: BTreeSet::new(),
+            last_swept: BTreeMap::new(),
             i3_exempt: BTreeSet::new(),
             nostate_to: BTreeMap::new(),
             cfg,
@@ -644,6 +648,7 @@ impl World {
         }
         if let Some(i) = self.stores[b].idx() {
             if !self.stores[b].index_lost() {
+                self.last_swept.insert(ver(b), self.vols[b].swept);
                 self.last_good.insert(ver(b), i.state.clone());
                 for (n, val) in &self.stores[b].secrets {
                     if let (SName::E(id, _), SVal::E(en)) = (n, val) {
@@ -1888,6 +1893,33 @@ impl World {
         };
         let Reply::Op(r) = out.reply else { return };
         self.log(|| format!("  op {op:?} at {} -> {r:?}", ver(b)));
+        // designer checklist item 3: unavailable slots in read-only mode,
+        // by cause (ground truth)
+        if let (
+            Op::PublicKey { slot } | Op::Batch { slot, .. } | Op::Export { slot },
+            OpRes::Refused(12),
+        ) = (&op, &r)
+        {
+            if self.stores[b].index_lost() {
+                let id = (KIND_KEY, *slot);
+                let v = ver(b);
+                let acked = self.oracle.get(&id).is_some_and(|p| p.acked.is_some());
+                let cause = if !acked {
+                    "no-acknowledged-key"
+                } else if self.entry_damaged.contains(&(v, id)) {
+                    "corruption"
+                } else if self.incomplete.contains(&(v, id)) {
+                    "last-change-unfinished"
+                } else if !self.last_swept.get(&v).copied().unwrap_or(false) {
+                    "sweep-not-finished"
+                } else if self.restored {
+                    "after-restore"
+                } else {
+                    "other"
+                };
+                self.cov.hit(&format!("unavailable-by-cause/{cause}"));
+            }
+        }
         match (&op, &r) {
             (Op::PublicKey { slot }, OpRes::Key(k))
             | (Op::Batch { slot, .. }, OpRes::Key(k))
