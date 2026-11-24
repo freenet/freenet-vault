@@ -972,3 +972,14 @@ fn parts_list_is_idempotent() {
     ensure_part_listed(&mut h, &[1; 32]).unwrap();
     assert_eq!(h.secrets[names::PARTS].len(), 64);
 }
+
+/// A `vault:parts` that reads but is malformed is left alone, and listing
+/// fails, instead of overwriting what other partitions it may hold.
+#[test]
+fn a_malformed_parts_list_is_never_overwritten() {
+    let mut h = MemHost::new();
+    let bad = vec![1u8; 33];
+    h.secrets.insert(names::PARTS.to_vec(), bad.clone());
+    assert_eq!(ensure_part_listed(&mut h, &P), Err(StorageFailure));
+    assert_eq!(h.secrets[names::PARTS], bad);
+}

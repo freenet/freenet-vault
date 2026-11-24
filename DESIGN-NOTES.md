@@ -6,10 +6,10 @@ revision 7, 2026-11-23), or adds something they do not yet say. Each entry
 names the choice and why. The documents should be updated to match, or the
 code changed.
 
-## Decided 2026-11-23 by the design session, spec update pending
+## Decided 2026-11-23 by the design session, now in the spec
 
-Taken after the first review round. All four are in the code; the spec text
-still has to say them.
+Taken after the first review round. All four are in the code and in the
+protocol document (sections 9 and 11, added 2026-11-23).
 
 - **Entry kind 0x00 is reserved.** Decoders treat it as malformed (protocol
   7.1 and section 11 say nothing about 0x00; 0x03 to 0xFF stay carried
@@ -165,7 +165,11 @@ Caller marks:
   below the stored mark but at or above `min_version` is served. A SubmitRecord
   of a caller record reads it again; if it is still unreadable, a record at or
   above `min_version` replaces it (it lowers the floor to that version), so a
-  mark lost for good is not stuck for ever.
+  mark lost for good is not stuck for ever. Accepted residual: nothing else
+  stores the lost mark's version (the index holds a digest, the gc list holds
+  names), so the replacement cannot be required to reach the highest version
+  seen before; a caller record between `min_version` and the lost mark's
+  version is accepted until the next raise.
 - **SubmitRecord from a delegate is held to its caller mark** exactly like an
   operation: a stale caller is refused (Refused 2), a newer one raises its
   mark (Busy while sealed or awaiting retirement, Refused 3 or 12 if the raise

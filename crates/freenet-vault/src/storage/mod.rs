@@ -618,15 +618,17 @@ pub fn ensure_part_listed<H: Host>(
     host: &mut H,
     partition: &[u8; 32],
 ) -> Result<(), StorageFailure> {
+    // A list that reads but does not parse is never replaced: it may hold
+    // other partitions, and writing only this one would erase them. An absent
+    // list is a first listing.
     let existing = host.get_secret(names::PARTS).unwrap_or_default();
-    if existing.len().is_multiple_of(32) && existing.chunks(32).any(|c| c == partition) {
+    if !existing.len().is_multiple_of(32) {
+        return Err(StorageFailure);
+    }
+    if existing.chunks(32).any(|c| c == partition) {
         return Ok(());
     }
-    let mut list = if existing.len().is_multiple_of(32) {
-        existing
-    } else {
-        Vec::new()
-    };
+    let mut list = existing;
     list.extend_from_slice(partition);
     if host.set_secret(names::PARTS, &list)
         || host.get_secret(names::PARTS).as_deref() == Some(list.as_slice())
