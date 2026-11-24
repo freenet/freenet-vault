@@ -386,6 +386,7 @@ pub struct Outcome {
     pub cov: Cov,
     pub trace: Vec<String>,
     pub sealed_corrupt_sent: u64,
+    pub repair_stuck: Vec<(Ver, &'static str, bool)>,
 }
 
 pub fn run(cfg: &Cfg, sc: &Scenario) -> Outcome {
@@ -402,6 +403,7 @@ pub fn run(cfg: &Cfg, sc: &Scenario) -> Outcome {
         cov: w.cov.clone(),
         trace: std::mem::take(&mut w.trace),
         sealed_corrupt_sent: w.sealed_corrupt_sent,
+        repair_stuck: w.repair_stuck.clone(),
     }
 }
 

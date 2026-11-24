@@ -83,6 +83,9 @@ pub struct Cfg {
     pub wakeup_hop_cap: usize,
     pub client_iter_cap: usize,
     pub quiesce_rounds: usize,
+    /// Quiescence delivers in a varying order (pick from a hash of the
+    /// step number) instead of always the first candidate.
+    pub quiesce_shuffle: bool,
     pub trace: bool,
 }
 
@@ -99,6 +102,7 @@ impl Cfg {
             wakeup_hop_cap: 6,
             client_iter_cap: 14,
             quiesce_rounds: 12,
+            quiesce_shuffle: false,
             trace: false,
         }
     }
@@ -377,6 +381,9 @@ pub struct World {
     /// named them (left by a failed or interrupted write), as (build,
     /// identity, content).
     orphans: BTreeSet<(Ver, Ident, u32)>,
+    /// Repair liveness (coordinator's criterion): every build still
+    /// REPAIRING after quiescence, with the reason it is stuck.
+    pub repair_stuck: Vec<(Ver, &'static str, bool)>,
     /// Entry names dropped from vault:gc while their copy was on disk.
     gc_dropped: BTreeSet<(Ver, SName)>,
     /// Per predecessor, the queriers it answered 0x0B (decision 1).
@@ -423,6 +430,7 @@ impl World {
             routed: BTreeSet::new(),
             orphans: BTreeSet::new(),
             gc_dropped: BTreeSet::new(),
+            repair_stuck: vec![],
             nostate_to: BTreeMap::new(),
             cfg,
         }
@@ -2472,6 +2480,33 @@ impl World {
             }
         }
         self.cfg.adversarial = adversarial;
+        for b in 0..NBUILDS {
+            if matches!(self.stores[b].idx_or_none().state, PState::Repairing { .. })
+                && !self.stores[b].index_lost()
+            {
+                let r = self.repair_stuck_reason(b);
+                self.cov.hit(&format!("liveness/repair-stuck/{r}"));
+                self.repair_stuck.push((
+                    ver(b),
+                    r,
+                    self.restored || self.garbled_succ_or_restore(),
+                ));
+                let blocking = r.starts_with("unexplained") || r.starts_with("F17");
+                if blocking && !self.cfg.adversarial {
+                    self.fail(
+                        if self.restored {
+                            "I7-repair-stuck-restore-scope"
+                        } else if r.starts_with("F17") {
+                            "I7-repair-stuck-F17"
+                        } else {
+                            "I7-repair-stuck"
+                        },
+                        format!("after quiescence build {} is still REPAIRING ({r})", ver(b)),
+                    );
+                    return;
+                }
+            }
+        }
         let w = self.accepting_writers();
         // "by the first step that lets the two interact": while the domain
         // is stopped nothing copies, so two writers need not meet.
@@ -2575,10 +2610,94 @@ impl World {
             if self.candidates().is_empty() || self.violation.is_some() {
                 return;
             }
+            let pick = if self.cfg.quiesce_shuffle {
+                let mut h = Hasher::new(b"quiesce");
+                h.u64(self.step_no as u64);
+                (h.finish() % 64) as u16
+            } else {
+                0
+            };
             self.apply(&Action::Step {
-                pick: 0,
+                pick,
                 fate: Fate::Deliver,
             });
+        }
+    }
+
+    fn garbled_succ_or_restore(&self) -> bool {
+        self.restored
+    }
+
+    /// Why REPAIRING build `b` cannot finish once faults have stopped.
+    fn repair_stuck_reason(&self, b: usize) -> &'static str {
+        let v = ver(b);
+        let PState::Repairing { confirmed } = self.stores[b].idx_or_none().state else {
+            return "not-repairing";
+        };
+        let own = &self.stores[b];
+        if matches!(own.secrets.get(&SName::Parts), Some(SVal::Undecryptable)) {
+            // finding F17: re-listing over an undecryptable vault:parts is
+            // refused (#6323), so every call is read-only for its rest and
+            // the finishing write never happens
+            return "F17-own-parts-undecryptable";
+        }
+        if matches!(own.secrets.get(&SName::Gc), Some(SVal::Undecryptable)) {
+            return "F17-own-gc-undecryptable";
+        }
+        if matches!(own.secrets.get(&SName::Succ), Some(SVal::Undecryptable)) {
+            return "F17-own-succ-undecryptable";
+        }
+        if own.succ_malformed() {
+            return "own-record-malformed";
+        }
+        let succ = self.stores[b].succ();
+        if succ.current.is_some_and(|c| c.v > v) {
+            // 4.6 stated residual: a record above the damaged build's
+            // version reached the node
+            return "creation-bar";
+        }
+        let Some(p) = self.defs[b]
+            .preds
+            .iter()
+            .copied()
+            .filter(|p| !confirmed.contains(p))
+            .min()
+        else {
+            if self.omniscient_writer() != Route::ReadOnly(v) {
+                // the courier selects another build, so no page pokes this
+                // one and its last step (the WRITER write) never runs
+                return "all-confirmed-but-not-selected-so-never-poked";
+            }
+            return "unexplained-all-confirmed";
+        };
+        let ps = &self.stores[bi(p)];
+        if ps.index_lost() || matches!(ps.idx_or_none().state, PState::Repairing { .. }) {
+            return "predecessor-damaged-no-answer";
+        }
+        if ps.succ_malformed()
+            || matches!(ps.secrets.get(&SName::Succ), Some(SVal::Undecryptable))
+            || matches!(ps.secrets.get(&SName::Parts), Some(SVal::Undecryptable))
+        {
+            return "predecessor-store-damaged";
+        }
+        match ps.idx_or_none().state {
+            PState::Writer(_) | PState::Sealed { .. } => "predecessor-holds-state",
+            PState::Receiving { .. } => "predecessor-stranded-partial-copy",
+            PState::Retired { to, .. } if to.v > v => "predecessor-retired-above",
+            PState::Retired { .. } => "unexplained-predecessor-retired-not-ahead",
+            PState::None { .. } => {
+                let s = ps.succ();
+                let wd = s.withdrawal.map(|r| r.v).unwrap_or(0);
+                let cur = s.current.map(|r| r.v).unwrap_or(0);
+                if wd >= v && wd >= cur {
+                    "predecessor-stopped"
+                } else if cur > v {
+                    "predecessor-holds-higher-record"
+                } else {
+                    "unexplained-predecessor-none"
+                }
+            }
+            PState::Repairing { .. } => "predecessor-damaged-no-answer",
         }
     }
 }

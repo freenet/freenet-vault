@@ -68,6 +68,7 @@ fn main() {
             "--mutants" => mutants = true,
             "--gc-old-after-index" => cfg.params.gc_old_before_index = false,
             "--no-list-none-indexes" => cfg.params.list_none_indexes = false,
+            "--quiesce-shuffle" => cfg.quiesce_shuffle = true,
             a => panic!("unknown argument {a}"),
         }
         i += 1;
@@ -146,6 +147,8 @@ fn main() {
     let mut by_inv: BTreeMap<&'static str, Vec<u64>> = BTreeMap::new();
     let mut corrupt_sealed = 0u64;
     let mut shapes: BTreeMap<String, (u64, u64)> = BTreeMap::new();
+    let mut stuck: BTreeMap<&'static str, Vec<u64>> = BTreeMap::new();
+    let mut ran = 0u64;
     let extra: std::collections::BTreeSet<u64> = COVERAGE_SEEDS
         .iter()
         .map(|(s, _)| *s)
@@ -154,8 +157,17 @@ fn main() {
     for seed in (start..start + seeds).chain(extra.iter().copied()) {
         let sc = gen_scenario(seed, &cfg);
         let o = run(&cfg, &sc);
+        ran += 1;
         cov.merge(&o.cov);
         corrupt_sealed += o.sealed_corrupt_sent;
+        for (_, r, restored) in &o.repair_stuck {
+            let key: &'static str = if *restored {
+                Box::leak(format!("{r} (restore scope)").into_boxed_str())
+            } else {
+                r
+            };
+            stuck.entry(key).or_default().push(seed);
+        }
         if let Some(v) = o.violation {
             by_inv.entry(v.inv).or_default().push(seed);
             let e = shapes
@@ -207,6 +219,22 @@ fn main() {
         println!("  shape {n:>6} (first seed {first:>6}) {k}");
     }
     println!("sealed build sent a corrupt entry: {corrupt_sealed} times");
+    println!(
+        "schedules run: {ran}; repairs completed (REPAIRING to WRITER): {}; Reindex written: {}; handovers (took over): {}",
+        cov.get("4.6/repair-done"),
+        cov.get("4.6/reindex-written"),
+        cov.get("7.4/took-over")
+    );
+    for (r, seeds) in &stuck {
+        let mut s = seeds.clone();
+        s.dedup();
+        println!(
+            "repair stuck after quiescence, {r}: {} builds in {} schedules; schedules {:?}",
+            seeds.len(),
+            s.len(),
+            s
+        );
+    }
     let missing = cov.missing();
     println!(
         "coverage: {} counters, {} required missing",
