@@ -54,6 +54,11 @@ fuzz_target!(|data: &[u8]| {
     if let Ok(i) = Index::decode(data) {
         assert_eq!(Index::decode(&i.encode()).unwrap(), i);
     }
+    // Arbitrary bytes almost never carry a valid checksum, so also seal them:
+    // that reaches the body parser.
+    if let Ok(i) = Index::decode(&Index::seal(data)) {
+        assert_eq!(Index::decode(&i.encode()).unwrap(), i);
+    }
     let _ = Succ::decode(data);
     if let Some(p) = Pending::decode(data) {
         assert_eq!(Pending::decode(&p.encode()), Some(p));

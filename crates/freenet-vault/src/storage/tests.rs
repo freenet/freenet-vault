@@ -983,3 +983,19 @@ fn a_malformed_parts_list_is_never_overwritten() {
     assert_eq!(ensure_part_listed(&mut h, &P), Err(StorageFailure));
     assert_eq!(h.secrets[names::PARTS], bad);
 }
+
+/// `Index::seal` (used by the fuzz target) gives a body the checksum, so the
+/// body parser is reached: a sealed valid body decodes, a sealed bad one is
+/// refused by the parser and not by the checksum.
+#[test]
+fn a_sealed_body_reaches_the_index_parser() {
+    let mut ix = Index::none();
+    ix.state = State::Writer;
+    let enc = ix.encode();
+    let body = &enc[..enc.len() - 32];
+    assert_eq!(Index::decode(&Index::seal(body)).unwrap(), ix);
+    let mut bad = body.to_vec();
+    bad[5] = 99; // the state byte
+    let e = Index::decode(&Index::seal(&bad)).unwrap_err();
+    assert!(!e.to_string().contains("checksum"), "{e}");
+}

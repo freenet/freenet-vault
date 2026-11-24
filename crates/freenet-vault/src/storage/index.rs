@@ -150,6 +150,15 @@ impl Index {
         out
     }
 
+    /// `body` with its trailing checksum, so a test or fuzz input can reach the
+    /// body parser instead of failing the checksum.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn seal(body: &[u8]) -> Vec<u8> {
+        let mut out = body.to_vec();
+        out.extend_from_slice(blake3::hash(body).as_bytes());
+        out
+    }
+
     pub fn decode(bytes: &[u8]) -> Result<Self, Malformed> {
         if bytes.len() < 32 {
             return Err(Malformed("index too short"));

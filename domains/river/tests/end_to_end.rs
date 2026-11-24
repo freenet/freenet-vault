@@ -252,6 +252,7 @@ fn rivers_constants_are_pinned() {
     );
     assert_eq!(RIVER.publisher_keys, [RIVER_PUBLISHER_VK]);
     assert_eq!(RIVER.slot_len, Some(32));
+    assert_eq!(RIVER.app_id, b"river.vault");
     let record_v11: [u8; 100] = unhex(CHAT_RECORD_V11);
     let delegates = river_vault::RIVER_CALLER_DELEGATES;
     assert_eq!(delegates.len(), 1);
