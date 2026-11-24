@@ -481,7 +481,7 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
         Operation::Generate { .. } | Operation::Import { .. } | Operation::Delete { .. }
     );
     let succ = Succ::load(domain, host).ok();
-    let fault = Store::fault(&*host, &domain.partition());
+    let fault = Store::fault_for_slot(&*host, &domain.partition(), req.op.slot());
     let mut store = match fault {
         None => match Store::open(host, domain.partition()) {
             Ok(s) => s,
@@ -829,7 +829,12 @@ pub fn export_answer<H: Host>(
         });
     }
     let succ = Succ::load(domain, host).ok();
-    let Ok(mut store) = Store::open(host, domain.partition()) else {
+    let unknown = Store::fault_for_slot(&*host, &domain.partition(), Some(&pending.slot));
+    let opened = match unknown {
+        None => Store::open(host, domain.partition()).ok(),
+        Some(_) => None,
+    };
+    let Some(mut store) = opened else {
         // Unknown index state: read-only. Rescue the key from the entry
         // copies themselves, and only when exactly one decodes.
         return Some(

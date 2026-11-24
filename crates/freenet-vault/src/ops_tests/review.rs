@@ -2533,3 +2533,49 @@ fn a_malformed_parts_list_with_a_verified_index_stays_writable_and_untouched() {
         "parts was overwritten"
     );
 }
+
+/// Index and `vault:parts` both undecryptable (core #6323): the partition is
+/// not taken to be new. A slot with a decodable entry on disk is read by direct
+/// read for PublicKey, Batch and Export, and nothing is created over it:
+/// Import, Generate of that slot and Delete answer storage failure.
+#[test]
+fn double_corruption_serves_the_slot_by_direct_read_and_never_creates_over_it() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, pk) = writer_with_key(&mut h);
+    let seed = seed_of(&h, &slot);
+    h.undecryptable.insert(names::index(&p));
+    h.undecryptable.insert(names::PARTS.to_vec());
+    let before = h.secrets.clone();
+    assert_eq!(
+        page(&mut h, op(2, Operation::PublicKey { slot: slot.clone() })),
+        Reply::Op(
+            2,
+            OpResult::Key {
+                slot: slot.clone(),
+                public_key: pk
+            }
+        )
+    );
+    assert!(is_sig(&sign_batch(&mut h, 3, &slot, pk)));
+    for o in [
+        Operation::Import {
+            slot: slot.clone(),
+            seed: [4; 32],
+            replace: true,
+        },
+        Operation::Generate {
+            slot: Some(slot.clone()),
+        },
+        Operation::Delete { slot: slot.clone() },
+    ] {
+        assert_eq!(page(&mut h, op(4, o)), refused(4, refused::STORAGE_FAILURE));
+    }
+    let id = export_prompt(&mut h, &slot, 5);
+    assert_eq!(
+        single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()),
+        Reply::Op(5, OpResult::Export { seed })
+    );
+    assert_eq!(h.secrets, before, "storage changed");
+    assert!(!h.poisoned());
+}

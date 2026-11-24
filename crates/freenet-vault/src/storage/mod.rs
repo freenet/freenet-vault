@@ -187,6 +187,29 @@ impl<'a, H: Host> Store<'a, H> {
         }
     }
 
+    /// [`fault`](Self::fault), plus one more unknown state for a request that
+    /// names `slot`: no index and no `vault:parts` listing, but a decodable
+    /// entry for that slot is on disk. The index and the listing may both be
+    /// corrupt (an undecryptable blob reads as absent, core #6323), so the
+    /// partition is not taken to be new: the slot can be read by direct read,
+    /// and nothing may be created over it.
+    pub fn fault_for_slot(
+        host: &H,
+        partition: &[u8; 32],
+        slot: Option<&[u8]>,
+    ) -> Option<StoredIndexMalformed> {
+        if let Some(f) = Self::fault(host, partition) {
+            return Some(f);
+        }
+        let slot = slot?;
+        if host.get_secret(&names::index(partition)).is_none()
+            && direct_entry(host, partition, KIND_KEY, slot).is_some()
+        {
+            return Some(StoredIndexMalformed(IndexFault::LostWhileListed));
+        }
+        None
+    }
+
     /// A read-only store for a partition whose index state is unknown: reads
     /// find an entry by its two parity copies, and nothing is ever written.
     /// The routing state is taken to be WRITER (this build has no other
