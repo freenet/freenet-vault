@@ -2403,3 +2403,257 @@ fn two_different_copies_disagree_whatever_their_flags() {
         refused(4, refused::STORAGE_FAILURE)
     );
 }
+
+// ---- revision 10.1 through process() ---------------------------------------
+
+fn listed_in_parts(h: &MemHost) -> bool {
+    h.secrets
+        .get(names::PARTS)
+        .is_some_and(|l| l.chunks(32).any(|c| c == domain().partition()))
+}
+
+/// Arming writes a NONE index, which is never listed; the first WRITER index
+/// (a creation) is listed once it reads back.
+#[test]
+fn arming_is_not_listed_and_creation_is() {
+    let mut h = MemHost::new();
+    arm(&mut h);
+    assert!(!listed_in_parts(&h), "an armed NONE index was listed");
+    let _ = page(&mut h, op(1, Operation::Generate { slot: None }));
+    assert!(listed_in_parts(&h));
+}
+
+/// A creating change whose listing fails answers Refused(12), and the next call
+/// (catch-all) lists the WRITER index before doing anything else.
+#[test]
+fn a_creating_change_whose_listing_fails_answers_storage_failure() {
+    let mut h = MemHost::new();
+    arm(&mut h);
+    h.set_fault(|n| {
+        if n == names::PARTS {
+            WriteFault::Fail
+        } else {
+            WriteFault::None
+        }
+    });
+    assert_eq!(
+        page(&mut h, op(1, Operation::Generate { slot: None })),
+        refused(1, refused::STORAGE_FAILURE)
+    );
+    h.clear_fault();
+    assert!(!listed_in_parts(&h));
+    // The next call lists it, then serves.
+    let _ = problems_of(&mut h);
+    assert!(listed_in_parts(&h));
+}
+
+/// The catch-all: a valid WRITER index for an unlisted partition. If listing it
+/// (or reading the listing back) fails, the call answers nothing.
+#[test]
+fn the_catch_all_answers_nothing_when_the_listing_fails() {
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    h.secrets.remove(names::PARTS);
+    h.set_fault(|n| {
+        if n == names::PARTS {
+            WriteFault::Fail
+        } else {
+            WriteFault::None
+        }
+    });
+    let out = from_page_as(
+        &mut h,
+        page_id(),
+        op(2, Operation::PublicKey { slot: slot.clone() }),
+    );
+    assert!(out.is_empty(), "answered: {out:?}");
+    h.clear_fault();
+    assert!(matches!(
+        page(&mut h, op(3, Operation::PublicKey { slot })),
+        Reply::Op(3, OpResult::Key { .. })
+    ));
+    assert!(listed_in_parts(&h));
+}
+
+/// A Poke runs the mirror sweep: a missing mirror is written back.
+#[test]
+fn a_poke_runs_the_mirror_sweep() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let c0 = names::entry(&p, KIND_KEY, &slot, 0);
+    let c1 = names::entry(&p, KIND_KEY, &slot, 1);
+    assert_eq!(h.secrets[&c0], h.secrets[&c1]);
+    h.secrets.remove(&c1);
+    let _ = problems_of(&mut h);
+    assert_eq!(h.secrets[&c0], h.secrets[&c1]);
+}
+
+/// A malformed index with an absent `vault:parts` (a valid empty list, G1) is
+/// NONE, not index loss: no bit 6, state NONE, reads answer NotHere.
+#[test]
+fn a_malformed_unlisted_index_is_none_not_index_loss() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let b = h.secrets[&names::index(&p)].clone();
+    h.secrets
+        .insert(names::index(&p), b[..b.len() - 4].to_vec());
+    h.secrets.remove(names::PARTS);
+    let st = handover(page(&mut h, poke(0, None)));
+    assert_eq!(st.problems & problems::INDEX_LOST, 0);
+    assert_eq!(st.partition_state, partition_state::NONE);
+    assert!(matches!(
+        page(&mut h, op(2, Operation::PublicKey { slot })),
+        Reply::St(Status::NotHere { .. })
+    ));
+    // The same index with the partition listed is index loss (state 7).
+    h.secrets.insert(names::PARTS.to_vec(), p.to_vec());
+    let st = handover(page(&mut h, poke(0, None)));
+    assert_ne!(st.problems & problems::INDEX_LOST, 0);
+    assert_eq!(st.partition_state, partition_state::UNKNOWN_INDEX_LOST);
+}
+
+/// G2 and G2b: with `vault:parts` malformed and the index absent or malformed,
+/// a build whose `vault:succ` holds a newer record answers every read and change
+/// Moved(that record) and never direct-reads.
+#[test]
+fn a_malformed_parts_list_and_a_newer_record_answer_moved() {
+    let p = domain().partition();
+    for torn in [false, true] {
+        let mut h = MemHost::new();
+        let (slot, pk) = writer_with_key(&mut h);
+        // A newer record becomes known.
+        let _ = page(&mut h, poke(0, Some(domain_record(2, [0x22; 32]))));
+        let newer = domain_record(2, [0x22; 32]);
+        if torn {
+            let b = h.secrets[&names::index(&p)].clone();
+            h.secrets
+                .insert(names::index(&p), b[..b.len() - 4].to_vec());
+        } else {
+            h.secrets.remove(&names::index(&p));
+        }
+        h.secrets.insert(names::PARTS.to_vec(), vec![1; 33]);
+        let moved = |rid| {
+            Reply::St(Status::Moved {
+                request_id: rid,
+                partition: p,
+                record: newer,
+            })
+        };
+        assert_eq!(
+            page(&mut h, op(3, Operation::PublicKey { slot: slot.clone() })),
+            moved(3),
+            "torn={torn}"
+        );
+        assert_eq!(sign_batch(&mut h, 4, &slot, pk), moved(4), "torn={torn}");
+        assert_eq!(
+            page(&mut h, op(5, Operation::Delete { slot: slot.clone() })),
+            moved(5)
+        );
+        let id = export_prompt_for_test(&mut h, &slot, 6);
+        if let Some(id) = id {
+            assert_eq!(
+                single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()),
+                moved(6)
+            );
+        }
+    }
+    // Without a newer record the same state direct-reads (G2 applies only with
+    // a record above OWN_VERSION).
+    let mut h = MemHost::new();
+    let (slot, pk) = writer_with_key(&mut h);
+    h.secrets.remove(&names::index(&p));
+    h.secrets.insert(names::PARTS.to_vec(), vec![1; 33]);
+    assert!(is_sig(&sign_batch(&mut h, 7, &slot, pk)));
+}
+
+fn export_prompt_for_test(h: &mut MemHost, slot: &[u8], rid: u64) -> Option<u32> {
+    match from_page_as(
+        h,
+        page_id(),
+        op(
+            rid,
+            Operation::Export {
+                slot: slot.to_vec(),
+            },
+        ),
+    )
+    .as_slice()
+    {
+        [OutboundDelegateMsg::RequestUserInput(r)] => Some(r.request_id),
+        _ => None,
+    }
+}
+
+/// A crash at every mutation point of an Import-replace and of a Delete,
+/// followed by index loss: the slot answers its old key, its new key or storage
+/// failure (never Absent, never a deleted or uncommitted key).
+#[test]
+fn a_crash_at_every_step_then_index_loss_never_serves_a_wrong_key() {
+    let p = domain().partition();
+    let old_seed = [0xA1; 32];
+    let new_seed = [0xB2; 32];
+    let pk_old = crypto::public_key(&old_seed);
+    let pk_new = crypto::public_key(&new_seed);
+    for what in ["replace", "delete"] {
+        let mut base = MemHost::new();
+        arm(&mut base);
+        let slot = vec![7u8; 32];
+        assert!(is_key_result(&import_replace(
+            &mut base, 1, &slot, old_seed
+        )));
+        let mut max = 0;
+        for n in 0..16 {
+            let mut h = base.restart();
+            h.crash_after(n);
+            let start = h.mutations;
+            if what == "replace" {
+                let _ = import_replace(&mut h, 2, &slot, new_seed);
+            } else {
+                let _ = page(&mut h, op(2, Operation::Delete { slot: slot.clone() }));
+            }
+            max = max.max(h.mutations - start);
+            let mut h = h.restart();
+            // Index loss.
+            h.secrets.remove(&names::index(&p));
+            let r = page(&mut h, op(3, Operation::PublicKey { slot: slot.clone() }));
+            match r {
+                Reply::Op(_, OpResult::Key { public_key, .. }) => assert!(
+                    public_key == pk_old || (what == "replace" && public_key == pk_new),
+                    "{what}, crash {n}: a wrong key was served"
+                ),
+                Reply::St(Status::Refused { reason, .. }) => {
+                    assert_eq!(reason, refused::STORAGE_FAILURE, "{what}, crash {n}")
+                }
+                other => panic!("{what}, crash {n}: {other:?}"),
+            }
+        }
+        assert!(
+            max >= 3,
+            "{what}: the sweep must reach the commit and the mirror"
+        );
+    }
+}
+
+/// G2 at the consent answer: a prompt raised while the vault was healthy, then
+/// the index is lost with `vault:parts` malformed and a newer record known. The
+/// answer is Moved(that record); the key is never read directly.
+#[test]
+fn the_export_answer_is_moved_in_the_g2_state() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let id = export_prompt(&mut h, &slot, 21);
+    let _ = page(&mut h, poke(0, Some(domain_record(2, [0x22; 32]))));
+    h.secrets.remove(&names::index(&p));
+    h.secrets.insert(names::PARTS.to_vec(), vec![1; 33]);
+    assert_eq!(
+        single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()),
+        Reply::St(Status::Moved {
+            request_id: 21,
+            partition: p,
+            record: domain_record(2, [0x22; 32]),
+        })
+    );
+}

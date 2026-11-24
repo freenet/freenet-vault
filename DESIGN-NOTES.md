@@ -79,43 +79,34 @@ Storage and formats:
   the frozen bounds (at most 4096 entries, kind not 0, key 1..=256, entry
   length at most 65,399).
 - **One index copy, with a BLAKE3 checksum** (`vault:idx:<P>`), is the commit
-  point. Decided 2026-11-24 after four review rounds kept finding bugs in a
-  second (backup) copy, which is removed. `open` trusts the index only when it
-  reads and verifies. Anything else is an unknown state and the partition is
-  READ-ONLY for that call (no write, no gc, no creation, no arming; re-checked
-  on every call): the index is present but damaged or torn, absent while
-  `vault:parts` lists the partition, or `vault:parts` is present but malformed.
-  A new partition needs positive absence: no index, and `vault:parts` either
-  absent or not naming the partition. `vault:parts` is written after the first
-  index commit (a crash in between leaves an index with no listing, which
-  `open` repairs; never the reverse, which would brick the partition). After a
-  commit whose outcome is uncertain, the store is read-only for the rest of the
-  call, and gc waits for a later call. gc also needs the index verified in the
-  call. **Export stays possible behind consent** while the index state is
-  unknown: the answer reads both parity copies of the slot directly and returns
-  a seed only when exactly one decodes as a key entry for that slot. HandoverStatus
-  reports `problems` bit 0 (storage failure). Signing does not stop in read-only
-  mode (protocol 4.5): PublicKey and Batch (page or delegate) find a slot's
-  entry by reading its two parity copies; one distinct decodable value is
-  used (two identical copies are one value), none or two differing answer
-  storage failure for that slot only. The routing state is taken to be WRITER
-  and a delegate is served on the record it offers (no mark raise is
-  written). List, Generate, Import and Delete answer storage failure.
-  HandoverStatus problems bit 6 (`INDEX_LOST`) is set for every unknown index
-  state: the index damaged, absent while listed, or absent with a malformed
-  `vault:parts` (otherwise that state would be a permanent brick).
-  **ResetPartition (0x88)** (`confirm = BLAKE3("freenet-vault/reset/v1" ||
-  partition)`): domain pages only, behind the consent prompt, only while bit 6
-  is set; it writes a fresh empty WRITER index, empties both gc lists (a listed
-  name may be the only copy of a key) and keeps `vault:parts` listing the
-  partition. Old entry copies stay on disk until a later Import of the same
-  slot overwrites them. The gc lists are cleared (both must take) BEFORE the
-  empty index is published, so a crash at any point leaves nothing for gc to
-  remove. Residuals, all by design for v1: losing or tearing the index leaves
-  the partition read-only with its keys exportable by consent until the user
-  runs ResetPartition; a torn index write is not repaired automatically.
+  point (decided 2026-11-24; the backup copy was removed after four review
+  rounds). Protocol revision 10.1 (the v1 read-only base) now states the
+  index-loss rules; the code follows 4.5 as written. An absent `vault:parts` is
+  a valid empty list. A valid index is never an index loss. An absent index is a
+  loss while `vault:parts` lists the partition or is present but not a valid
+  list. A malformed index is a loss only while `vault:parts` lists the partition
+  or is not a valid list; with a valid list that does not name it the build is
+  NONE for the partition, exactly as for an absent index. In a loss the call is
+  read-only (no write, no gc, no creation, no arming), HandoverStatus reports
+  problems bit 6 and `partition_state` 7, and the build keeps signing by direct
+  read. Rev 10.1 G2 and G2b: with `vault:parts` malformed and the index absent
+  or malformed, a build whose `vault:succ` holds a non-withdrawal record above
+  OWN_VERSION answers every read and change Moved(that record) and never
+  direct-reads (also at the consent answer of a pending Export). After a failed
+  write the rest of the call is read-only (the `WriteLatch`).
+  **Direct read** (4.5): a slot is served only when BOTH parity copies
+  authenticate (present, parse exactly as an entry, expected kind, eflags 0, the
+  requested key, content length 32 for a key and 100 for a caller mark) and are
+  byte-identical, extension included. Anything else, including one copy, two
+  different copies and no copy, answers storage failure for that slot; it never
+  answers Absent and never reads `vault:gc`. Export by the same rule, behind
+  consent every time. A slot that answers storage failure cannot be exported in
+  v1. **ResetPartition was removed** (0x88 is reserved for Reindex in v1.1); no
+  state offers a repair, and the index is never rebuilt in v1.
 - **The host fault model (freenet-core #5857), and the defences it made
-  unnecessary.** A secret read that fails with an I/O error POISONS THE CALL in
+  unnecessary.** (Statements below about Reset, the orphan-slot probe and the
+  "one distinct value" direct read are superseded by the revision 10.1 entries
+  above and at the end of this section.) A secret read that fails with an I/O error POISONS THE CALL in
   core: every later `set_secret`, `remove_secret` and `create_delegate` in that
   call is refused and the call's result is discarded and retried. So in a call
   that completes, a `None` read means the secret really is absent, and a
@@ -223,6 +214,55 @@ Storage and formats:
   first only when it reads as absent (possibly undecryptable), and then only
   while the damaged index still reads, so a crash leaves a damaged index and
   never a partition that looks new (a sweep checks every crash point).
+- **Revision 10.1 alignment (supersedes the Reset, orphan-probe and
+  one-distinct-value notes above).**
+  *The mirror (4.2).* A change to a WRITER follows four steps: (1) for an
+  identity the index does not name, remove both parity names and read them back
+  as absent, refusing the change if one will not clear; (2) write the new value
+  to the parity the index does not name; (3) commit the index, which the answer
+  depends on; (4) write the same bytes to the other parity. A failed step 4 is
+  not an error: the slot is served from the index and is unavailable to direct
+  read until the sweep or the slot's next change. A 4.3 flag rewrite and the
+  read-drop of an unparseable entry follow the same steps. A change never uses
+  `vault:gc`. Receivers (index state RECEIVING) write single copies.
+  *Delete (4.2).* List both parity names in `vault:gc`; remove the mirror and
+  read it back as absent, refusing if it is still there; commit the index
+  without the slot; gc removes the other copy. gc works by identity: a name whose
+  identity the committed index names is never removed (it is dropped from the
+  list).
+  *Mirror sweep (7.7).* `Store::mirror_sweep` writes a missing or different
+  mirror from the named copy after checking that copy against the index digest;
+  it does not run while sealed, in read-only mode, or without a verified index.
+  It runs on every Poke (the courier pokes on each load). The library keeps no
+  progress, so nothing is ever marked finished and a call that fails marks
+  nothing; the spec's "after start and after take-over" is the poke here.
+  *Listing (4.2).* Only a WRITER or SEALED index is listed, and the commit that
+  makes an index WRITER reads it back and lists the partition (and reads the
+  listing back) before the change answers; if either fails the change answers
+  Refused(12) and the call is read-only. An armed NONE index is never listed.
+  The catch-all in `process` lists a valid WRITER or SEALED index first and
+  answers nothing if that write or its read-back fails (G3). A malformed
+  `vault:parts` is left untouched. `open` no longer lists anything.
+  *Remove before write.* `replace_secret` is used for `vault:parts`, the gc
+  lists, `vault:succ`, every entry name and the index of an unlisted partition;
+  the index of a listed partition is never written while it reads as absent.
+  `vault:x` and `vault:rx` belong to the handover and are not built.
+  *Residuals, accepted for v1 (spec 4.4, 4.5):* I2-two-index-lost (the index and
+  `vault:parts` both lost or undecryptable make the partition look NONE, and a
+  creation or ARM can then write a fresh index; the keys stay on disk but a slot
+  is served only if both its copies still pair, and a slot whose copies were not
+  mirrored is unavailable); I7-retired-still-listed (a retired build that
+  crashed between its RETIRED index write and unlisting stays listed; liveness
+  only, handover); I7-sealed-predecessor-index-lost, label G4 (a SEALED, listed
+  predecessor whose index is lost reports state 7 and never answers Query, so
+  its successor stays awaiting retirement: reads work, changes are Busy on that
+  node; one fault, in the v1.1 repair scope); the restore class (restores of an
+  index with the entry it names, of `vault:succ`, or of one entry are
+  consistent and undetectable); and an unavailable slot after a double fault (a
+  slot whose last change or Delete had not finished, or whose mirror was not yet
+  written, answers storage failure under index loss: an accepted availability
+  loss, never a wrong key).
+
 - **A secret that is gone is Missing, never corrupt.** When the index
   names an entry but `get_secret` returns nothing (a wipe or restore of that
   secret), the vault changes and
