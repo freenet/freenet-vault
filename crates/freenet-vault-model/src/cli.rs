@@ -63,6 +63,9 @@ fn run_cli_inner(args: Vec<String>) {
     let mut directed_trace = false;
     let mut full_trace = false;
     let mut mutants = false;
+    // seeds added to the coverage seeds (an implementation whose schedules
+    // differ from the model's reaches some counters on other seeds)
+    let mut more_coverage: Vec<u64> = vec![];
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -112,6 +115,13 @@ fn run_cli_inner(args: Vec<String>) {
             }
             "--quiesce-shuffle" => cfg.quiesce_shuffle = true,
             "--heal" => cfg.params.heal = true,
+            "--coverage-seeds" => {
+                i += 1;
+                more_coverage = args[i]
+                    .split(',')
+                    .map(|x| x.parse().expect("a seed"))
+                    .collect();
+            }
             "--g2-condition-3-only" => crate::store::G2_ALSO_CONDITION_2.with(|c| c.set(false)),
             a => panic!("unknown argument {a}"),
         }
@@ -206,6 +216,7 @@ fn run_cli_inner(args: Vec<String>) {
     let extra: std::collections::BTreeSet<u64> = COVERAGE_SEEDS
         .iter()
         .map(|(s, _)| *s)
+        .chain(more_coverage.iter().copied())
         .filter(|s| !(start..start + seeds).contains(s))
         .collect();
     for seed in (start..start + seeds).chain(extra.iter().copied()) {

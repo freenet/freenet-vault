@@ -786,7 +786,12 @@ impl Tables {
         let _ = from;
         let mut b = bytes.expect("a model frame encodes");
         if malformed {
-            b.extend_from_slice(&[0xBA, 0xD0, 0xBA]);
+            // damage the body, not the frame: the frame still parses (so
+            // the receiver answers it), its body does not
+            let f = WFrame::decode(&b).expect("a frame just encoded");
+            let (ft, mut body) = (f.frame_type, f.body.to_vec());
+            body.extend_from_slice(&[0xBA, 0xD0, 0xBA]);
+            b = frame::encode(ft, &body).expect("a damaged body still frames");
         }
         b
     }
@@ -948,9 +953,4 @@ pub fn cstatus_code(s: CStatus) -> u8 {
 
 pub fn cstatus_of(c: u8) -> Option<CStatus> {
     CStatus::ALL.iter().copied().find(|s| cstatus_code(*s) == c)
-}
-
-#[allow(dead_code)]
-fn unused() {
-    let _ = frame::encode;
 }
