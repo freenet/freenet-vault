@@ -75,6 +75,7 @@ impl<H: Host> Host for WriteLatch<'_, H> {
     }
     fn set_secret(&mut self, key: &[u8], value: &[u8]) -> bool {
         if self.failed {
+            crate::hit!("4.5/write-refused-after-failed-write");
             return false;
         }
         let ok = self.inner.set_secret(key, value);
@@ -82,7 +83,11 @@ impl<H: Host> Host for WriteLatch<'_, H> {
         ok
     }
     fn remove_secret(&mut self, key: &[u8]) -> bool {
-        !self.failed && self.inner.remove_secret(key)
+        if self.failed {
+            crate::hit!("4.5/write-refused-after-failed-write");
+            return false;
+        }
+        self.inner.remove_secret(key)
     }
     fn read_context(&self) -> Vec<u8> {
         self.inner.read_context()

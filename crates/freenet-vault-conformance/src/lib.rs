@@ -37,7 +37,7 @@ use freenet_vault::trace::{self as ltrace, Ev};
 use freenet_vault::Host as LibHost;
 use freenet_vault_common::frame::{self, types, Frame as WFrame};
 use freenet_vault_common::ops::{
-    BatchItem, OpResult, Operation, Request, RequestHeader, SubmitRecord,
+    BatchItem, CallerProof, OpResult, Operation, Request, RequestHeader, SubmitRecord,
 };
 use freenet_vault_common::status::{
     partition_state as ps, record_state, step_result, Poke, Status as WStatus,
@@ -140,6 +140,7 @@ struct BHost<'a, 'b> {
     ctx: Vec<u8>,
     seed: Option<[u8; 32]>,
     rng: u64,
+    removed_undecryptable: Option<SName>,
 }
 
 impl LibHost for BHost<'_, '_> {
@@ -157,6 +158,14 @@ impl LibHost for BHost<'_, '_> {
             )
         });
         let v = self.t.borrow_mut().decode(self.own, n, value);
+        if self.removed_undecryptable.take() == Some(n) {
+            EVENTS.with(|b| {
+                b.borrow_mut().push(Ev::Hit(format!(
+                    "4.2/remove-before-write/{}",
+                    build::sname_kind(&n)
+                )))
+            });
+        }
         let fired = self.h.faults.fired.len();
         let r = self.h.set(n, v);
         if self.h.faults.fired.len() > fired {
@@ -174,6 +183,9 @@ impl LibHost for BHost<'_, '_> {
             return false;
         };
         let present = self.h.store.secrets.contains_key(&n);
+        if matches!(self.h.store.secrets.get(&n), Some(SVal::Undecryptable)) {
+            self.removed_undecryptable = Some(n);
+        }
         let fired = self.h.faults.fired.len();
         let r = self.h.del(n);
         if self.h.faults.fired.len() > fired {
@@ -255,6 +267,7 @@ impl BuildImpl for LibBuild {
             own: def.v,
             ctx: vol.ext.clone(),
             seed: None,
+            removed_undecryptable: None,
             rng: 0x5eed ^ def.v as u64,
         };
         let r = catch_unwind(AssertUnwindSafe(|| drive(&d, def, &mut bh, input)));
@@ -303,7 +316,7 @@ impl BuildImpl for LibBuild {
                 cov.hit("4.0/write-refused-after-failed-read");
             }
         }
-        let (reply, hops) = finish(&t, def, host.store, out);
+        let (reply, hops) = finish(&t, def, host.store, out, poisoned);
         if let Reply::Frame(Frame::Ack { status, .. }) = &reply {
             cov.hit(&format!("sent/Ack/{status:?}"));
         }
@@ -456,15 +469,49 @@ fn drive(d: &freenet_vault::Domain, def: &BuildDef, h: &mut BHost, input: Input)
                     };
                     frame::encode(ft, &body).expect("frame encodes")
                 }
-                Op::RaiseMark { caller, rec } => SubmitRecord {
-                    header: header(1),
-                    author_vk: codec::caller_vk(*caller),
-                    app_id: codec::caller_app(*caller).to_vec(),
-                    record: codec::caller_record(*caller, *rec),
-                    ext: vec![],
+                Op::RaiseMark { caller, rec } => {
+                    // The caller's own build (record version `rec`) submits
+                    // its record: the caller proof raises the mark (9), as
+                    // any request from a newer caller build does.
+                    let record = codec::caller_record(*caller, *rec);
+                    let payload = SubmitRecord {
+                        header: RequestHeader {
+                            request_id: 1,
+                            proof: Some(CallerProof {
+                                author_vk: codec::caller_vk(*caller),
+                                app_id: codec::caller_app(*caller).to_vec(),
+                                record,
+                            }),
+                        },
+                        author_vk: codec::caller_vk(*caller),
+                        app_id: codec::caller_app(*caller).to_vec(),
+                        record,
+                        ext: vec![],
+                    }
+                    .encode()
+                    .expect("submit encodes");
+                    let code =
+                        freenet_vault_common::record::PointerRecord::decode(&record).code_hash;
+                    let key = DelegateKey::new(
+                        freenet_vault_common::hash::delegate_key_empty_params(&code),
+                        CodeHash::new(code),
+                    );
+                    let out = run(
+                        d,
+                        h,
+                        Some(MessageOrigin::Delegate(key.clone())),
+                        InboundDelegateMsg::DelegateMessage(DelegateMessage::new(
+                            dkey(def.v),
+                            key,
+                            payload,
+                        )),
+                    );
+                    let reply = out.iter().find_map(|m| match m {
+                        OutboundDelegateMsg::SendDelegateMessage(dm) => Some(dm.payload.clone()),
+                        _ => None,
+                    });
+                    return Raw::Op(op, reply);
                 }
-                .encode()
-                .expect("submit encodes"),
             };
             let out = from_page(d, h, payload);
             if matches!(op, Op::Export { .. }) {
@@ -493,6 +540,7 @@ fn finish(
     def: &BuildDef,
     store: &Store,
     raw: Raw,
+    poisoned: bool,
 ) -> (Reply, Vec<(Ver, Frame)>) {
     let mut tb = t.borrow_mut();
     let hops_of = |tb: &mut Tables, msgs: &[OutboundDelegateMsg], skip_reply: bool| {
@@ -533,7 +581,7 @@ fn finish(
                 None => Reply::None,
                 Some(bytes) => match decode_status(&bytes) {
                     Some(WStatus::Handover(h)) => {
-                        Reply::Status(tb.status(def.v, store, &h, !hops.is_empty()))
+                        Reply::Status(tb.status(def.v, store, &h, !hops.is_empty(), poisoned))
                     }
                     other => {
                         tb.finding(format!("build {} answered a Poke with {other:?}", def.v));
@@ -568,6 +616,7 @@ impl Tables {
         store: &Store,
         h: &freenet_vault_common::status::HandoverStatus,
         sent: bool,
+        poisoned: bool,
     ) -> Status {
         let index_lost = h.partition_state == ps::UNKNOWN_INDEX_LOST;
         let state = if index_lost {
@@ -578,7 +627,8 @@ impl Tables {
                 .map(|i| i.state.clone())
                 .unwrap_or_else(PState::none)
         };
-        if !index_lost {
+        // a poisoned call (4.0) is discarded: its reads may have missed
+        if !index_lost && !poisoned {
             let want = match &state {
                 PState::None { armed: Some(_), .. } => ps::NONE_ARMED,
                 PState::None { .. } => ps::NONE,
@@ -654,6 +704,14 @@ impl Tables {
             Ok(WStatus::Busy { .. }) => OpRes::Busy,
             Ok(WStatus::Absent { .. }) => OpRes::Absent,
             Ok(WStatus::Unusable { .. }) => OpRes::Unusable,
+            // a caller build below its stored mark: the model's RaiseMark
+            // answers Ok when the mark is already at or above it
+            Ok(WStatus::Refused { reason, .. })
+                if matches!(op, Op::RaiseMark { .. })
+                    && reason == freenet_vault_common::status::refused::CALLER_NOT_AUTHORIZED =>
+            {
+                OpRes::Ok
+            }
             Ok(WStatus::Refused { reason, .. }) => OpRes::Refused(reason),
             // a caller record (RaiseMark): raised, or already at or above
             Ok(WStatus::Handover(h)) => match h.step_result {

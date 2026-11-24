@@ -221,7 +221,13 @@ impl<'a, H: Host> Store<'a, H> {
             None if listed => Some(StoredIndexMalformed(IndexFault::LostWhileListed)),
             Some(_) if listed => Some(StoredIndexMalformed(IndexFault::Damaged)),
             Some(_) if malformed => Some(StoredIndexMalformed(IndexFault::DamagedPartsMalformed)),
-            _ => None,
+            Some(_) => {
+                // revision 10, F14: a malformed index of an unlisted partition
+                // is NONE
+                hit!("4.5/malformed-index-unlisted-reads-none");
+                None
+            }
+            None => None,
         }
     }
 
