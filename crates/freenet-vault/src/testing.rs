@@ -14,7 +14,30 @@
 //! that a sibling record says should exist.
 
 use crate::host::Host;
+use freenet_vault_common::entry::Entry;
 use std::collections::{BTreeMap, BTreeSet};
+
+/// A frame type no release uses (testing builds only): a page asks the vault
+/// to store the body, an entry's bytes, as a change. It stands for a build
+/// whose code writes an entry kind this library does not serve, with an
+/// extension (protocol 15.1).
+pub const PUT_UNKNOWN: u8 = 0xFE;
+
+/// A receiver's mark policy for one thread (testing builds only):
+/// `(own_version, entry) -> accepted`. `None` uses the real policy.
+pub type MarkPolicy = fn(u32, &Entry) -> bool;
+
+thread_local! {
+    static MARK_POLICY: std::cell::Cell<Option<MarkPolicy>> = const { std::cell::Cell::new(None) };
+}
+
+pub fn set_mark_policy(p: Option<MarkPolicy>) {
+    MARK_POLICY.with(|c| c.set(p));
+}
+
+pub fn mark_policy() -> Option<MarkPolicy> {
+    MARK_POLICY.with(|c| c.get())
+}
 
 /// What a `set_secret` call does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

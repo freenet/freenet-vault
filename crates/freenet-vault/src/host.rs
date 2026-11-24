@@ -38,7 +38,9 @@ pub trait Host {
 /// really is absent the removal changes nothing. Never used for the index of an
 /// existing partition (a verified index decrypts).
 pub fn replace_secret<H: Host>(host: &mut H, name: &[u8], value: &[u8]) -> bool {
-    if host.get_secret(name).is_none() {
+    if host.get_secret(name).is_none()
+        && !crate::trace::mutant(crate::trace::Mutant::WriteWithoutRemove)
+    {
         let _ = host.remove_secret(name);
     }
     host.set_secret(name, value)

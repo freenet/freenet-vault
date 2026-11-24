@@ -43,8 +43,9 @@ pub struct Domain {
     pub app_id: &'static [u8],
     /// This build's version.
     pub own_version: u32,
-    /// Every signed non-withdrawal version below `own_version`, as
-    /// `(version, delegate key)`. Unused until the handover is built.
+    /// Every signed non-withdrawal version below `own_version`, published or
+    /// reserved, as `(version, code hash)`. The build's delegate key is that
+    /// code hash with empty parameters (protocol 2, 10).
     pub predecessors: &'static [(u32, [u8; 32])],
     /// Containers whose pages are the domain's own pages.
     pub page_containers: &'static [PageContainer],

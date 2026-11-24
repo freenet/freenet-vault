@@ -11,6 +11,9 @@ publish.workspace = true
 # An in-memory `Host` with fault injection, for tests in this crate and in
 # domain crates.
 testing = []
+# Coverage counters, transition notes and mutation switches for the
+# conformance harness (`trace` module). Never on in a release build.
+trace = []
 
 [dependencies]
 freenet-vault-common.workspace = true

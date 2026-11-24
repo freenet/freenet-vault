@@ -8,8 +8,10 @@ use crate::crypto;
 use crate::domain::Domain;
 use crate::host::Host;
 use crate::storage::index::State;
+use crate::hit;
 use crate::storage::{rescue_export_seed, PutError, Quota, Read, Store};
-use crate::succ::{accept_record, Succ};
+use crate::succ::Succ;
+use crate::trace::{self, Mutant, Note};
 use freenet_vault_common::bounds::FORBIDDEN_SIGNING_PREFIX;
 use freenet_vault_common::codec::Malformed;
 use freenet_vault_common::entry::{Entry, KIND_CALLER_MARK, KIND_KEY};
@@ -19,10 +21,7 @@ use freenet_vault_common::ops::{
     ITEM_FORBIDDEN_SIGNING_DOMAIN, ITEM_OK, LIST_CORRUPT, LIST_OK, LIST_UNUSABLE,
 };
 use freenet_vault_common::record::PointerRecord;
-use freenet_vault_common::status::{
-    partition_state, poke_flags, problems, refused, step_result, unusable, HandoverStatus, Poke,
-    Status,
-};
+use freenet_vault_common::status::{problems, refused, step_result, unusable, Status};
 use zeroize::Zeroizing;
 
 /// What a request produces.
@@ -86,7 +85,8 @@ pub fn handle_page<H: Host>(
     };
     let rid = peek_request_id(frame.frame_type, frame.body);
     match frame.frame_type {
-        types::POKE => poke(domain, host, domain.is_own_page(id), frame.body),
+        // Handled by `handover::poke` in `process` (it can send hops).
+        types::POKE => refusal(rid, refused::UNKNOWN_FRAME),
         types::SUBMIT_RECORD => {
             let s = match SubmitRecord::decode(frame.body) {
                 Ok(s) => s,
@@ -96,6 +96,13 @@ pub fn handle_page<H: Host>(
                 Ok(c) => submit_record(domain, host, &c, &s),
                 Err(reason) => refusal(rid, reason),
             }
+        }
+        #[cfg(any(test, feature = "testing"))]
+        crate::testing::PUT_UNKNOWN => {
+            if !domain.is_own_page(id) {
+                return refusal(rid, refused::CALLER_NOT_AUTHORIZED);
+            }
+            put_unknown(domain, host, frame.body)
         }
         t if is_operation(t) => {
             if !domain.is_own_page(id) {
@@ -205,19 +212,33 @@ fn route<H: Host>(
     let ix = &store.index;
     match ix.state {
         State::None => {
-            // Re-checked at creation: still armed with a valid record and no
-            // non-withdrawn record above OWN_VERSION known (a malformed
-            // stored record counts as unknown, so it never creates).
-            // A stopped domain (a withdrawal above the current record) neither
-            // arms nor creates, whenever the arming happened.
-            let no_newer = succ
-                .as_ref()
-                .is_some_and(|s| s.successor().is_none() && !s.stopped());
-            if is_change && no_newer && armed_ok(domain, &ix.armed) {
-                Route::Create
-            } else {
-                elsewhere()
+            // Re-checked at creation (5.1, 5.3): still armed with a valid
+            // record, every predecessor confirmed under it, no non-withdrawn
+            // record above OWN_VERSION (the creation bar, 3), a readable
+            // `vault:succ` (a malformed one never creates), and the domain not
+            // stopped here (a stopped domain neither arms nor creates,
+            // whenever the arming happened).
+            if is_change && armed_ok(domain, &ix.armed) {
+                match succ {
+                    _ if succ.as_ref().is_some_and(|s| s.successor().is_some()) => {
+                        hit!("3/creation-bar-refused-create");
+                    }
+                    _ if !crate::handover::all_confirmed(domain, ix) => {
+                        hit!("5.3/create-refused-unconfirmed");
+                    }
+                    None => hit!("3/record-malformed-refused-create"),
+                    Some(s) if s.stopped() && !trace::mutant(Mutant::CreateWhileStopped) => {
+                        hit!("3/create-refused-stopped");
+                    }
+                    Some(s) => {
+                        if s.stopped() {
+                            hit!("mutant/created-while-stopped");
+                        }
+                        return Route::Create;
+                    }
+                }
             }
+            elsewhere()
         }
         State::Writer => Route::Serve {
             sealed: false,
@@ -486,6 +507,9 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
     );
     let succ = Succ::load(domain, host).ok();
     let fault = Store::fault(&*host, &domain.partition());
+    if let Some(f) = fault {
+        lost_hits(&*host, domain, f);
+    }
     let mut store = match fault {
         None => match Store::open(host, domain.partition()) {
             Ok(s) => s,
@@ -496,8 +520,18 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
         // record may have retired: it answers Moved and never direct-reads
         // (rev 10.1, G2 and G2b).
         Some(f)
-            if f.0.parts_malformed() && succ.as_ref().is_some_and(|s| s.successor().is_some()) =>
+            if f.0.parts_malformed()
+                && succ.as_ref().is_some_and(|s| s.successor().is_some())
+                && !(trace::mutant(Mutant::DirectReadDespiteSuccessor) && !is_change) =>
         {
+            hit!(
+                "{}",
+                if matches!(f.0, crate::storage::IndexFault::DamagedPartsMalformed) {
+                    "4.5/g2b-condition-2-successor-moved"
+                } else {
+                    "4.5/g2-condition-3-successor-moved"
+                }
+            );
             let record = succ.as_ref().and_then(|s| s.successor()).expect("checked");
             return status(Status::Moved {
                 request_id: rid,
@@ -508,32 +542,38 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
         Some(_) => match (&req.op, caller) {
             // A page may rescue a key with Export, behind the consent prompt.
             (Operation::Export { slot }, Caller::Page { id }) => {
-                return ask(domain, host, id, rid, slot)
+                hit!("4.5/lost/export");
+                return ask(domain, host, id, rid, slot);
             }
             // Signing does not stop: the entry is found by its two parity
             // copies.
             (Operation::PublicKey { .. } | Operation::Batch { .. }, _) => {
+                hit!("4.5/lost/read");
                 Store::open_blind(host, domain.partition())
             }
-            _ => return refusal(rid, refused::STORAGE_FAILURE),
+            _ => {
+                hit!("4.5/lost/change-refused");
+                return refusal(rid, refused::STORAGE_FAILURE);
+            }
         },
     };
-    let (sealed, changes_busy, creating) = match route(domain, &store, &succ, is_change, rid) {
+    if !store.is_blind() {
+        row_hit(&store, if is_change { "change" } else { "read" });
+    }
+    let (sealed, changes_busy) = match route(domain, &store, &succ, is_change, rid) {
         Route::Answer(s) => return status(s),
-        Route::Create => (false, false, true),
+        Route::Create => {
+            if let Err(o) = create(domain, &mut store, rid) {
+                return o;
+            }
+            (false, false)
+        }
         Route::Serve {
             sealed,
             changes_busy,
-        } => (sealed, changes_busy, false),
+        } => (sealed, changes_busy),
     };
-
-    // Applied to the index in the commit that stores the first entry.
-    let create = move |ix: &mut crate::storage::index::Index| {
-        if creating {
-            ix.state = State::Writer;
-            ix.armed = None;
-        }
-    };
+    let create = |_: &mut crate::storage::index::Index| {};
 
     if let Some(o) = gate_caller(
         domain,
@@ -830,8 +870,13 @@ pub fn export_answer<H: Host>(
         // copies themselves, and only when exactly one decodes.
         return Some(
             match rescue_export_seed(host, &domain.partition(), &pending.slot) {
-                Some(seed) => reply(OpResult::Export { seed }.encode(rid), rid),
-                None => refusal(rid, refused::STORAGE_FAILURE),
+                Ok(Some(seed)) => reply(OpResult::Export { seed }.encode(rid), rid),
+                Ok(None) => status(Status::Absent {
+                    request_id: rid,
+                    partition: domain.partition(),
+                    slot: pending.slot.clone(),
+                }),
+                Err(_) => refusal(rid, refused::STORAGE_FAILURE),
             },
         );
     };
@@ -850,172 +895,109 @@ pub fn export_answer<H: Host>(
     )
 }
 
-fn partition_state_of(store_state: State, armed: bool, awaiting: bool) -> u8 {
-    match store_state {
-        State::None if armed => partition_state::NONE_ARMED,
-        State::None => partition_state::NONE,
-        State::Writer if awaiting => partition_state::WRITER_AWAITING,
-        State::Writer => partition_state::WRITER,
-        State::Sealed => partition_state::SEALED,
-        State::Receiving => partition_state::RECEIVING,
-        State::Retired => partition_state::RETIRED,
-    }
+/// The 5.1 row a request hits, by the model's counter names.
+fn row_hit<H: Host>(store: &Store<H>, kind: &str) {
+    let ix = &store.index;
+    let st = match ix.state {
+        State::None => "NONE",
+        State::Writer if ix.awaiting_retirement => "WRITER(awaiting)",
+        State::Writer => "WRITER",
+        State::Sealed => "SEALED",
+        State::Receiving => "RECEIVING",
+        State::Retired => "RETIRED",
+    };
+    let _ = (st, kind);
+    hit!("5.1/{st}/{kind}");
 }
 
-/// `problems` bits for an unknown index state: storage failure, and bit 6 when
-/// the index is lost (protocol 4.5).
-fn fault_bits<H: Host>(host: &H, partition: &[u8; 32]) -> u8 {
-    match Store::fault(host, partition) {
-        Some(_) => problems::STORAGE_FAILURE | problems::INDEX_LOST,
-        None => 0,
-    }
-}
-
-fn handover_status<H: Host>(
-    domain: &Domain,
-    succ: Option<&Succ>,
-    store: Option<&Store<H>>,
-    step: u8,
-    extra_problems: u8,
-    own_page: bool,
-) -> Outcome {
-    let (record_state, floor) = match succ {
-        Some(s) => (s.record_state(), s.floor(domain.own_version)),
-        None => (
-            freenet_vault_common::status::record_state::STORED_MALFORMED,
-            domain.own_version,
-        ),
-    };
-    let mut h = HandoverStatus {
-        request_id: 0,
-        own_version: domain.own_version,
-        floor_version: floor,
-        record_state,
-        step_result: step,
-        partition_state: 0,
-        peer_record: [0; 100],
-        receiving_from: 0,
-        taken_over_from: 0,
-        taken_over_manifest: [0; 32],
-        manifest_digest: [0; 32],
-        problems: extra_problems,
-        lost_entries: 0,
-    };
-    if let Some(s) = store {
-        let ix = &s.index;
-        h.partition_state =
-            partition_state_of(ix.state, ix.armed.is_some(), ix.awaiting_retirement);
-        h.peer_record = ix.peer_record.unwrap_or([0; 100]);
-        h.problems |= ix.problems;
-        if s.saw_missing() {
-            h.problems |= problems::CORRUPT_OR_LOST;
+/// Coverage counters for a call in read-only mode (4.5).
+fn lost_hits<H: Host>(host: &H, domain: &Domain, f: crate::storage::StoredIndexMalformed) {
+    let _ = (host, domain, f);
+    hit!("4.5/index-lost-call");
+    match f.0 {
+        crate::storage::IndexFault::LostWhileListed | crate::storage::IndexFault::PartsUnreadable => {
+            hit!("4.5/index-absent-while-listed")
         }
-        h.lost_entries = ix.lost_entries;
-    } else {
-        h.problems |= problems::STORAGE_FAILURE;
-        // Index lost (bit 6): state 7, unknown (protocol 4.5). A build in this
-        // state is never NONE, so no other build is armed while it holds keys.
-        if h.problems & problems::INDEX_LOST != 0 {
-            h.partition_state = partition_state::UNKNOWN_INDEX_LOST;
+        crate::storage::IndexFault::Damaged
+            if crate::storage::parts_lists(host, &domain.partition()) =>
+        {
+            hit!("4.5/malformed-index-listed-lost")
         }
+        _ => hit!("4.5/malformed-index-parts-not-valid-list-lost"),
     }
-    if !own_page {
-        h = h.redacted();
-    }
-    status(Status::Handover(h))
 }
 
-/// Poke (protocol 6, first row): records from any page; flags only from the
-/// domain's own pages. Only flag bit 1 (arm) is implemented; the other bits
-/// belong to the handover.
-fn poke<H: Host>(domain: &Domain, host: &mut H, own_page: bool, body: &[u8]) -> Outcome {
-    let p = match Poke::decode(body) {
-        Ok(p) => p,
-        Err(_) => return refusal(0, refused::MALFORMED),
-    };
-    if p.partition != domain.partition() {
-        return refusal(0, refused::MALFORMED);
-    }
-    // Index loss: no record storage either (spec 4.5: no writes), so the guard
-    // comes before record acceptance and before the repair of a malformed
-    // `vault:succ`. The status still reports the loss.
-    if Store::fault(&*host, &domain.partition()).is_some() {
-        let bits = fault_bits(&*host, &domain.partition());
-        let succ = Succ::load(domain, host).ok();
-        return handover_status::<H>(
-            domain,
-            succ.as_ref(),
-            None,
-            step_result::NOTHING,
-            bits,
-            own_page,
-        );
-    }
-    let mut succ = match Succ::load(domain, host) {
-        Ok(s) => s,
-        // A `vault:succ` that no longer verifies is replaced by a record that
-        // does (it verifies itself); without one, no record handling and no
-        // flags.
-        Err(_) => {
-            if let Some(fresh) = p.record.as_ref().and_then(|r| repair_succ(domain, host, r)) {
-                fresh
-            } else {
-                let bits = fault_bits(&*host, &domain.partition());
-                let store = Store::open(host, domain.partition()).ok();
-                return handover_status(
-                    domain,
-                    None,
-                    store.as_ref(),
-                    step_result::NOTHING,
-                    bits,
-                    own_page,
-                );
+/// Creates the partition (5.1, 5.3): the first commit is an EMPTY WRITER
+/// index, listed and read back (inside `Store::commit`), before the change is
+/// served. A refused listing answers Refused(12) and leaves no key.
+fn create<H: Host>(domain: &Domain, store: &mut Store<H>, rid: u64) -> Result<(), Outcome> {
+    let r = store.update(|ix| {
+        ix.state = State::Writer;
+        ix.armed = None;
+        ix.ho = Default::default();
+    });
+    if r.is_err() {
+        let landed = store.index.state == State::Writer;
+        if landed && trace::mutant(Mutant::AnswerBeforeListing) {
+            hit!("mutant/creating-change-before-listing");
+        } else {
+            if landed {
+                hit!("4.2/creation-not-listed-refused-12");
             }
+            return Err(refusal(rid, refused::STORAGE_FAILURE));
         }
+    }
+    hit!("5.1/created");
+    trace::note(Note::Created);
+    if !domain.predecessors.is_empty() {
+        hit!("5.3/created-after-every-predecessor-confirmed");
+    }
+    Ok(())
+}
+
+/// The testing-only operation that writes an entry of a kind this library
+/// does not serve, with an extension (protocol 15.1: a build that adds an
+/// unknown entry kind). The body is the entry's bytes. It is routed exactly
+/// like a change.
+#[cfg(any(test, feature = "testing"))]
+fn put_unknown<H: Host>(domain: &Domain, host: &mut H, body: &[u8]) -> Outcome {
+    let rid = 0;
+    let Ok(e) = Entry::decode(body) else {
+        return refusal(rid, refused::MALFORMED);
     };
-    let mut extra = 0;
-    let mut step = step_result::NOTHING;
-    if let Some(r) = &p.record {
-        let a = accept_record(domain, host, &mut succ, r);
-        step = a.step_result;
-        if a.storage_failure {
-            extra |= problems::STORAGE_FAILURE;
-        }
+    let succ = Succ::load(domain, host).ok();
+    if let Some(f) = Store::fault(&*host, &domain.partition()) {
+        lost_hits(&*host, domain, f);
+        hit!("4.5/lost/change-refused");
+        return refusal(rid, refused::STORAGE_FAILURE);
     }
     let Ok(mut store) = Store::open(host, domain.partition()) else {
-        extra |= fault_bits(&*host, &domain.partition());
-        return handover_status::<H>(domain, Some(&succ), None, step, extra, own_page);
+        return refusal(rid, refused::STORAGE_FAILURE);
     };
-    // The mirror sweep runs on a poke (the courier pokes on every load).
-    store.mirror_sweep();
-    // Any newer record clears creation arming.
-    if store.index.state == State::None
-        && store.index.armed.is_some()
-        && succ.successor().is_some()
-        && store.update(|ix| ix.armed = None).is_err()
-    {
-        extra |= problems::STORAGE_FAILURE;
-    }
-    if own_page && p.flags & poke_flags::ARM != 0 {
-        let can_arm = store.index.state == State::None
-            && succ.successor().is_none()
-            && !succ.stopped()
-            && armed_ok(domain, &p.record);
-        if can_arm && store.update(|ix| ix.armed = p.record).is_err() {
-            extra |= problems::STORAGE_FAILURE;
+    row_hit(&store, "change");
+    match route(domain, &store, &succ, true, rid) {
+        Route::Answer(s) => return status(s),
+        Route::Create => {
+            if let Err(o) = create(domain, &mut store, rid) {
+                return o;
+            }
+        }
+        Route::Serve { changes_busy, .. } => {
+            if changes_busy {
+                return status(Status::Busy {
+                    request_id: rid,
+                    partition: domain.partition(),
+                });
+            }
         }
     }
-    handover_status(domain, Some(&succ), Some(&store), step, extra, own_page)
-}
-
-/// A `vault:succ` that no longer verifies is replaced by a record that
-/// verifies and is newer than this build (the record verifies itself, so it
-/// is not trusted on the stored bytes' say-so). `None` leaves it as it is.
-/// What the unreadable store held is lost; it could not be trusted anyway.
-fn repair_succ<H: Host>(domain: &Domain, host: &mut H, record: &[u8; 100]) -> Option<Succ> {
-    let mut fresh = Succ::default();
-    let a = accept_record(domain, host, &mut fresh, record);
-    (a.step_result == step_result::RECORD_ACCEPTED && !a.storage_failure).then_some(fresh)
+    match store.put(&e, &quota(domain), |_| {}) {
+        Ok(()) => {
+            hit!("ops/unknown-kind-written");
+            reply(OpResult::Ok.encode(rid), rid)
+        }
+        Err(e) => put_error(rid, e),
+    }
 }
 
 /// SubmitRecord: a domain record (protocol 3) or a caller record that may
@@ -1052,6 +1034,7 @@ fn submit_record<H: Host>(
         let Ok(mut store) = Store::open(host, domain.partition()) else {
             return refusal(rid, refused::STORAGE_FAILURE);
         };
+        row_hit(&store, "mark");
         let (sealed, changes_busy, answer) = match route(domain, &store, &succ, false, rid) {
             Route::Serve {
                 sealed,
@@ -1075,56 +1058,13 @@ fn submit_record<H: Host>(
         }
     }
     if s.author_vk == domain.author_vk && s.app_id == domain.app_id {
-        // Index loss: no record storage (spec 4.5); the status reports the loss.
-        if Store::fault(&*host, &domain.partition()).is_some() {
-            let bits = fault_bits(&*host, &domain.partition());
-            let succ = Succ::load(domain, host).ok();
-            return with_rid(handover_status::<H>(
-                domain,
-                succ.as_ref(),
-                None,
-                step_result::NOTHING,
-                bits,
-                own_page,
-            ));
+        // A domain record (3), as on a Poke: no record storage while the
+        // index is lost (4.5) or while `vault:succ` is malformed (3).
+        let mut st = crate::handover::submit_domain_record(domain, host, &s.record, own_page);
+        if let Status::Handover(h) = &mut st {
+            h.request_id = rid;
         }
-        let mut succ = match Succ::load(domain, host) {
-            Ok(s) => s,
-            Err(_) => match repair_succ(domain, host, &s.record) {
-                Some(fresh) => fresh,
-                None => return refusal(rid, refused::STORED_RECORD_MALFORMED),
-            },
-        };
-        let a = accept_record(domain, host, &mut succ, &s.record);
-        let mut extra = if a.storage_failure {
-            problems::STORAGE_FAILURE
-        } else {
-            0
-        };
-        let store = match Store::open(host, domain.partition()) {
-            Ok(mut st) => {
-                if st.index.state == State::None
-                    && st.index.armed.is_some()
-                    && succ.successor().is_some()
-                    && st.update(|ix| ix.armed = None).is_err()
-                {
-                    extra |= problems::STORAGE_FAILURE;
-                }
-                Some(st)
-            }
-            Err(_) => {
-                extra |= fault_bits(&*host, &domain.partition());
-                None
-            }
-        };
-        return with_rid(handover_status(
-            domain,
-            Some(&succ),
-            store.as_ref(),
-            a.step_result,
-            extra,
-            own_page,
-        ));
+        return status(st);
     }
     if s.author_vk == domain.author_vk || domain.caller_delegate(&s.author_vk, &s.app_id).is_none()
     {
@@ -1187,12 +1127,17 @@ fn submit_record<H: Host>(
             }
         }
     };
-    with_rid(handover_status(
+    let extra = if store.saw_missing() {
+        problems::CORRUPT_OR_LOST
+    } else {
+        0
+    };
+    with_rid(status(crate::handover::handover_status(
         domain,
         succ.as_ref(),
-        Some(&store),
+        Some(&store.index),
         step,
-        0,
+        extra,
         own_page,
-    ))
+    )))
 }
