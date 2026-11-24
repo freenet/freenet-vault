@@ -328,6 +328,13 @@ Storage and formats:
   the lost store held (a withdrawal, say). The cost is liveness: the build
   stays at record_state 3 and refuses handover activity until the secret is
   repaired, which v1 has no operation for.
+  Decided and accepted as a v1 residual (coordinator, 2026-11-24): one
+  corruption of `vault:succ` leaves the build at record_state 3 (no handover
+  activity, reported) until v1.1. The repair belongs to the v1.1 repair scope
+  next to G4, and must be modelled before it is built. Pinned by
+  `a_verified_record_does_not_replace_a_malformed_vault_succ` (a Poke and a
+  SubmitRecord of a verified newer record both leave it untouched) and
+  `index_loss_stores_no_records`.
 - **gc never deletes a referenced entry.** Protocol 4.2 writes `vault:gc`
   before the index. If that index write then fails, `vault:gc` names a copy
   the index still references; processing it as written would delete a live

@@ -639,6 +639,19 @@ fn a_verified_record_does_not_replace_a_malformed_vault_succ() {
     assert_eq!(s.step_result, step_result::NOTHING);
     assert_eq!(s.record_state, record_state::STORED_MALFORMED);
     assert_eq!(h.secrets[names::SUCC], vec![9, 9, 9]);
+    // SubmitRecord of the same verified, newer record is refused, not stored.
+    let sub = SubmitRecord {
+        header: page_header(4),
+        author_vk: domain().author_vk,
+        app_id: b"test.vault".to_vec(),
+        record: domain_record(2, [0x22; 32]),
+        ext: vec![],
+    };
+    assert_eq!(
+        page(&mut h, sub.encode().unwrap()),
+        refused(4, refused::STORED_RECORD_MALFORMED)
+    );
+    assert_eq!(h.secrets[names::SUCC], vec![9, 9, 9]);
 }
 
 #[test]

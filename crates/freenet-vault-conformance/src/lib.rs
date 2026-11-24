@@ -550,9 +550,12 @@ fn finish(
         for m in msgs {
             if let OutboundDelegateMsg::SendDelegateMessage(dm) = m {
                 let to = tb.ver_of_key(dm.target.bytes());
-                let Some(f) = tb.wire_to_frame(def.v, &dm.payload) else {
-                    tb.finding(format!("build {} sent an undecodable hop", def.v));
-                    continue;
+                let f = match tb.wire_to_frame(def.v, &dm.payload) {
+                    Ok(f) => f,
+                    Err(why) => {
+                        tb.finding(format!("build {} sent an undecodable hop: {why}", def.v));
+                        continue;
+                    }
                 };
                 let is_reply = matches!(f, Frame::Ack { .. } | Frame::CompleteAck { .. });
                 if skip_reply && is_reply && reply.is_none() {

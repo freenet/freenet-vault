@@ -239,9 +239,9 @@ pub struct Tables {
     pk: HashMap<[u8; 32], u32>,
     keys: HashMap<[u8; 32], Ver>,
     tids: HashMap<[u8; 32], (Ver, Rec)>,
-    /// The exact bytes last written for (name, value): the library reads
-    /// back what it wrote even where the model's value is coarser.
-    exact: HashMap<(SName, String), Vec<u8>>,
+    /// The exact bytes last written by a build for (name, value): the library reads
+    /// back what it wrote even where the model's value is coarser. Keyed by the build: a record the index holds (`own_record`) names it.
+    exact: HashMap<(Ver, SName, String), Vec<u8>>,
     pub lossy: BTreeMap<String, u64>,
     pub findings: Vec<String>,
 }
@@ -467,12 +467,12 @@ impl Tables {
                 *self.lossy.entry(k).or_insert(0) += 1;
             }
         }
-        self.exact.insert((n, format!("{v:?}")), b.to_vec());
+        self.exact.insert((own, n, format!("{v:?}")), b.to_vec());
         v
     }
 
     pub fn encode(&mut self, own: Ver, n: SName, v: &SVal) -> Vec<u8> {
-        if let Some(b) = self.exact.get(&(n, format!("{v:?}"))) {
+        if let Some(b) = self.exact.get(&(own, n, format!("{v:?}"))) {
             return b.clone();
         }
         self.encode_raw(own, n, v)
@@ -812,15 +812,18 @@ impl Tables {
     }
 
     /// A wire frame build `sender` sent, as the model's frame.
-    pub fn wire_to_frame(&mut self, _sender: Ver, b: &[u8]) -> Option<Frame> {
+    pub fn wire_to_frame(&mut self, _sender: Ver, b: &[u8]) -> Result<Frame, String> {
         self.init_names();
-        let f = WFrame::decode(b).ok()?;
-        Some(match f.frame_type {
+        let f = WFrame::decode(b).map_err(|e| format!("frame: {e:?}"))?;
+        Ok(match f.frame_type {
             types::CHUNK => {
-                let c = wh::Chunk::decode(f.body).ok()?;
+                let c = wh::Chunk::decode(f.body).map_err(|e| format!("chunk: {e:?}"))?;
                 let mut entries = vec![];
                 for e in &c.entries {
-                    entries.push(self.entry_of(e)?);
+                    entries.push(
+                        self.entry_of(e)
+                            .ok_or("chunk entry not in the model's value space")?,
+                    );
                 }
                 Frame::Chunk {
                     rec: rec_of(&c.record),
@@ -829,20 +832,24 @@ impl Tables {
                 }
             }
             types::ACK => {
-                let a = wh::Ack::decode(f.body).ok()?;
+                let a = wh::Ack::decode(f.body).map_err(|e| format!("ack: {e:?}"))?;
                 Frame::Ack {
-                    tid: *self.tids.get(&a.transfer_id)?,
-                    status: chunk_status_of(a.status)?,
+                    tid: *self
+                        .tids
+                        .get(&a.transfer_id)
+                        .ok_or("ack for an unknown transfer id")?,
+                    status: chunk_status_of(a.status).ok_or("ack status unknown")?,
                     succ: a.succ_record.map(|r| rec_of(&r)),
                     outcomes: a
                         .outcomes
                         .iter()
                         .map(|(d, o)| Some((self.d64_of(d), outcome_of(*o)?)))
-                        .collect::<Option<Vec<_>>>()?,
+                        .collect::<Option<Vec<_>>>()
+                        .ok_or("ack outcome code unknown")?,
                 }
             }
             types::COMPLETE => {
-                let c = wh::Complete::decode(f.body).ok()?;
+                let c = wh::Complete::decode(f.body).map_err(|e| format!("complete: {e:?}"))?;
                 self.pair_manifest(&c.digests);
                 Frame::Complete {
                     rec: rec_of(&c.record),
@@ -852,7 +859,7 @@ impl Tables {
                 }
             }
             types::ABORT | types::RETIRED | types::QUERY => {
-                let s = wh::Short::decode(f.body).ok()?;
+                let s = wh::Short::decode(f.body).map_err(|e| format!("short: {e:?}"))?;
                 let rec = rec_of(&s.record);
                 let m = self.m64_of(&s.manifest_digest);
                 match f.frame_type {
@@ -870,16 +877,20 @@ impl Tables {
                 }
             }
             types::COMPLETE_ACK => {
-                let a = wh::CompleteAck::decode(f.body).ok()?;
+                let a =
+                    wh::CompleteAck::decode(f.body).map_err(|e| format!("completeack: {e:?}"))?;
                 Frame::CompleteAck {
-                    tid: *self.tids.get(&a.transfer_id)?,
+                    tid: *self
+                        .tids
+                        .get(&a.transfer_id)
+                        .ok_or("completeack for an unknown transfer id")?,
                     m: self.m64_of(&a.manifest_digest),
-                    status: cstatus_of(a.status)?,
+                    status: cstatus_of(a.status).ok_or("completeack status unknown")?,
                     succ: a.succ_record.map(|r| rec_of(&r)),
                     missing: a.missing.iter().map(|d| self.d64_of(d)).collect(),
                 }
             }
-            _ => return None,
+            t => return Err(format!("frame type {t:#x}")),
         })
     }
 }
