@@ -256,9 +256,6 @@ impl Rec_ {
         }
         f(self)
     }
-    fn writer(&self, v: Ver) -> bool {
-        matches!(self.state(v), PState::Writer(ref w) if !w.awaiting)
-    }
     /// One step that advances session `sid` if it is idle, else the active
     /// run (or queued work). False when nothing can move.
     fn step_session(&mut self, sid: usize) -> bool {
@@ -321,12 +318,12 @@ pub fn stopped_then_fix_forward(cfg: &Cfg) -> Scenario {
     r.done()
 }
 
-/// 4.6 end to end: 20 took over from 10 (10 RETIRED to 20, so its answer
-/// to the repair probe is 0x0C). 20's index becomes undecryptable; the
-/// courier selects 20, the UI sends Reindex and pokes; 20 becomes WRITER.
-/// A deleted slot stays deleted. Then 30 is published and 20 hands over to
-/// it (I7 after repair is checked at quiescence).
-pub fn repair_end_to_end(cfg: &Cfg) -> Scenario {
+/// 4.5 (v1 base) end to end: 20 took over from 10. 20's index becomes
+/// undecryptable; the courier selects 20 (state 7), the UI exports the room
+/// keys with consent and reads every slot; a deleted slot answers storage
+/// failure, never a key. Then 30 is published (no handover from a lost
+/// index in v1).
+pub fn read_only_end_to_end(cfg: &Cfg) -> Scenario {
     let mut r = handed_over_10_to_20(cfg, vec![Rec::build(10), Rec::build(20), Rec::build(30)]);
     r.act(Action::GarbleIndex {
         b: bi(20) as u8,
@@ -336,118 +333,158 @@ pub fn repair_end_to_end(cfg: &Cfg) -> Scenario {
         r.load(vec![Op::PublicKey { slot: 1 }]);
     }
     r.act(Action::Publish);
-    for _ in 0..4 {
+    for _ in 0..3 {
         r.load(vec![Op::Generate { slot: 2, seed: 9 }]);
     }
     r.done()
 }
 
-/// 4.6 crash points: as `repair_end_to_end`, with vault:parts also
-/// malformed (so Reindex makes all three writes: remove the undecryptable
-/// index, write the REPAIRING index, rewrite vault:parts), and the node
-/// crashing before or after write `k`. Later loads repeat the repair.
-pub fn reindex_crash(cfg: &Cfg, k: u8, after: bool) -> Option<Scenario> {
-    let mut r = handed_over_10_to_20(cfg, vec![Rec::build(10), Rec::build(20)]);
-    if !r.writer(20) {
-        return None;
-    }
-    r.act(Action::GarbleIndex {
-        b: bi(20) as u8,
-        undecryptable: true,
-    });
-    // vault:parts by its position among the secrets Garble can pick
-    let names: Vec<SName> = r.w.stores[bi(20)]
-        .secrets
-        .iter()
-        .filter(|(_, v)| !matches!(v, SVal::Garbled | SVal::Undecryptable))
-        .map(|(n, _)| *n)
-        .collect();
-    let pick = names.iter().position(|n| *n == SName::Parts)? as u16;
-    r.act(Action::Garble {
-        b: bi(20) as u8,
-        pick,
-        undecryptable: false,
-    });
-    r.act(Action::ArmWriteFault {
-        after: k - 1,
-        fault: if after {
-            WriteFault::CrashAfter
-        } else {
-            WriteFault::CrashBefore
-        },
-    });
-    r.act(Action::ReindexAt {
-        b: bi(20) as u8,
-        newest: true,
-    });
-    r.drain();
-    for _ in 0..4 {
-        r.load(vec![Op::PublicKey { slot: 0 }]);
-    }
-    Some(r.done())
-}
-
-/// Decision 2 (4.6): 10 is SEALED toward 20 and 20's index is lost before
-/// it takes over. The courier routes to the sealed build and offers no
-/// repair; a Reindex sent to 20 anyway leaves it at state 8, because 10
-/// answers its probe 0x07.
-pub fn sealed_toward_damaged(cfg: &Cfg) -> Option<Scenario> {
-    let mut r = Rec_::new(cfg, vec![Rec::build(10), Rec::build(20)]);
+/// Revision 10 (checklist item 7): a crash or a failed write (landed or
+/// not) at write `j` of a key change at writer 10, followed by the loss of
+/// 10's index (undecryptable or malformed), then reads of every slot by
+/// direct read, by the courier and by a cached caller. `replace`: an Import
+/// over slot 0, which has a copy (writes: 0 vault:gc listing both names, 1
+/// the entry, 2 the index, 3 the old copy's removal, 4 vault:gc); else a
+/// Generate into the new slot 1 (0 vault:gc, 1 entry, 2 index, 3 vault:gc).
+pub fn entry_write_fault_then_index_lost(
+    cfg: &Cfg,
+    replace: bool,
+    j: u8,
+    fault: WriteFault,
+    malformed: bool,
+) -> Scenario {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10)]);
     r.act(Action::Publish);
     r.load(vec![Op::Generate { slot: 0, seed: 500 }]);
+    r.act(Action::ArmWriteFault { after: j, fault });
+    let op = if replace {
+        Op::Import {
+            slot: 0,
+            seed: 7,
+            replace: true,
+        }
+    } else {
+        Op::Generate { slot: 1, seed: 8 }
+    };
+    r.act(Action::Cached { op, b: Some(0) });
+    r.act(Action::GarbleIndex {
+        b: 0,
+        undecryptable: !malformed,
+    });
+    for slot in 0..2 {
+        r.act(Action::Cached {
+            op: Op::PublicKey { slot },
+            b: Some(0),
+        });
+        r.act(Action::Cached {
+            op: Op::Export { slot },
+            b: Some(0),
+        });
+    }
+    r.load(vec![]);
+    r.done()
+}
+
+/// Revision 10 (checklist item 7): a crash or a failed write at write `j`
+/// of a Delete of slot 1 at writer 10 (writes: 0 vault:gc listing both
+/// names, 1 the index, 2 the removal of the copy, 3 vault:gc), then the
+/// loss of 10's index; reads of slot 1 must answer storage failure or the
+/// acknowledged key, never Absent and never a deleted key.
+pub fn delete_fault_then_index_lost(
+    cfg: &Cfg,
+    j: u8,
+    fault: WriteFault,
+    malformed: bool,
+) -> Scenario {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10)]);
+    r.act(Action::Publish);
+    r.load(vec![
+        Op::Generate { slot: 0, seed: 500 },
+        Op::Generate { slot: 1, seed: 501 },
+    ]);
+    r.act(Action::ArmWriteFault { after: j, fault });
+    r.act(Action::Cached {
+        op: Op::Delete { slot: 1 },
+        b: Some(0),
+    });
+    r.act(Action::GarbleIndex {
+        b: 0,
+        undecryptable: !malformed,
+    });
+    for _ in 0..2 {
+        r.act(Action::Cached {
+            op: Op::PublicKey { slot: 1 },
+            b: Some(0),
+        });
+        r.act(Action::Cached {
+            op: Op::Export { slot: 1 },
+            b: Some(0),
+        });
+    }
+    r.load(vec![]);
+    r.done()
+}
+
+/// Revision 10, F16 liveness (checklist item 6): 10 copies to 20 and 20's
+/// index is lost (undecryptable or malformed) after its first chunk. 20 is
+/// unlisted, so it reads as NONE, answers "missing", is copied to again,
+/// and the handover completes (I7 is checked at quiescence).
+pub fn receiver_index_lost_mid_copy(cfg: &Cfg, malformed: bool) -> Option<Scenario> {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10), Rec::build(20)]);
+    r.act(Action::Publish);
+    r.load(vec![
+        Op::Generate { slot: 0, seed: 500 },
+        Op::Generate { slot: 1, seed: 501 },
+        Op::Generate { slot: 2, seed: 502 },
+    ]);
     r.act(Action::Publish);
     r.act(Action::Load {
         client: 0,
         fetch: Fetch::Newest,
         ops: vec![],
     });
-    if !r.steps_until(|r| matches!(r.state(10), PState::Sealed { .. })) {
+    if !r.steps_until(|r| matches!(r.state(20), PState::Receiving { .. })) {
         return None;
     }
     r.act(Action::GarbleIndex {
         b: bi(20) as u8,
-        undecryptable: true,
+        undecryptable: !malformed,
     });
     r.drain();
-    r.act(Action::ReindexAt {
-        b: bi(20) as u8,
-        newest: true,
-    });
-    r.drain();
-    for _ in 0..3 {
+    for _ in 0..4 {
         r.load(vec![Op::PublicKey { slot: 0 }]);
     }
     Some(r.done())
 }
 
-/// 4.4 (revision 9, F7): a RETIRED build whose index becomes undecryptable
-/// is unlisted, so it reads as NONE, answers Moved, reports no state 7 and
-/// refuses Reindex.
-pub fn retired_index_lost(cfg: &Cfg) -> Scenario {
+/// 4.4 (revision 9, F7; revision 10, F14): a RETIRED build whose index
+/// becomes undecryptable, or malformed, is unlisted, so it reads as NONE,
+/// answers Moved and reports no state 7.
+pub fn retired_index_lost(cfg: &Cfg, malformed: bool) -> Scenario {
     let mut r = handed_over_10_to_20(cfg, vec![Rec::build(10), Rec::build(20)]);
     r.act(Action::GarbleIndex {
         b: bi(10) as u8,
-        undecryptable: true,
+        undecryptable: !malformed,
     });
     r.act(Action::Cached {
         op: Op::PublicKey { slot: 0 },
         b: Some(bi(10) as u8),
     });
-    r.act(Action::ReindexAt {
-        b: bi(10) as u8,
-        newest: false,
+    r.load(vec![Op::PublicKey { slot: 0 }]);
+    r.act(Action::Load {
+        client: 2,
+        fetch: Fetch::Newest,
+        ops: vec![Op::PublicKey { slot: 0 }],
     });
     r.drain();
-    r.load(vec![Op::PublicKey { slot: 0 }]);
     r.done()
 }
 
-/// A damaged partial receiver below the head: 10 copies to 20, 20's index
-/// is lost after its first chunk (the Ack is lost, so 10 does not seal);
-/// 30 is published and 10 hands over to 30 (10 RETIRED to 30). A wrong
-/// offer sends Reindex to 20 with no record. 10 must answer 20's probe 0x07
-/// (retired to a build above 20), so 20 stays REPAIRING.
-pub fn wrong_offer_partial_receiver(cfg: &Cfg) -> Option<Scenario> {
+/// Revision 9 finding F16 (directed): 10 copies to 20, 20's index is lost
+/// after its first chunk and the Ack is lost; 30 is published and 10 hands
+/// over to 30; 30 changes slot 0; an old-lineage client (10, 20, 30) and a
+/// cached caller of 20 read slot 0.
+pub fn damaged_partial_receiver_behind_retired(cfg: &Cfg) -> Option<Scenario> {
     let mut r = Rec_::new(cfg, vec![Rec::build(10), Rec::build(20), Rec::build(30)]);
     r.act(Action::Publish);
     r.load(vec![Op::Generate { slot: 0, seed: 500 }]);
@@ -464,7 +501,6 @@ pub fn wrong_offer_partial_receiver(cfg: &Cfg) -> Option<Scenario> {
         b: bi(20) as u8,
         undecryptable: true,
     });
-    // lose 20's Ack so that 10 does not seal toward it
     r.act(Action::Step {
         pick: 0,
         fate: Fate::Drop,
@@ -472,19 +508,158 @@ pub fn wrong_offer_partial_receiver(cfg: &Cfg) -> Option<Scenario> {
     r.drain();
     r.act(Action::Publish);
     r.load_until_writer(30);
-    if !matches!(r.state(10), PState::Retired { .. }) {
-        return None;
-    }
-    r.act(Action::ReindexAt {
-        b: bi(20) as u8,
-        newest: false,
+    r.load(vec![Op::Import {
+        slot: 0,
+        seed: 2,
+        replace: true,
+    }]);
+    r.act(Action::Load {
+        client: 2,
+        fetch: Fetch::Newest,
+        ops: vec![Op::PublicKey { slot: 0 }],
     });
     r.drain();
     r.act(Action::Cached {
         op: Op::PublicKey { slot: 0 },
-        b: Some(bi(30) as u8),
+        b: Some(bi(20) as u8),
     });
     Some(r.done())
+}
+
+/// Revision 10 (checklist item 7): a take-over whose listing write fails
+/// (write `j` of 20's take-over call: 0 the WRITER index, 1 vault:parts),
+/// landed or not. 20 must send no answer until the listing reads back; 10
+/// resends Complete and the next call lists first and answers "already
+/// writer". Then 20's index is damaged.
+pub fn take_over_listing_fails(cfg: &Cfg, fault: WriteFault, malformed: bool) -> Option<Scenario> {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10), Rec::build(20)]);
+    r.act(Action::Publish);
+    r.load(vec![Op::Generate { slot: 0, seed: 500 }]);
+    r.act(Action::Publish);
+    r.act(Action::Load {
+        client: 0,
+        fetch: Fetch::Newest,
+        ops: vec![],
+    });
+    if !r.steps_until(|r| matches!(r.state(10), PState::Sealed { .. })) {
+        return None;
+    }
+    r.act(Action::ArmWriteFault { after: 1, fault });
+    r.drain();
+    r.act(Action::GarbleIndex {
+        b: bi(20) as u8,
+        undecryptable: !malformed,
+    });
+    for _ in 0..3 {
+        r.load(vec![Op::PublicKey { slot: 0 }]);
+    }
+    Some(r.done())
+}
+
+/// Revision 10 (checklist item 7): a creation whose listing write fails
+/// (write 1 of the creating call: 0 the WRITER index, 1 vault:parts). The
+/// creating change answers Refused(12); then the index is damaged; later
+/// loads find the build NONE or listed, never a lost acknowledged key.
+pub fn creation_listing_fails(cfg: &Cfg, fault: WriteFault, malformed: bool) -> Scenario {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10)]);
+    r.act(Action::Publish);
+    r.act(Action::Load {
+        client: 0,
+        fetch: Fetch::Newest,
+        ops: vec![],
+    });
+    r.drain();
+    r.act(Action::ArmWriteFault { after: 1, fault });
+    r.act(Action::Cached {
+        op: Op::Generate { slot: 0, seed: 500 },
+        b: Some(0),
+    });
+    r.act(Action::GarbleIndex {
+        b: 0,
+        undecryptable: !malformed,
+    });
+    for _ in 0..3 {
+        r.load(vec![
+            Op::Generate { slot: 0, seed: 501 },
+            Op::PublicKey { slot: 0 },
+        ]);
+    }
+    r.done()
+}
+
+/// Revision 10 stated residual I3-retired-still-listed: 10 hands over to
+/// 40; the node crashes right after 10's RETIRED write (before the unlist),
+/// 10's index is damaged before its next call, 40 changes slot 0, and an
+/// old-lineage client (10, 20, 30) reads slot 0.
+pub fn retired_still_listed_window(cfg: &Cfg, malformed: bool) -> Option<Scenario> {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10), Rec::build(40)]);
+    r.act(Action::Publish);
+    r.load(vec![Op::Generate { slot: 0, seed: 500 }]);
+    r.act(Action::Publish);
+    r.act(Action::Load {
+        client: 0,
+        fetch: Fetch::Newest,
+        ops: vec![],
+    });
+    if !r.steps_until(|r| matches!(r.state(10), PState::Sealed { .. })) {
+        return None;
+    }
+    // 10's next write is its RETIRED index (on "accepted")
+    r.act(Action::ArmWriteFault {
+        after: 0,
+        fault: WriteFault::CrashAfter,
+    });
+    if !r.steps_until(|r| matches!(r.state(10), PState::Retired { .. })) {
+        return None;
+    }
+    r.act(Action::GarbleIndex {
+        b: 0,
+        undecryptable: !malformed,
+    });
+    r.load(vec![Op::Import {
+        slot: 0,
+        seed: 2,
+        replace: true,
+    }]);
+    r.act(Action::Load {
+        client: 2,
+        fetch: Fetch::Newest,
+        ops: vec![Op::PublicKey { slot: 0 }],
+    });
+    r.drain();
+    Some(r.done())
+}
+
+/// Revision 10, F17 (checklist item 5): an undecryptable vault:parts,
+/// vault:gc or vault:succ (`which` 0, 1, 2) on writer 10 whose index is
+/// valid; 10 keeps changing, deleting and handing over to 20.
+pub fn control_secret_undecryptable(cfg: &Cfg, which: u8) -> Scenario {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10), Rec::build(20)]);
+    r.act(Action::Publish);
+    r.load(vec![
+        Op::Generate { slot: 0, seed: 500 },
+        Op::Generate { slot: 1, seed: 501 },
+        Op::Delete { slot: 1 },
+    ]);
+    r.act(Action::GarbleNamed {
+        b: 0,
+        which,
+        undecryptable: true,
+    });
+    r.load(vec![
+        Op::Generate { slot: 2, seed: 502 },
+        Op::Delete { slot: 0 },
+        Op::Import {
+            slot: 2,
+            seed: 503,
+            replace: true,
+        },
+    ]);
+    r.act(Action::Publish);
+    for _ in 0..4 {
+        r.load(vec![Op::PublicKey { slot: 2 }]);
+    }
+    r.done()
 }
 
 /// Mutant "drop a name from vault:gc before it reads as absent": slot 1 is
@@ -632,7 +807,7 @@ pub fn retired_malformed_index_stale_read(cfg: &Cfg) -> Scenario {
 /// (not the index, not vault:gc). After an index loss, direct read serves
 /// that never-acknowledged key (`repair: false`), and Reindex indexes it
 /// through list_secrets (`repair: true`).
-pub fn orphan_copy_of_failed_write(cfg: &Cfg, repair: bool) -> Scenario {
+pub fn orphan_copy_of_failed_write(cfg: &Cfg) -> Scenario {
     let mut r = Rec_::new(cfg, vec![Rec::build(10)]);
     r.act(Action::Publish);
     r.load(vec![Op::Generate { slot: 0, seed: 500 }]);
@@ -653,11 +828,6 @@ pub fn orphan_copy_of_failed_write(cfg: &Cfg, repair: bool) -> Scenario {
         b: 0,
         undecryptable: true,
     });
-    if repair {
-        for _ in 0..2 {
-            r.load(vec![]);
-        }
-    }
     r.act(Action::Cached {
         op: Op::PublicKey { slot: 1 },
         b: Some(0),
@@ -676,48 +846,99 @@ pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
         "5.3/created-after-every-predecessor-confirmed",
         stopped_then_fix_forward(cfg),
     ));
-    v.push(("4.6/repair-answer/RetiredNotAhead", repair_end_to_end(cfg)));
-    for k in 1..=3u8 {
-        for after in [false, true] {
-            if let Some(sc) = reindex_crash(cfg, k, after) {
+    v.push(("4.5/lost/export", read_only_end_to_end(cfg)));
+    let faults = [
+        WriteFault::CrashBefore,
+        WriteFault::CrashAfter,
+        WriteFault::Fail,
+        WriteFault::LandedButError,
+    ];
+    for malformed in [false, true] {
+        for f in faults {
+            for j in 0..5u8 {
                 v.push((
-                    match k {
-                        1 => "4.6/reindex-crash-at-write-1",
-                        2 => "4.6/reindex-crash-at-write-2",
-                        _ => "4.6/reindex-crash-at-write-3",
+                    match j {
+                        0 => "4.2/entry-write/fault-at-step-1",
+                        1 => "4.2/entry-write/fault-at-step-2",
+                        2 => "4.2/entry-write/fault-at-step-3",
+                        _ => "4.2/entry-write/fault-at-step-4",
                     },
-                    sc,
+                    entry_write_fault_then_index_lost(cfg, true, j, f, malformed),
+                ));
+            }
+            for j in 0..4u8 {
+                v.push((
+                    match j {
+                        0 => "4.2/entry-write/fault-at-step-1",
+                        1 => "4.2/entry-write/fault-at-step-2",
+                        2 => "4.2/entry-write/fault-at-step-3",
+                        _ => "4.2/entry-write/fault-at-step-4",
+                    },
+                    entry_write_fault_then_index_lost(cfg, false, j, f, malformed),
+                ));
+                v.push((
+                    match j {
+                        0 => "4.2/delete/fault-at-step-1",
+                        1 => "4.2/delete/fault-at-step-2",
+                        _ => "4.2/delete/fault-at-step-3",
+                    },
+                    delete_fault_then_index_lost(cfg, j, f, malformed),
                 ));
             }
         }
+        if let Some(sc) = receiver_index_lost_mid_copy(cfg, malformed) {
+            v.push(("4.4/receiver-index-lost-reads-none", sc));
+        }
+        v.push((
+            "4.4/retired-index-lost-reads-none",
+            retired_index_lost(cfg, malformed),
+        ));
+        for f in [
+            WriteFault::Fail,
+            WriteFault::LandedButError,
+            WriteFault::CrashAfter,
+        ] {
+            if let Some(sc) = take_over_listing_fails(cfg, f, malformed) {
+                v.push(("7.4/took-over", sc));
+            }
+            v.push(("5.1/created", creation_listing_fails(cfg, f, malformed)));
+        }
+        if let Some(sc) = retired_still_listed_window(cfg, malformed) {
+            v.push(("7.4/retired", sc));
+        }
     }
-    if let Some(sc) = sealed_toward_damaged(cfg) {
-        v.push(("7.6q/SEALED/probe-0x07", sc));
+    if let Some(sc) = damaged_partial_receiver_behind_retired(cfg) {
+        v.push(("4.4/receiver-index-lost-reads-none", sc));
     }
-    v.push(("4.4/retired-index-lost-reads-none", retired_index_lost(cfg)));
-    if let Some(sc) = wrong_offer_partial_receiver(cfg) {
-        v.push(("7.6q/RETIRED/probe-retired-above-0x07", sc));
+    for which in 0..3u8 {
+        v.push((
+            match which {
+                0 => "4.2/remove-before-write/parts",
+                1 => "4.2/remove-before-write/gc",
+                _ => "4.2/remove-before-write/succ",
+            },
+            control_secret_undecryptable(cfg, which),
+        ));
     }
     v.push(("4.2/gc-processed", gc_crash_then_index_lost(cfg)));
     v.push(("7.6q/NONE-record-stored", probe_answer_without_storing(cfg)));
     v.push(("client/old-lineage", retired_listed_stale_read(cfg)));
     v.push((
-        "finding/I3-retired-malformed-index",
+        "4.5/malformed-index-unlisted-reads-none",
         retired_malformed_index_stale_read(cfg),
     ));
     v.push((
-        "finding/I3-orphan-direct-read",
-        orphan_copy_of_failed_write(cfg, false),
-    ));
-    v.push((
-        "finding/I3-orphan-reindexed",
-        orphan_copy_of_failed_write(cfg, true),
+        "4.5/direct-read-listed-copy-skipped",
+        orphan_copy_of_failed_write(cfg),
     ));
     if let Some(sc) = probe_crash_after_record_stored(cfg) {
         v.push(("5.3/probe-crash-after-record-stored", sc));
     }
     if let Some(sc) = query_crash_after_record_stored(cfg) {
         v.push(("7.4/query-crash-after-record-stored", sc));
+    }
+    for (name, sc) in crate::replay_rev9::scenarios() {
+        v.push((name, sc));
     }
     v
 }

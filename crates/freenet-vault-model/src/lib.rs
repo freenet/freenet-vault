@@ -14,6 +14,7 @@ pub mod build;
 pub mod cov;
 pub mod directed;
 pub mod gen;
+pub mod replay_rev9;
 pub mod store;
 pub mod types;
 pub mod world;

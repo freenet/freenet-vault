@@ -3,7 +3,8 @@
 //!
 //! vault-model [--seeds N] [--start S] [--queued] [--adversarial] [--stale-pointer]
 //!             [--trace SEED] [--mutant NAME] [--mutants]
-//!             [--gc-old-after-index] [--no-list-none-indexes]
+//!             [--catchall-answers-nothing] [--absent-parts-valid-list]
+//!             [--not-blocking LABEL,LABEL]
 //!
 //! --mutants runs every mutant of `build::Mutant` over the seed range and
 //! the directed scenarios, and reports for each whether it is caught: a
@@ -66,8 +67,14 @@ fn main() {
                 i += 1;
             }
             "--mutants" => mutants = true,
-            "--gc-old-after-index" => cfg.params.gc_old_before_index = false,
-            "--no-list-none-indexes" => cfg.params.list_none_indexes = false,
+            "--catchall-answers-nothing" => cfg.params.catchall_fail_continues = false,
+            "--absent-parts-valid-list" => cfg.absent_parts_valid_list = true,
+            "--not-blocking" => {
+                for l in args[i + 1].split(',') {
+                    EXTRA_NOT_BLOCKING.with(|v| v.borrow_mut().push(l.to_string()));
+                }
+                i += 1;
+            }
             a => panic!("unknown argument {a}"),
         }
         i += 1;
@@ -175,7 +182,7 @@ fn main() {
         }
     }
     println!(
-        "schedules: {seeds} (seeds {start}..{}) plus {} coverage seeds and {} directed scenarios, delivery {:?}, adversarial {}, stale pointer {}, global FIFO {}, gc old copy before index {}, list NONE indexes {}, mutant {:?} (protocol revision 9)",
+        "schedules: {seeds} (seeds {start}..{}) plus {} coverage seeds and {} directed scenarios, delivery {:?}, adversarial {}, stale pointer {}, global FIFO {}, catch-all listing failure continues {}, absent vault:parts is a valid list {}, mutant {:?} (protocol revision 10)",
         start + seeds,
         extra.len(),
         n_directed,
@@ -183,8 +190,8 @@ fn main() {
         cfg.adversarial,
         cfg.stale_pointer,
         cfg.d_global_fifo,
-        cfg.params.gc_old_before_index,
-        cfg.params.list_none_indexes,
+        cfg.params.catchall_fail_continues,
+        cfg.absent_parts_valid_list,
         cfg.params.mutant,
     );
     if by_inv.is_empty() && directed_violations.is_empty() {
@@ -233,34 +240,28 @@ fn main() {
     }
 }
 
-/// Labels of stated residuals and of model-scope artefacts: a mutant caught
-/// only by these is not caught.
+thread_local! {
+    static EXTRA_NOT_BLOCKING: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(vec![]) };
+}
+
+/// Labels of stated residuals (revision 10, 4.4 and 15.4) and of
+/// restore-class or model-scope artefacts: a mutant caught only by these is
+/// not caught (rule (a)). `--not-blocking` adds this run's finding labels.
 const NOT_BLOCKING: &[&str] = &[
-    // findings of this run, reported on their own rows
-    "I3-orphan-direct-read",
-    "I3-orphan-reindexed",
-    "I2-orphan-reindexed",
-    "I2-orphan-direct-read",
-    "I3-retired-malformed-index",
-    "I2-retired-malformed-index",
-    "I3-listed-none-index",
-    "I3-incomplete-delete",
-    "I2-incomplete-delete",
-    "I3-damaged-partial-receiver",
-    "I2-interrupted-replace",
-    "I3-gc-listed-copy-served",
-    "I2-gc-listed-copy-served",
-    "I2-damaged-partial-receiver",
-    "I2-listed-none-index",
-    "I2-two-index-lost",
     "I2-direct-read-gc-lost",
-    "I2-reindex-unrecoverable",
-    "I8-reindex",
-    "I1-two-index-lost",
+    "I3-direct-read-gc-lost",
+    "I2-receiver-leftover",
+    "I3-receiver-leftover",
+    "I3-retired-still-listed",
+    "I2-two-index-lost",
     "I1-restore-unreported",
     "I5-after-restore",
     "I3-cached-never-routed",
 ];
+
+fn not_blocking(inv: &str) -> bool {
+    NOT_BLOCKING.contains(&inv) || EXTRA_NOT_BLOCKING.with(|v| v.borrow().iter().any(|x| x == inv))
+}
 
 /// The mutation check (15.5): each mutant must produce a violation where
 /// the unmutated model produces none (or a different one).
@@ -293,7 +294,7 @@ fn run_mutants(cfg: &Cfg, start: u64, seeds: u64, shrink_n: usize) {
         for (i, seed) in (start..start + seeds).enumerate() {
             let o = run(&c, &gen_scenario(seed, &c));
             let Some(v) = o.violation else { continue };
-            if base[i] == Some(v.inv) || NOT_BLOCKING.contains(&v.inv) {
+            if base[i] == Some(v.inv) || not_blocking(v.inv) {
                 continue;
             }
             if caught.contains_key(v.inv) || verified >= 6 {
@@ -323,7 +324,7 @@ fn run_mutants(cfg: &Cfg, start: u64, seeds: u64, shrink_n: usize) {
             let o = run(&c, sc);
             let diverged = o.cov.counts.keys().any(|k| k.starts_with("mutant/"));
             if let Some(v) = o.violation.filter(|_| diverged) {
-                if dbase[j] != Some(v.inv) && !NOT_BLOCKING.contains(&v.inv) {
+                if dbase[j] != Some(v.inv) && !not_blocking(v.inv) {
                     let e = caught.entry(v.inv).or_insert((0, format!("directed {k}")));
                     e.0 += 1;
                 }

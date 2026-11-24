@@ -160,13 +160,10 @@ pub enum CStatus {
     Noted,
     /// 0x0B: "no state, your record stored" (Query only, 7.6, 5.3).
     NoState,
-    /// 0x0C: "retired, not ahead of you" (revision 9; creation probe only,
-    /// 7.6). A creation treats it as state, a repair (4.6) as confirmed.
-    RetiredNotAhead,
 }
 
 impl CStatus {
-    pub const ALL: [CStatus; 13] = [
+    pub const ALL: [CStatus; 12] = [
         CStatus::Accepted,
         CStatus::Missing,
         CStatus::AlreadyWriter,
@@ -179,7 +176,6 @@ impl CStatus {
         CStatus::Malformed,
         CStatus::Noted,
         CStatus::NoState,
-        CStatus::RetiredNotAhead,
     ];
     /// The answers on which a sealed build may unseal (7.5).
     pub fn unseals(self) -> bool {
@@ -388,14 +384,6 @@ pub enum PState {
         m: Digest,
         taken_over: Option<(Ver, Digest)>,
     },
-    /// REPAIRING (revision 9, 4.6): entries rebuilt by Reindex; the
-    /// predecessors that confirmed the repair's creation probes. The
-    /// document keeps only the highest one confirmed (probes go lowest
-    /// first, so the confirmed set is always a prefix); a set is kept so
-    /// that the "any order" mutant can be expressed.
-    Repairing {
-        confirmed: std::collections::BTreeSet<Ver>,
-    },
 }
 
 impl PState {
@@ -408,7 +396,6 @@ impl PState {
             PState::Sealed { .. } => "SEALED",
             PState::Receiving { .. } => "RECEIVING",
             PState::Retired { .. } => "RETIRED",
-            PState::Repairing { .. } => "REPAIRING",
         }
     }
     pub fn taken_over(&self) -> Option<(Ver, Digest)> {
@@ -503,6 +490,10 @@ pub enum SVal {
     Undecryptable,
     /// vault:parts listing the partition.
     Parts,
+    /// vault:parts as a valid list that does not name the partition
+    /// (revision 10, 4.1: the list is never removed; unlisting writes it
+    /// without the partition).
+    PartsEmpty,
     X(BTreeMap<Ident, Digest>),
     Rx(std::collections::BTreeSet<Digest>),
     Gc(std::collections::BTreeSet<SName>),

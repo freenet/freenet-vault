@@ -4,9 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use crate::build::{
-    self, BuildDef, Input, Note, Op, OpRes, Params, Reply, Status, Unrecovered, Volatile,
-};
+use crate::build::{self, BuildDef, Input, Note, Op, OpRes, Params, Reply, Status, Volatile};
 use crate::cov::Cov;
 use crate::store::{Crash, Event, FaultPlan, Store, WriteFault};
 use crate::types::*;
@@ -84,6 +82,9 @@ pub struct Cfg {
     pub client_iter_cap: usize,
     pub quiesce_rounds: usize,
     pub trace: bool,
+    /// Labelled reading of 4.5 condition 2 (revision 10): an absent
+    /// vault:parts reads as a valid list (false: the literal reading).
+    pub absent_parts_valid_list: bool,
 }
 
 impl Cfg {
@@ -100,6 +101,7 @@ impl Cfg {
             client_iter_cap: 14,
             quiesce_rounds: 12,
             trace: false,
+            absent_parts_valid_list: false,
         }
     }
 }
@@ -170,24 +172,22 @@ pub enum Action {
         after: u8,
     },
     /// Damage the index of build `b` (if it has one): the index-loss case
-    /// of 4.5, aimed (the Repair family).
+    /// of 4.5, aimed (the IndexLoss family).
     GarbleIndex {
         b: u8,
+        undecryptable: bool,
+    },
+    /// Damage one named control secret of build `b` (0 vault:parts, 1
+    /// vault:gc, 2 vault:succ), aimed (revision 10, F17 liveness).
+    GarbleNamed {
+        b: u8,
+        which: u8,
         undecryptable: bool,
     },
     /// The host's key listing for build `b` becomes corrupt and reads as
     /// empty (15.2: list_secrets is advisory).
     CorruptListing {
         b: u8,
-    },
-    /// A domain page sends Reindex to build `b` and pokes it while it
-    /// reports state 8, whatever the courier would select: a stale or
-    /// wrong offer (spec 8: "a wrong offer cannot do harm"; 4.6: "The offer
-    /// is only a convenience; safety comes from steps 4 and 5"). Its pokes
-    /// carry the newest record, or none (pointer unreachable).
-    ReindexAt {
-        b: u8,
-        newest: bool,
     },
     /// A cached caller: addresses the build it last used (`b: None`), or a
     /// build it used long ago (`b: Some`).
@@ -283,8 +283,6 @@ enum Phase {
     Poke(usize),
     Decide,
     Ops,
-    /// 4.6 "Verify": pokes to the REPAIRING build while it reports state 8.
-    RepairPoke(u8),
     Done,
 }
 
@@ -357,19 +355,24 @@ pub struct World {
     pub violation: Option<Violation>,
     step_no: usize,
     pub sealed_corrupt_sent: u64,
-    /// Builds that left REPAIRING for WRITER (4.6); I1 labels a second
-    /// writer among them I1-reset (15.4).
-    pub repaired: BTreeSet<Ver>,
-    /// Per build, what its last Reindex reported (unrecovered page slots,
-    /// idents the key listing returned, whether the listing was incomplete).
-    reindex_info: BTreeMap<Ver, (Vec<(u16, Unrecovered)>, BTreeSet<Ident>, bool)>,
-    /// Builds whose Reindex call crashed (I2-repair-interrupted).
-    reindex_crashed: BTreeSet<Ver>,
     /// Per build, the last index state that read back cleanly (ground
     /// truth for labels after an index loss).
     last_good: BTreeMap<Ver, PState>,
-    /// Per build, the last good state when a Reindex ran on it.
-    reindexed_from: BTreeMap<Ver, PState>,
+    /// Revision 10 stated residual (4.4): builds whose vault:gc was lost
+    /// (made undecryptable) while it listed names.
+    gc_lost: BTreeSet<Ver>,
+    /// Revision 10 stated residual (4.4): entry copies named by a RECEIVING
+    /// index when that index was lost, as (build, identity, content).
+    receiver_leftover: BTreeSet<(Ver, Ident, u32)>,
+    /// Damage outside the I7 scopes of revision 10 (anything other than an
+    /// undecryptable vault:parts, vault:gc or vault:succ on a build whose
+    /// index is valid, or the index of a RECEIVING build).
+    damage_other: bool,
+    /// Damage inside those scopes happened: "control" or "receiver".
+    damage_scoped: BTreeSet<&'static str>,
+    /// A restore, a wipe, or damage equivalent to one, other than the loss
+    /// of vault:succ by aimed control damage.
+    real_restore: bool,
     /// Builds a courier ever chose as the session target.
     routed: BTreeSet<Ver>,
     /// Ground truth for finding F13 (revision 9): entry copies that were on
@@ -385,6 +388,7 @@ pub struct World {
 
 impl World {
     pub fn new(cfg: Cfg, ledger: Vec<Rec>) -> World {
+        crate::store::ABSENT_PARTS_IS_VALID_LIST.with(|c| c.set(cfg.absent_parts_valid_list));
         World {
             defs: build_defs(),
             stores: vec![Store::default(); NBUILDS],
@@ -415,11 +419,12 @@ impl World {
             violation: None,
             step_no: 0,
             sealed_corrupt_sent: 0,
-            repaired: BTreeSet::new(),
-            reindex_info: BTreeMap::new(),
-            reindex_crashed: BTreeSet::new(),
             last_good: BTreeMap::new(),
-            reindexed_from: BTreeMap::new(),
+            gc_lost: BTreeSet::new(),
+            receiver_leftover: BTreeSet::new(),
+            damage_other: false,
+            damage_scoped: BTreeSet::new(),
+            real_restore: false,
             routed: BTreeSet::new(),
             orphans: BTreeSet::new(),
             gc_dropped: BTreeSet::new(),
@@ -525,45 +530,37 @@ impl World {
             &mut notes,
             input,
         );
-        for n in &notes {
-            match n {
-                Note::Reindex {
-                    unrecovered,
-                    listed,
-                    listing_incomplete,
-                } => {
-                    self.reindex_info.insert(
-                        ver(b),
-                        (unrecovered.clone(), listed.clone(), *listing_incomplete),
-                    );
-                    if let Some(st) = self.last_good.get(&ver(b)) {
-                        // keep the state the build had before its first
-                        // Reindex, not an earlier REPAIRING index
-                        if !matches!(st, PState::Repairing { .. }) {
-                            self.reindexed_from.insert(ver(b), st.clone());
-                        }
-                    }
-                }
-                Note::RepairDone => {
-                    if matches!(self.stores[b].idx(), Some(i) if matches!(i.state, PState::Writer(_)))
-                    {
-                        self.repaired.insert(ver(b));
-                        self.cov.hit("4.6/repair-done");
-                    }
-                }
-                _ => {}
-            }
-        }
-        if res.is_err() {
+        // revision 10 coverage: a crash or a write fault at each step of an
+        // entry write and of a Delete
+        let fired_now: Vec<WriteFault> = self.faults.fired[fired_before..].to_vec();
+        let crashed = res.is_err();
+        if crashed || !fired_now.is_empty() {
+            let what = if crashed {
+                "crash".to_string()
+            } else {
+                format!("{:?}", fired_now.last().unwrap())
+            };
             if let Some(k) = notes.iter().rev().find_map(|n| match n {
-                Note::ReindexWrite(k) => Some(*k),
+                Note::EntryStep(k) => Some(*k),
                 _ => None,
             }) {
-                self.cov.hit(&format!("4.6/reindex-crash-at-write-{k}"));
-                self.reindex_crashed.insert(ver(b));
-            } else if notes.iter().any(|n| matches!(n, Note::Reindex { .. })) {
-                self.cov.hit("4.6/reindex-crash-before-any-write");
+                self.cov.hit(&format!("4.2/entry-write/fault-at-step-{k}"));
+                self.cov
+                    .hit(&format!("4.2/entry-write/fault-at-step-{k}/{what}"));
             }
+            if let Some(k) = notes.iter().rev().find_map(|n| match n {
+                Note::DeleteStep(k) => Some(*k),
+                _ => None,
+            }) {
+                self.cov.hit(&format!("4.2/delete/fault-at-step-{k}"));
+                self.cov
+                    .hit(&format!("4.2/delete/fault-at-step-{k}/{what}"));
+            }
+        }
+        if notes.iter().any(|n| matches!(n, Note::Listed))
+            && !crate::store::Store::listed(&self.stores[b])
+        {
+            self.cov.hit("4.2/listing-attempt-did-not-land");
         }
         if let Some(i) = self.stores[b].idx() {
             if !self.stores[b].index_lost() {
@@ -610,10 +607,7 @@ impl World {
                 h.remove(0);
             }
         }
-        if matches!(
-            after.state,
-            PState::Writer(_) | PState::Sealed { .. } | PState::Repairing { .. }
-        ) {
+        if matches!(after.state, PState::Writer(_) | PState::Sealed { .. }) {
             self.held.insert(ver(b));
         }
         match res {
@@ -1317,6 +1311,7 @@ impl World {
                 }
                 self.taint_unheld();
                 self.restored = true;
+                self.real_restore = true;
             }
             Action::Wipe { b } => {
                 let b = b as usize % NBUILDS;
@@ -1325,6 +1320,7 @@ impl World {
                 self.vols[b] = Volatile::default();
                 self.taint_unheld();
                 self.restored = true;
+                self.real_restore = true;
             }
             Action::Garble {
                 b,
@@ -1340,125 +1336,33 @@ impl World {
                     .collect();
                 if !es.is_empty() {
                     let n = es[pick as usize % es.len()];
-                    let had_state = self.stores[b].has_state();
-                    self.cov.hit("fault/garble-secret");
-                    self.cov.hit(&format!(
-                        "fault/{}/{}",
-                        if undecryptable {
-                            "undecryptable"
-                        } else {
-                            "malformed"
-                        },
-                        match n {
-                            SName::Succ => "succ",
-                            SName::Parts => "parts",
-                            SName::Idx => "index",
-                            SName::E(..) => "entry",
-                            SName::X(_) => "progress",
-                            SName::Rx => "rx",
-                            SName::Gc => "gc",
-                        }
-                    ));
-                    if let SName::E(id, _) = n {
-                        self.tainted.insert(id);
-                    }
-                    self.stores[b].secrets.insert(
-                        n,
-                        if undecryptable {
-                            SVal::Undecryptable
-                        } else {
-                            SVal::Garbled
-                        },
-                    );
-                    self.garbled = true;
-                    // 4.4: an unreadable vault:succ is a loss of vault:succ,
-                    // and a store that now reads as NONE (index and
-                    // vault:parts both unreadable) is the same as a wipe:
-                    // stated residuals of the same class as restores.
-                    let reads_none = !self.stores[b].index_lost() && self.stores[b].idx().is_none();
-                    // revision 9: an unlisted RETIRED build whose index is
-                    // lost reads as NONE by design (4.4), not as a wipe
-                    let was_retired =
-                        matches!(self.last_good.get(&ver(b)), Some(PState::Retired { .. }));
-                    if reads_none && had_state && was_retired {
-                        self.cov.hit("4.4/retired-index-lost-reads-none");
-                    }
-                    if (n == SName::Succ && undecryptable)
-                        || (had_state && reads_none && !was_retired)
-                    {
-                        self.cov.hit("fault/garble-equivalent-to-wipe-or-restore");
-                        self.restored = true;
-                    }
-                    self.taint_unheld();
+                    self.damage(b, n, undecryptable, false);
                 }
             }
             Action::GarbleIndex { b, undecryptable } => {
                 let b = b as usize % NBUILDS;
                 if matches!(self.stores[b].secrets.get(&SName::Idx), Some(SVal::Idx(_))) {
-                    let had_state = self.stores[b].has_state();
                     self.cov.hit("fault/garble-index-aimed");
-                    self.stores[b].secrets.insert(
-                        SName::Idx,
-                        if undecryptable {
-                            SVal::Undecryptable
-                        } else {
-                            SVal::Garbled
-                        },
-                    );
-                    self.garbled = true;
-                    let reads_none = !self.stores[b].index_lost() && self.stores[b].idx().is_none();
-                    let was_retired =
-                        matches!(self.last_good.get(&ver(b)), Some(PState::Retired { .. }));
-                    if had_state && reads_none && was_retired {
-                        self.cov.hit("4.4/retired-index-lost-reads-none");
-                    } else if had_state && reads_none {
-                        // an index that was never listed (a crash or failed
-                        // write before the listing) and is then lost: two
-                        // faults, the same class as a wipe (4.4)
-                        self.cov.hit("fault/garble-equivalent-to-wipe-or-restore");
-                        self.restored = true;
-                    }
-                    self.taint_unheld();
+                    self.damage(b, SName::Idx, undecryptable, true);
+                }
+            }
+            Action::GarbleNamed {
+                b,
+                which,
+                undecryptable,
+            } => {
+                let b = b as usize % NBUILDS;
+                let n = [SName::Parts, SName::Gc, SName::Succ][which as usize % 3];
+                if matches!(self.stores[b].secrets.get(&n), Some(v) if !matches!(v, SVal::Garbled | SVal::Undecryptable))
+                {
+                    self.cov.hit("fault/garble-control-aimed");
+                    self.damage(b, n, undecryptable, true);
                 }
             }
             Action::CorruptListing { b } => {
                 let b = b as usize % NBUILDS;
                 self.cov.hit("fault/listing-corrupt");
                 self.stores[b].listing_corrupt = true;
-            }
-            Action::ReindexAt { b, newest } => {
-                let b = b as usize % NBUILDS;
-                self.cov.hit("client/reindex-offer-any-build");
-                let slots: Vec<(u16, u32)> = self
-                    .oracle
-                    .iter()
-                    .filter(|(id, _)| id.0 == KIND_KEY)
-                    .filter_map(|(id, p)| p.acked.as_ref().map(|e| (id.1, e.content)))
-                    .collect();
-                let id = self.next_session;
-                self.next_session += 1;
-                self.registered[b] = true;
-                self.sessions.insert(
-                    id,
-                    Session {
-                        client: 0,
-                        bundle: CLIENTS[0].to_vec(),
-                        fetched: if newest {
-                            self.newest_published()
-                        } else {
-                            None
-                        },
-                        fetched_nonwd: None,
-                        phase: Phase::Ops,
-                        statuses: BTreeMap::new(),
-                        rounds: 0,
-                        again: BTreeSet::new(),
-                        ops: vec![Op::Reindex { slots }, Op::RepairPokes].into(),
-                        target: Some(ver(b)),
-                        run: None,
-                    },
-                );
-                self.session_next(id);
             }
             Action::Cached { op, b } => {
                 let target = match b {
@@ -1479,6 +1383,128 @@ impl World {
             }
         }
         self.check_state();
+    }
+
+    /// Damage secret `n` of build `b` (15.3): bytes that no longer parse,
+    /// or (`undecryptable`) bytes that read as absent (4.0).
+    fn damage(&mut self, b: usize, n: SName, undecryptable: bool, aimed: bool) {
+        let v = ver(b);
+        let had_state = self.stores[b].has_state();
+        let before_idx = self.stores[b].idx().cloned();
+        let idx_valid = before_idx.is_some() && !self.stores[b].index_lost();
+        let gc_names =
+            matches!(self.stores[b].secrets.get(&SName::Gc), Some(SVal::Gc(g)) if !g.is_empty());
+        self.cov.hit("fault/garble-secret");
+        let kind = sname_kind_w(&n);
+        self.cov.hit(&format!(
+            "fault/{}/{}",
+            if undecryptable {
+                "undecryptable"
+            } else {
+                "malformed"
+            },
+            kind
+        ));
+        if let SName::E(id, _) = n {
+            self.tainted.insert(id);
+        }
+        self.stores[b].secrets.insert(
+            n,
+            if undecryptable {
+                SVal::Undecryptable
+            } else {
+                SVal::Garbled
+            },
+        );
+        self.garbled = true;
+        // I7 scopes of revision 10 (designer checklist items 5 and 6)
+        let control =
+            undecryptable && idx_valid && matches!(n, SName::Parts | SName::Gc | SName::Succ);
+        let receiver = n == SName::Idx
+            && matches!(
+                before_idx.as_ref().map(|i| &i.state),
+                Some(PState::Receiving { .. })
+            );
+        if control {
+            self.damage_scoped.insert("control");
+            self.cov.hit(&format!("I7-scope/control-damage/{kind}"));
+        } else if receiver {
+            self.damage_scoped.insert("receiver");
+            self.cov.hit(if undecryptable {
+                "I7-scope/receiver-index-lost/undecryptable"
+            } else {
+                "I7-scope/receiver-index-lost/malformed"
+            });
+        } else {
+            self.damage_other = true;
+        }
+        let _ = aimed;
+        // 4.4 stated residual: vault:gc lost while it lists names
+        if n == SName::Gc && undecryptable && gc_names {
+            self.gc_lost.insert(v);
+            self.cov.hit("4.4/gc-lost-while-listing-names");
+        }
+        let reads_none = !self.stores[b].index_lost() && self.stores[b].idx().is_none();
+        let lost_now = self.stores[b].index_lost();
+        let last = self.last_good.get(&v).cloned();
+        if n == SName::Idx {
+            if lost_now {
+                self.cov.hit(if self.stores[b].listed() {
+                    "4.5/damaged-index-listed-lost"
+                } else {
+                    "4.5/damaged-index-unlisted-lost-parts-not-valid-list"
+                });
+            } else if !undecryptable {
+                self.cov.hit("4.5/damaged-index-malformed-unlisted-none");
+            }
+        }
+        if reads_none && had_state {
+            match last {
+                Some(PState::Retired { .. }) => {
+                    self.cov.hit("4.4/retired-index-lost-reads-none");
+                }
+                Some(PState::Receiving { .. }) => {
+                    // revision 10, F16: a receiver whose index is lost reads
+                    // as NONE; the copies its index named stay on disk
+                    self.cov.hit("4.4/receiver-index-lost-reads-none");
+                    if let Some(i) = &before_idx {
+                        for (id, ie) in &i.entries {
+                            if let Some(SVal::E(e)) =
+                                self.stores[b].secrets.get(&SName::E(*id, ie.parity))
+                            {
+                                self.receiver_leftover.insert((v, *id, e.content));
+                            }
+                        }
+                    }
+                }
+                _ if matches!(
+                    self.stores[b].secrets.get(&SName::Parts),
+                    Some(SVal::Undecryptable)
+                ) || (n == SName::Parts && undecryptable) =>
+                {
+                    // 4.4: both vault:parts and the index undecryptable, or
+                    // wiped: the build reads as NONE (stated residual)
+                    self.cov.hit("fault/garble-equivalent-to-wipe-or-restore");
+                    self.restored = true;
+                    self.real_restore = true;
+                }
+                _ => {
+                    // revision 10, F14: an unlisted index (a first WRITER
+                    // index whose call answered nothing, or NONE) read as
+                    // NONE by design; nothing acknowledged depends on it
+                    self.cov.hit("4.5/unlisted-index-lost-reads-none-by-design");
+                }
+            }
+        }
+        if n == SName::Succ && undecryptable {
+            // 4.4: loss of vault:succ, a stated residual of the restore class
+            self.cov.hit("fault/garble-equivalent-to-wipe-or-restore");
+            self.restored = true;
+            if !control {
+                self.real_restore = true;
+            }
+        }
+        self.taint_unheld();
     }
 
     // ---------------------------------------------------------- clients (5.2)
@@ -1594,49 +1620,6 @@ impl World {
                 self.gc_runs();
             }
             Phase::Decide => self.decide(sid),
-            Phase::RepairPoke(i) => {
-                let Some(t) = s.target else {
-                    self.sessions.get_mut(&sid).unwrap().phase = Phase::Done;
-                    return;
-                };
-                let repairing = matches!(
-                    s.statuses.get(&t),
-                    Some(Some(st)) if matches!(st.state, PState::Repairing { .. })
-                );
-                if (i > 0 && !repairing) || i >= 8 {
-                    if i >= 8 && repairing {
-                        // 4.6: "If the build stays at state 8, the UI shows
-                        // the decision 2 message"
-                        self.cov.hit("4.6/ui-repair-stays-at-state-8");
-                    }
-                    self.sessions.get_mut(&sid).unwrap().phase = Phase::Ops;
-                    return self.session_next(sid);
-                }
-                self.sessions.get_mut(&sid).unwrap().phase = Phase::RepairPoke(i + 1);
-                self.cov.hit("4.6/ui-repair-poke");
-                let b = bi(t);
-                let input = Input::Poke {
-                    flags: 0,
-                    rec: s.fetched,
-                };
-                if self.core() {
-                    return self.client_request(sid, b, input);
-                }
-                let r = self.new_run(RunKind::Client(sid));
-                self.sessions.get_mut(&sid).unwrap().run = Some(r);
-                let Some(out) = self.call(b, input) else {
-                    return;
-                };
-                let st = match out.reply {
-                    Reply::Status(st) => Some(st),
-                    _ => None,
-                };
-                self.enqueue(r, t, out.hops);
-                if let Some(sess) = self.sessions.get_mut(&sid) {
-                    sess.statuses.insert(t, st);
-                }
-                self.gc_runs();
-            }
             Phase::Ops => {
                 let Some(t) = s.target else {
                     self.sessions.get_mut(&sid).unwrap().phase = Phase::Done;
@@ -1647,11 +1630,6 @@ impl World {
                     self.sessions.remove(&sid);
                     return;
                 };
-                if op == Op::RepairPokes {
-                    sess.phase = Phase::RepairPoke(0);
-                    self.sessions.insert(sid, sess);
-                    return self.session_next(sid);
-                }
                 self.sessions.insert(sid, sess);
                 let b = bi(t);
                 self.cached_target = Some(t);
@@ -1732,36 +1710,23 @@ impl World {
                 sess.phase = Phase::Ops;
             }
             Route::ReadOnly(v) => {
-                // 4.5: reads use the damaged build. 4.6: the UI offers the
-                // repair when the build reports no successor (record_state
-                // is not 1), after the session's own requests: Reindex with
-                // every slot it knows and its expected key, pokes while the
-                // build reports state 8, then a PublicKey check per slot.
+                // 4.5 (revision 10, v1): reads use the damaged build; the UI
+                // shows the read-only message and offers consented Export of
+                // the room keys, then checks every slot with PublicKey. No
+                // repair (4.6 is v1.1).
                 self.cov.hit("4.5/courier-selects-damaged-build");
                 sess.target = Some(v);
                 sess.phase = Phase::Ops;
-                let st = s.statuses.get(&v).cloned().flatten();
-                let lost = st.as_ref().is_some_and(|st| st.index_lost);
-                let repairing = st
-                    .as_ref()
-                    .is_some_and(|st| matches!(st.state, PState::Repairing { .. }));
-                let successor = st.as_ref().is_some_and(|st| st.succ.successor().is_some());
+                let lost = s
+                    .statuses
+                    .get(&v)
+                    .cloned()
+                    .flatten()
+                    .is_some_and(|st| st.index_lost);
                 if lost {
-                    // 4.5: consented Export of the room keys while the
-                    // index is lost, whether or not 4.6 ships
                     for (slot, _) in &ui_slots {
                         sess.ops.push_back(Op::Export { slot: *slot });
                     }
-                }
-                if lost && !successor {
-                    sess.ops.push_back(Op::Reindex {
-                        slots: ui_slots.clone(),
-                    });
-                    sess.ops.push_back(Op::RepairPokes);
-                } else if repairing {
-                    sess.ops.push_back(Op::RepairPokes);
-                } else if lost {
-                    self.cov.hit("4.6/ui-no-offer-successor-known");
                 }
                 for (slot, _) in &ui_slots {
                     sess.ops.push_back(Op::PublicKey { slot: *slot });
@@ -1821,9 +1786,6 @@ impl World {
         };
         let Reply::Op(r) = out.reply else { return };
         self.log(|| format!("  op {op:?} at {} -> {r:?}", ver(b)));
-        if let Op::Reindex { .. } = &op {
-            self.cov.hit(&format!("4.6/ui-reindex-result/{r:?}"));
-        }
         match (&op, &r) {
             (Op::PublicKey { slot }, OpRes::Key(k))
             | (Op::Batch { slot, .. }, OpRes::Key(k))
@@ -1843,7 +1805,9 @@ impl World {
                     }
                 }
             }
-            (Op::PublicKey { slot }, OpRes::Absent) => {
+            (Op::PublicKey { slot }, OpRes::Absent)
+            | (Op::Export { slot }, OpRes::Absent)
+            | (Op::Batch { slot, .. }, OpRes::Absent) => {
                 let id = (KIND_KEY, *slot);
                 if !self.restored && !self.tainted.contains(&id) {
                     let p = self.oracle.get(&id).cloned().unwrap_or_default();
@@ -1968,11 +1932,9 @@ impl World {
             }
         }
         // I5: creation only with no state anywhere
-        let reset = notes.iter().any(|n| matches!(n, Note::RepairDone));
         let created = notes.iter().any(|n| matches!(n, Note::Created))
             || (before.state.is_none()
                 && !before_lost
-                && !reset
                 && matches!(&after.state, PState::Writer(w) if w.taken_over.is_none()));
         if created && self.stores[b].succ().stopped() {
             // 3 (revision 9, F10): no partition is created while the domain
@@ -2009,11 +1971,11 @@ impl World {
         }
     }
 
-    /// Label for a stale read by build `b` (15.4 I3, revision 9: direct
-    /// and REPAIRING reads are included; the labels only separate them).
-    /// Finding F15 (revision 9): vault:gc lists both names of a slot whose
-    /// last acknowledged change is not a deletion (a Delete whose first
-    /// write landed and whose index write failed or never happened).
+    /// Finding F15 (revision 9) shape: vault:gc lists both names of a slot
+    /// whose last acknowledged change is not a deletion (a Delete whose
+    /// first write landed and whose index write failed or never happened).
+    /// Revision 10 makes such a slot answer storage failure; the label
+    /// counts any I2 or I3 failure of that shape.
     fn incomplete_delete(&self, b: usize, id: Ident) -> bool {
         let acked = self.oracle.get(&id).is_some_and(|p| p.acked.is_some());
         acked
@@ -2021,14 +1983,26 @@ impl World {
                 Some(SVal::Gc(g)) if g.contains(&SName::E(id, false)) && g.contains(&SName::E(id, true)))
     }
 
-    /// Finding F16 (revision 9): build `b` is a damaged partial receiver
-    /// (its last readable index was RECEIVING, or it was when Reindex ran).
+    /// Finding F16 (revision 9) shape: build `b` is a damaged partial
+    /// receiver (its last readable index was RECEIVING) and is index-lost.
     fn damaged_partial_receiver(&self, b: usize) -> bool {
-        let v = ver(b);
-        matches!(self.last_good.get(&v), Some(PState::Receiving { .. }))
-            || matches!(self.reindexed_from.get(&v), Some(PState::Receiving { .. }))
+        matches!(self.last_good.get(&ver(b)), Some(PState::Receiving { .. }))
     }
 
+    fn is_orphan(&self, id: Ident, content: u32) -> bool {
+        self.orphans
+            .iter()
+            .any(|(_, i, c)| *i == id && *c == content)
+    }
+    fn is_leftover(&self, b: usize, id: Ident, content: u32) -> bool {
+        self.receiver_leftover.contains(&(ver(b), id, content))
+    }
+
+    /// Label for a stale read by build `b` (15.4 I3, revision 10: direct
+    /// reads included; a storage-failure answer is never a stale read).
+    /// Stated residual labels: I3-direct-read-gc-lost, I3-receiver-leftover,
+    /// I3-retired-still-listed (4.4). The other labels name the revision 9
+    /// finding shapes, which revision 10 claims to close.
     fn i3_label(
         &self,
         b: usize,
@@ -2037,155 +2011,113 @@ impl World {
         served: Option<u32>,
     ) -> &'static str {
         let v = ver(b);
-        let st = self.stores[b].idx_or_none().state;
-        let orphan =
-            served.is_some_and(|k| self.orphans.iter().any(|(_, i, c)| *i == slot && *c == k));
-        let retired_malformed = self.stores[b].index_lost()
-            && !matches!(self.stores[b].secrets.get(&SName::Parts), Some(SVal::Parts))
-            && matches!(self.last_good.get(&v), Some(PState::Retired { .. }));
-        let damaged = self.stores[b].index_lost()
-            || matches!(st, PState::Repairing { .. })
-            || self.repaired.contains(&v);
-        if served.is_none() && self.stores[b].index_lost() && self.incomplete_delete(b, slot) {
-            "I3-incomplete-delete"
-        } else if served.is_some()
-            && self.stores[b].index_lost()
-            && self.stores[b].direct_uses_gc_listed_copy(slot)
-        {
-            "I3-gc-listed-copy-served"
-        } else if damaged && self.damaged_partial_receiver(b) {
-            "I3-damaged-partial-receiver"
-        } else if orphan && self.stores[b].index_lost() {
-            // finding F13: the copy of a failed write, served by direct read
-            "I3-orphan-direct-read"
-        } else if orphan {
-            // finding F13: the copy of a failed write, indexed by Reindex
-            "I3-orphan-reindexed"
-        } else if self.stores[b].index_lost()
-            && matches!(self.last_good.get(&v), Some(st) if st.is_none())
-        {
-            // reading of 4.2 (list_none_indexes): a listed NONE index that
-            // is lost reports state 7 and an old-lineage courier selects it
-            "I3-listed-none-index"
-        } else if retired_malformed {
-            // finding F14: a RETIRED build, unlisted, whose index is
-            // malformed (not undecryptable): still index-lost (4.5
-            // condition 2), so an old-lineage courier selects it
-            "I3-retired-malformed-index"
-        } else if sid.is_none() && !self.routed.contains(&v) {
-            // a cached caller addressing a build no courier ever chose
-            // (the model's cached caller may pick any build)
-            "I3-cached-never-routed"
-        } else if self.stores[b].index_lost() {
-            "I3-direct-read"
-        } else if matches!(st, PState::Repairing { .. }) || self.repaired.contains(&v) {
-            "I3-repair"
-        } else {
-            "I3"
+        let s = &self.stores[b];
+        let lost = s.index_lost();
+        let last = self.last_good.get(&v);
+        if lost {
+            if served.is_none() {
+                return if self.incomplete_delete(b, slot) {
+                    "I3-incomplete-delete"
+                } else {
+                    "I3-direct-read-absent"
+                };
+            }
+            let k = served.unwrap();
+            if self.gc_lost.contains(&v) {
+                return "I3-direct-read-gc-lost";
+            }
+            if self.is_leftover(b, slot, k) {
+                return "I3-receiver-leftover";
+            }
+            if matches!(last, Some(PState::Retired { .. })) {
+                return if s.listed() {
+                    "I3-retired-still-listed"
+                } else {
+                    "I3-retired-malformed-index"
+                };
+            }
+            if self.damaged_partial_receiver(b) {
+                return "I3-damaged-partial-receiver";
+            }
+            if self.is_orphan(slot, k) {
+                return "I3-orphan-direct-read";
+            }
+            if matches!(last, Some(st) if st.is_none()) {
+                return "I3-listed-none-index";
+            }
+            return "I3-direct-read";
         }
+        if sid.is_none() && !self.routed.contains(&v) {
+            // a cached caller addressing a build no courier ever chose
+            return "I3-cached-never-routed";
+        }
+        "I3"
     }
 
     /// Label for an I2 or I8 failure of `id` at build `b` (15.4).
     fn i2_label(&self, b: usize, id: Ident) -> &'static str {
         let v = ver(b);
-        let st = self.stores[b].idx_or_none().state;
-        let info = self.reindex_info.get(&v);
         if id.0 == KIND_UNKNOWN {
-            let missed = info.is_some_and(|(_, listed, inc)| *inc || !listed.contains(&id));
-            if missed && (matches!(st, PState::Repairing { .. }) || self.repaired.contains(&v)) {
-                return "I8-reindex";
-            }
             return "I8";
         }
-        if self.stores[b].index_lost()
-            && !matches!(self.stores[b].secrets.get(&SName::Parts), Some(SVal::Parts))
-            && matches!(self.last_good.get(&v), Some(PState::Retired { .. }))
-        {
-            return "I2-retired-malformed-index";
+        let s = &self.stores[b];
+        if !s.index_lost() {
+            return "I2";
         }
-        let damaged = self.stores[b].index_lost()
-            || matches!(st, PState::Repairing { .. })
-            || self.repaired.contains(&v);
-        if self.incomplete_delete(b, id)
-            || (damaged
-                && matches!(self.reindex_info.get(&v), Some((u, _, _))
-                    if u.iter().any(|(s, r)| *s == id.1 && *r == Unrecovered::Deleted)))
-        {
-            return "I2-incomplete-delete";
+        let last = self.last_good.get(&v);
+        let served = s.direct_value(id).ok().flatten();
+        if self.gc_lost.contains(&v) {
+            return "I2-direct-read-gc-lost";
         }
-        if damaged && self.damaged_partial_receiver(b) {
-            return "I2-damaged-partial-receiver";
-        }
-        if self.stores[b].index_lost() && self.stores[b].direct_uses_gc_listed_copy(id) {
-            return "I2-gc-listed-copy-served";
-        }
-        if let Ok(Some(held)) = self.held_value(b, id) {
-            if self
-                .orphans
-                .iter()
-                .any(|(_, oid, c)| *oid == id && *c == held.content)
-            {
-                // finding F13: the copy of a failed write is what the
-                // selected build serves (direct read, or indexed by Reindex
-                // and handed on)
-                return if self.stores[b].index_lost() {
-                    "I2-orphan-direct-read"
-                } else {
-                    "I2-orphan-reindexed"
-                };
+        if let Some(e) = &served {
+            if self.is_leftover(b, id, e.content) {
+                return "I2-receiver-leftover";
             }
         }
-        if self.stores[b].index_lost() && matches!(self.last_good.get(&v), Some(st) if st.is_none())
-        {
-            return "I2-listed-none-index";
-        }
-        if self.stores[b].index_lost()
-            && self.stores[b].direct_value(id).is_err()
-            && self
-                .orphans
-                .iter()
-                .any(|(ov, oid, _)| *ov == v && *oid == id)
-        {
-            // 4.5: "two different unlisted copies, an interrupted replace"
-            // answers storage failure for that slot (Reindex resolves it by
-            // the expected key)
-            return "I2-interrupted-replace";
-        }
-        if self.stores[b].index_lost() {
-            let gc_ok = matches!(
-                self.stores[b].secrets.get(&SName::Gc),
-                Some(SVal::Gc(_)) | None
-            );
-            return if gc_ok {
-                "I2-direct-read"
+        if matches!(last, Some(PState::Retired { .. })) {
+            return if s.listed() {
+                "I2-retired-still-listed"
             } else {
-                "I2-direct-read-gc-lost"
+                "I2-retired-malformed-index"
             };
         }
-        if matches!(st, PState::Repairing { .. }) || self.repaired.contains(&v) {
-            let stated = info.is_some_and(|(u, _, _)| {
-                u.iter().any(|(s, r)| {
-                    *s == id.1 && matches!(r, Unrecovered::Ambiguous | Unrecovered::NoCopy)
-                })
-            });
-            if stated {
-                return "I2-reindex-unrecoverable";
-            }
-            if self
-                .orphans
-                .iter()
-                .any(|(ov, oid, _)| *ov == v && *oid == id)
-            {
-                // finding F13 in the repair path: Reindex picked the copy
-                // of a failed write, or dropped the slot because of it
-                return "I2-orphan-reindexed";
-            }
-            if self.reindex_crashed.contains(&v) {
-                return "I2-repair-interrupted";
-            }
-            return "I2-repair";
+        if self.incomplete_delete(b, id) {
+            return "I2-incomplete-delete";
         }
-        "I2"
+        if self.damaged_partial_receiver(b) {
+            return "I2-damaged-partial-receiver";
+        }
+        if let Some(e) = &served {
+            if self.is_orphan(id, e.content) {
+                return "I2-orphan-direct-read";
+            }
+        }
+        if matches!(last, Some(st) if st.is_none()) {
+            return "I2-listed-none-index";
+        }
+        if served.is_none() {
+            // storage failure and no copy of an allowed value on disk; two
+            // different unlisted copies need a restore or a leftover (4.5)
+            let unlisted_two = {
+                let gc = match s.secrets.get(&SName::Gc) {
+                    Some(SVal::Gc(g)) => g.clone(),
+                    _ => BTreeSet::new(),
+                };
+                let vals: BTreeSet<u32> = [SName::E(id, false), SName::E(id, true)]
+                    .iter()
+                    .filter(|n| !gc.contains(n))
+                    .filter_map(|n| match s.secrets.get(n) {
+                        Some(SVal::E(e)) => Some(e.content),
+                        _ => None,
+                    })
+                    .collect();
+                vals.len() >= 2
+            };
+            if unlisted_two {
+                return "I2-interrupted-replace";
+            }
+        }
+        "I2-direct-read"
     }
 
     /// Ground truth for I5 ("state for it"): a build whose index is lost
@@ -2280,25 +2212,7 @@ impl World {
         // I1
         let w = self.accepting_writers();
         if w.len() > 1 && !self.restored {
-            let rep: Vec<Ver> = w
-                .iter()
-                .copied()
-                .filter(|v| self.repaired.contains(v))
-                .collect();
-            let label = if rep.is_empty() {
-                "I1"
-            } else if rep
-                .iter()
-                .any(|v| matches!(self.reindexed_from.get(v), Some(PState::Retired { .. })))
-            {
-                "I1-two-index-lost"
-            } else {
-                "I1-reset"
-            };
-            self.fail(
-                label,
-                format!("two builds accept changes: {w:?} (repaired {rep:?})"),
-            );
+            self.fail("I1", format!("two builds accept changes: {w:?}"));
         }
         // I6 (state form): every name a committed index uses exists
         for b in 0..NBUILDS {
@@ -2335,6 +2249,40 @@ impl World {
                         continue;
                     }
                     let inv = self.i2_label(b, *id);
+                    if self.stores[b].index_lost() {
+                        // 15.4 I2, revision 10: while the writer's index is
+                        // lost the key is held if direct read serves it, or
+                        // answers storage failure while a copy with that
+                        // value is on disk
+                        match self.stores[b].direct_value(*id) {
+                            Ok(Some(val)) => {
+                                if !p.allows(&Some(val.clone())) {
+                                    self.fail(
+                                        inv,
+                                        format!("read-only build {v} serves {val:?} for {id:?}; acknowledged {p:?}"),
+                                    );
+                                    return;
+                                }
+                                self.cov.hit("I2/read-only-served");
+                            }
+                            _ => {
+                                let held = p.allows(&None)
+                                    || p.acked
+                                        .iter()
+                                        .chain(p.maybe.iter().flatten())
+                                        .any(|e| self.stores[b].copy_on_disk(*id, e));
+                                if !held {
+                                    self.fail(
+                                        inv,
+                                        format!("read-only build {v} answers storage failure for {id:?} and no copy of {p:?} is on its disk"),
+                                    );
+                                    return;
+                                }
+                                self.cov.hit("I2/read-only-storage-failure-copy-on-disk");
+                            }
+                        }
+                        continue;
+                    }
                     match self.held_value(b, *id) {
                         Ok(val) => {
                             if !p.allows(&val) {
@@ -2373,15 +2321,8 @@ impl World {
                             }
                             if let Ok(val) = self.held_value(o, *id) {
                                 if !p.allows(&val) {
-                                    let label = if matches!(st, PState::Repairing { .. })
-                                        || self.repaired.contains(&ver(o))
-                                    {
-                                        "I3-repair"
-                                    } else {
-                                        "I3"
-                                    };
                                     self.fail(
-                                        label,
+                                        "I3",
                                         format!(
                                             "build {} ({}) would answer {val:?} for {id:?}; acknowledged {p:?}",
                                             ver(o),
@@ -2406,13 +2347,7 @@ impl World {
                         })
                         .collect();
                     let lost = (0..NBUILDS)
-                        .filter(|b| {
-                            self.stores[*b].index_lost()
-                                || matches!(
-                                    self.stores[*b].idx_or_none().state,
-                                    PState::Repairing { .. }
-                                )
-                        })
+                        .filter(|b| self.stores[*b].index_lost())
                         .count();
                     self.fail(
                         if lost >= 2 {
@@ -2490,24 +2425,19 @@ impl World {
                 return;
             }
         }
-        let base = !self.restored && !self.cfg.adversarial && !self.cfg.stale_pointer;
-        // 15.4 I7 after a repair (designer item 12): runs with damage whose
-        // damage is gone at the end (no lost or REPAIRING index, no damaged
-        // control secret), in which some build left REPAIRING for WRITER.
-        let damage_gone = (0..NBUILDS).all(|b| {
-            let s = &self.stores[b];
-            !s.index_lost()
-                && !matches!(s.idx_or_none().state, PState::Repairing { .. })
-                && s.secrets.iter().all(|(n, v)| {
-                    matches!(n, SName::E(..)) || !matches!(v, SVal::Garbled | SVal::Undecryptable)
-                })
-        });
-        let after_repair = base && self.garbled && !self.repaired.is_empty() && damage_gone;
-        let i7_scope = (base && !self.garbled) || after_repair;
-        let label = if self.garbled {
-            "I7-after-repair"
-        } else {
+        let base = !self.real_restore && !self.cfg.adversarial && !self.cfg.stale_pointer;
+        // 15.4 I7 (revision 10, designer checklist items 5 and 6): also
+        // checked in damaged runs whose only damage is an undecryptable
+        // vault:parts, vault:gc or vault:succ on a build with a valid index
+        // ("control"), or the index of a RECEIVING build ("receiver").
+        let scoped = self.garbled && !self.damage_other;
+        let i7_scope = base && (!self.garbled || scoped) && (self.garbled || !self.restored);
+        let label = if !self.garbled {
             "I7"
+        } else if self.damage_scoped.contains("receiver") {
+            "I7-receiver-index-lost"
+        } else {
+            "I7-control-damage"
         };
         let Some(newest) = self.newest_published() else {
             return;
@@ -2515,10 +2445,12 @@ impl World {
         if !i7_scope || newest.withdrawal || !(0..NBUILDS).any(|b| self.holds(b)) {
             return;
         }
-        self.cov.hit(if self.garbled {
-            "I7/checked-after-repair"
-        } else {
+        self.cov.hit(if !self.garbled {
             "I7/checked"
+        } else if self.damage_scoped.contains("receiver") {
+            "I7/checked-receiver-index-lost"
+        } else {
+            "I7/checked-control-damage"
         });
         let nb = bi(newest.v);
         let st = self.stores[nb].idx_or_none().state;
@@ -2690,21 +2622,12 @@ pub fn route(states: &BTreeMap<Ver, Option<Seen>>, create: Option<Rec>) -> Route
     if let Some(v) = sealed.iter().max() {
         return Route::Writer(*v);
     }
-    // 5.2 step 4 (revision 9): a build reporting partition_state 7 (index
-    // lost) or 8 (repairing) is used only if no build reports RETIRED with
-    // retired_to above it; two such builds: "vault unavailable".
+    // 5.2 step 4: a build reporting partition_state 7 (index lost) is used
+    // only if no build reports WRITER, SEALED, or RETIRED with retired_to
+    // above it; two such builds: "vault unavailable".
     let damaged: Vec<Ver> = states
         .iter()
-        .filter(|(_, s)| {
-            matches!(s, Some(Seen { lost: true, .. }))
-                || matches!(
-                    s,
-                    Some(Seen {
-                        state: PState::Repairing { .. },
-                        ..
-                    })
-                )
-        })
+        .filter(|(_, s)| matches!(s, Some(Seen { lost: true, .. })))
         .map(|(v, _)| *v)
         .collect();
     match damaged.as_slice() {
@@ -2750,5 +2673,17 @@ pub fn route(states: &BTreeMap<Ver, Option<Seen>>, create: Option<Rec>) -> Route
     match create {
         Some(r) if states.contains_key(&r.v) => Route::Create(r.v),
         _ => Route::Unavailable,
+    }
+}
+
+fn sname_kind_w(n: &SName) -> &'static str {
+    match n {
+        SName::Succ => "succ",
+        SName::Parts => "parts",
+        SName::Idx => "index",
+        SName::E(..) => "entry",
+        SName::X(_) => "progress",
+        SName::Rx => "rx",
+        SName::Gc => "gc",
     }
 }

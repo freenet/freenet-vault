@@ -1,5 +1,5 @@
 //! The fake host's secret store (15.2), exactly the host of protocol 4.0
-//! (revision 9; plus the agreed core #6323 rule: a set_secret over an
+//! (revision 10; plus the agreed core #6323 rule: a set_secret over an
 //! undecryptable blob is refused, a remove_secret of it is allowed; and the
 //! advisory list_secrets of 15.2): per-secret atomic writes; a failed write or removal reports
 //! failure and either landed or did not; "durable but error returned" for
@@ -13,6 +13,23 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 
 use crate::types::*;
+
+thread_local! {
+    /// Labelled reading of 4.5 condition 2 (revision 10): an ABSENT
+    /// vault:parts (never written, or undecryptable) "reads as a valid list"
+    /// that does not name the partition. false (default) is the literal
+    /// reading, most likely to fail: only a list on disk is a valid list.
+    pub static ABSENT_PARTS_IS_VALID_LIST: Cell<bool> = const { Cell::new(false) };
+}
+
+/// vault:parts reads as a valid list (4.5 condition 2).
+pub fn parts_valid_list(parts: Option<&SVal>) -> bool {
+    match parts {
+        Some(SVal::Parts) | Some(SVal::PartsEmpty) => true,
+        None | Some(SVal::Undecryptable) => ABSENT_PARTS_IS_VALID_LIST.with(|c| c.get()),
+        _ => false,
+    }
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Store {
@@ -29,11 +46,12 @@ impl Store {
             _ => None,
         }
     }
-    /// 4.5 read-only triggers that persist: the index absent (or
-    /// undecryptable, which reads as absent) while vault:parts lists the
-    /// partition; the index malformed; vault:parts malformed AND the index
-    /// absent (revision 9: a malformed list with a verified index leaves
-    /// the call writable).
+    /// 4.5 read-only triggers that persist (revision 10): the index absent
+    /// (or undecryptable, which reads as absent) while vault:parts lists the
+    /// partition; the index malformed while vault:parts lists the partition
+    /// or does not read as a valid list; vault:parts malformed AND the index
+    /// absent. A malformed index while vault:parts reads as a valid list
+    /// without the partition is NONE (F14).
     pub fn index_lost(&self) -> bool {
         let parts = self.secrets.get(&SName::Parts);
         let idx = self.secrets.get(&SName::Idx);
@@ -42,54 +60,46 @@ impl Store {
         let idx_absent = matches!(idx, None | Some(SVal::Undecryptable));
         let idx_malformed =
             matches!(idx, Some(v) if !matches!(v, SVal::Idx(_) | SVal::Undecryptable));
-        idx_malformed || (idx_absent && (listed || parts_malformed))
-    }
-    /// Finding F17 (revision 9): the direct-read rule would use a single
-    /// copy whose name vault:gc lists (an entry dropped at take-over or by
-    /// staging reconciliation lists one name only).
-    pub fn direct_uses_gc_listed_copy(&self, id: Ident) -> bool {
-        let gc = match self.secrets.get(&SName::Gc) {
-            Some(SVal::Gc(g)) => g.clone(),
-            _ => return false,
-        };
-        let present: Vec<SName> = [SName::E(id, false), SName::E(id, true)]
-            .into_iter()
-            .filter(|n| matches!(self.secrets.get(n), Some(SVal::E(e)) if e.ident() == id))
-            .collect();
-        matches!(present.as_slice(), [n] if gc.contains(n))
-            && !(gc.contains(&SName::E(id, false)) && gc.contains(&SName::E(id, true)))
+        (idx_malformed && (listed || !parts_valid_list(parts)))
+            || (idx_absent && (listed || parts_malformed))
     }
 
-    /// The 4.5 direct-read rule as the checker's ground truth (revision 9):
-    /// a slot whose two names vault:gc lists is deleted; one decoding copy
-    /// is used; of two different copies, the one vault:gc does not list.
+    /// The 4.5 direct-read rule as the checker's ground truth (revision
+    /// 10): a malformed vault:gc leaves no copy usable; otherwise use the
+    /// copies whose names vault:gc does not list and that decode as a valid
+    /// entry for the slot, if they hold exactly one value. Never Absent:
+    /// Ok(Some) or Err (storage failure).
     pub fn direct_value(&self, id: Ident) -> Result<Option<Entry>, ()> {
         let gc = match self.secrets.get(&SName::Gc) {
             Some(SVal::Gc(g)) => g.clone(),
-            _ => Default::default(),
+            None | Some(SVal::Undecryptable) => Default::default(),
+            Some(_) => return Err(()),
         };
-        let (n0, n1) = (SName::E(id, false), SName::E(id, true));
-        if gc.contains(&n0) && gc.contains(&n1) {
-            return Ok(None);
-        }
-        let vals: Vec<(SName, Entry)> = [n0, n1]
+        let mut vals: Vec<Entry> = [SName::E(id, false), SName::E(id, true)]
             .iter()
+            .filter(|n| !gc.contains(n))
             .filter_map(|n| match self.secrets.get(n) {
-                Some(SVal::E(e)) if e.ident() == id => Some((*n, e.clone())),
+                Some(SVal::E(e)) if e.ident() == id => Some(e.clone()),
                 _ => None,
             })
             .collect();
+        vals.dedup();
         match vals.as_slice() {
-            [] => Ok(None),
-            [(_, e)] => Ok(Some(e.clone())),
-            [(_, a), (_, b)] if a == b => Ok(Some(a.clone())),
-            [(na, a), (nb, b)] => match (gc.contains(na), gc.contains(nb)) {
-                (true, false) => Ok(Some(b.clone())),
-                (false, true) => Ok(Some(a.clone())),
-                _ => Err(()),
-            },
+            [e] => Ok(Some(e.clone())),
             _ => Err(()),
         }
+    }
+    /// Some copy of `id` with this content is on disk (any parity, listed
+    /// in vault:gc or not): 15.4 I2 in read-only mode (revision 10).
+    pub fn copy_on_disk(&self, id: Ident, e: &Entry) -> bool {
+        [SName::E(id, false), SName::E(id, true)].iter().any(|n| {
+            matches!(self.secrets.get(n), Some(SVal::E(x))
+                if x.ident() == id && x.content == e.content && x.ext == e.ext)
+        })
+    }
+    /// vault:parts lists the partition (4.1).
+    pub fn listed(&self) -> bool {
+        matches!(self.secrets.get(&SName::Parts), Some(SVal::Parts))
     }
     /// vault:succ is present and malformed (3: never read as "no record").
     pub fn succ_malformed(&self) -> bool {

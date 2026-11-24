@@ -132,16 +132,17 @@ pub enum Family {
     /// included), read faults and write faults, with no restores or wipes,
     /// so that index loss (4.5) is checked where I1 and I3 apply.
     Damage,
-    /// Revision 9: index loss aimed at a build's index, so that the repair
-    /// of 4.6 (Reindex, REPAIRING, repair probes) runs often, with crashes,
-    /// write faults, read faults, corrupt key listings and new releases at
-    /// any point; no restores or wipes.
-    Repair,
+    /// Revision 10 (v1 base): index loss aimed at a build's index (any
+    /// state, receivers mid-copy included), aimed undecryptable vault:parts,
+    /// vault:gc and vault:succ, with crashes and write faults at every
+    /// entry-write and Delete step, read faults and new releases at any
+    /// point; no restores or wipes. Replaces the revision 9 Repair family.
+    IndexLoss,
 }
 
 pub fn family_of(seed: u64) -> Family {
     match seed % 8 {
-        4 => Family::Repair,
+        4 => Family::IndexLoss,
         5 => Family::Damage,
         6 => Family::RestoreHeavy,
         7 => Family::Busy,
@@ -165,7 +166,7 @@ pub fn gen_scenario(seed: u64, cfg: &Cfg) -> Scenario {
     if family == Family::Busy {
         prof.fault = prof.fault.max(0.08);
     }
-    if family == Family::Damage || family == Family::Repair {
+    if family == Family::Damage || family == Family::IndexLoss {
         prof.restores = false;
         prof.fault = prof.fault.max(0.08);
     }
@@ -290,11 +291,12 @@ pub fn gen_scenario(seed: u64, cfg: &Cfg) -> Scenario {
                 },
                 _ => Action::Crash,
             }
-        } else if prof.family == Family::Repair && rng.chance(0.45) {
+        } else if prof.family == Family::IndexLoss && rng.chance(0.45) {
             match rng.below(11) {
-                9 | 10 => Action::ReindexAt {
+                9 | 10 => Action::GarbleNamed {
                     b: rng.below(NBUILDS as u64) as u8,
-                    newest: rng.chance(0.5),
+                    which: rng.below(3) as u8,
+                    undecryptable: rng.chance(0.8),
                 },
                 0..=2 => Action::GarbleIndex {
                     b: rng.below(NBUILDS as u64) as u8,
