@@ -292,7 +292,7 @@ fn row_fresh_writer_or_other_build() {
 #[test]
 fn row_stopped_none_or_receiving() {
     for state in [
-        PState::None { armed: None },
+        PState::none(),
         PState::Receiving {
             from: 20,
             store_failed: false,
@@ -345,7 +345,7 @@ fn row_none_complete_empty_takes_over_else_missing() {
     let r = b.hop(20, complete(30, &[key(1, 1)]));
     assert_eq!(cstatus(&r), CStatus::Missing);
     assert!(matches!(&r, Some(Frame::CompleteAck { missing, .. }) if missing.len() == 1));
-    assert_eq!(b.state(), PState::None { armed: None });
+    assert_eq!(b.state(), PState::none());
 }
 
 #[test]
@@ -353,7 +353,7 @@ fn row_none_abort_and_retired() {
     let mut b = t(30);
     assert_eq!(cstatus(&b.hop(20, abort(30, 3))), CStatus::Aborted);
     assert_eq!(b.hop(20, retired(30, 3)), None);
-    assert_eq!(b.state(), PState::None { armed: None });
+    assert_eq!(b.state(), PState::none());
     assert!(b.store.idx().is_none(), "no state change");
 }
 
@@ -518,23 +518,38 @@ fn query(from: Ver, m: Digest) -> Frame {
 
 #[test]
 fn query_rows() {
+    // revision 8 (F4): "retired" only when RETIRED to the querier's record
+    // at the same m
     let mut b = t(20);
     b.set(
         PState::Retired {
-            to: Rec::build(40),
-            m: 1,
+            to: Rec::build(30),
+            m: 7,
             taken_over: None,
         },
         &[],
     );
-    assert_eq!(
-        cstatus(&b.hop(30, query(30, 7))),
-        CStatus::Noted,
-        "retired to any build"
-    );
-
-    let mut b = t(20);
     assert_eq!(cstatus(&b.hop(30, query(30, 7))), CStatus::Noted);
+    for (to, m) in [(40, 7), (30, 8)] {
+        let mut b = t(20);
+        b.set(
+            PState::Retired {
+                to: Rec::build(to),
+                m,
+                taken_over: None,
+            },
+            &[],
+        );
+        assert_eq!(
+            cstatus(&b.hop(30, query(30, 7))),
+            CStatus::AnotherWriter,
+            "retired to {to} at {m}"
+        );
+    }
+
+    // NONE: stores the querier's record, answers 0x0B
+    let mut b = t(20);
+    assert_eq!(cstatus(&b.hop(30, query(30, 7))), CStatus::NoState);
     assert_eq!(
         b.store.succ().current,
         Some(Rec::build(30)),
@@ -583,30 +598,188 @@ fn query_with_record_not_naming_sender_is_ignored() {
     assert_eq!(b.hop(10, query(10, 7)), None, "not above own version");
 }
 
-/// Section 6 read literally: an Ack/CompleteAck is applied only from
-/// S(current) or S(sealed target). The answer to Query comes from the
-/// predecessor, which is neither, so it is ignored and awaiting_retirement
-/// is never cleared by Query. This test pins the literal reading; the gap is
-/// reported as a spec finding.
-#[test]
-fn section6_literal_ignores_the_answer_to_query() {
-    let mut b = t(30);
-    b.set(writer_from(20, 7, true), &[]);
-    let ans = Frame::CompleteAck {
-        tid: (20, Rec::build(30)),
-        m: 7,
-        status: CStatus::Noted,
+fn answer(from: Ver, to: Ver, m: Digest, status: CStatus) -> Frame {
+    Frame::CompleteAck {
+        tid: (from, Rec::build(to)),
+        m,
+        status,
         succ: None,
         missing: vec![],
-    };
-    assert_eq!(b.hop(20, ans.clone()), None);
-    assert_eq!(b.state(), writer_from(20, 7, true), "still awaiting");
+    }
+}
 
+/// Section 6 row (revision 8, F1): the answer to this build's own Query is
+/// applied; "retired" and "no state" clear awaiting_retirement, only for
+/// the m taken over at and only from the build taken over from.
+#[test]
+fn section6_applies_the_answer_to_query() {
+    for st in [CStatus::Noted, CStatus::NoState] {
+        let mut b = t(30);
+        b.set(writer_from(20, 7, true), &[]);
+        assert_eq!(b.hop(20, answer(20, 30, 7, st)), None);
+        assert_eq!(b.state(), writer_from(20, 7, false), "{st:?}");
+    }
     let mut b = t(30);
-    b.p.spec.accept_query_answer = true;
     b.set(writer_from(20, 7, true), &[]);
-    b.hop(20, ans);
-    assert_eq!(b.state(), writer_from(20, 7, false));
+    b.hop(20, answer(20, 30, 8, CStatus::Noted));
+    b.hop(10, answer(10, 30, 7, CStatus::Noted));
+    assert_eq!(
+        b.state(),
+        writer_from(20, 7, true),
+        "other m or other build"
+    );
+    b.hop(20, answer(20, 30, 7, CStatus::AnotherWriter));
+    assert_eq!(b.store.idx_or_none().problems & PROBLEM_ANOTHER_WRITER, 4);
+    assert!(matches!(b.state(), PState::Writer(ref w) if w.awaiting));
+}
+
+// ------------------------------------------------------ creation (3, 5.3)
+
+fn arm(b: &mut T) -> Output {
+    let v = b.def.v;
+    b.call(Input::Poke {
+        flags: POKE_ARM,
+        rec: Some(Rec::build(v)),
+    })
+}
+
+fn generate(b: &mut T) -> OpRes {
+    match b.call(Input::Op(Op::Generate { slot: 0, seed: 9 })).reply {
+        Reply::Op(r) => r,
+        r => panic!("{r:?}"),
+    }
+}
+
+#[test]
+fn creation_guard_probes_every_predecessor_and_creates_only_when_all_confirmed() {
+    let mut b = t(30);
+    let out = arm(&mut b);
+    let probes: Vec<Ver> = out
+        .hops
+        .iter()
+        .filter(|(_, f)| matches!(f, Frame::Query { m: 0, .. }))
+        .map(|(t, _)| *t)
+        .collect();
+    assert_eq!(probes, vec![10, 20]);
+    assert_eq!(generate(&mut b), OpRes::NotHere, "no confirmation yet");
+    b.hop(10, answer(10, 30, 0, CStatus::NoState));
+    assert_eq!(generate(&mut b), OpRes::NotHere, "20 unconfirmed");
+    // a later poke re-sends only to the unconfirmed predecessor
+    let out = b.call(Input::Poke {
+        flags: 0,
+        rec: None,
+    });
+    assert_eq!(
+        out.hops.iter().map(|(t, _)| *t).collect::<Vec<_>>(),
+        vec![20]
+    );
+    b.hop(20, answer(20, 30, 0, CStatus::StorageFailure));
+    assert_eq!(generate(&mut b), OpRes::NotHere);
+    b.hop(20, answer(20, 30, 0, CStatus::NoState));
+    assert_eq!(generate(&mut b), OpRes::Key(9));
+}
+
+#[test]
+fn creation_guard_state_answer_clears_arming() {
+    let mut b = t(30);
+    arm(&mut b);
+    b.hop(10, answer(10, 30, 0, CStatus::AnotherWriter));
+    assert_eq!(b.state(), PState::none());
+}
+
+#[test]
+fn creation_bar_refuses_arming_and_a_withdrawal_does_not_lift_it() {
+    let mut b = t(20);
+    b.succ(Succ {
+        current: Some(Rec::build(30)),
+        withdrawal: Some(Rec::withdrawal(35)),
+    });
+    arm(&mut b);
+    assert_eq!(b.state(), PState::none());
+}
+
+#[test]
+fn a_newer_record_clears_arming_and_confirmations() {
+    let mut b = t(30);
+    arm(&mut b);
+    b.hop(10, answer(10, 30, 0, CStatus::NoState));
+    b.call(Input::Poke {
+        flags: 0,
+        rec: Some(Rec::build(40)),
+    });
+    assert_eq!(b.state(), PState::none());
+}
+
+/// Revision 8 as written: a NONE predecessor whose stored withdrawal is
+/// above the querier's version cannot store the querier's record (3:
+/// RecordNotNewer), so it never answers 0x0B, and a fresh install while
+/// stopped never passes the creation guard. Pins the finding.
+#[test]
+fn probe_below_a_stored_withdrawal_is_never_confirmed() {
+    let mut b = t(10);
+    b.succ(Succ {
+        current: None,
+        withdrawal: Some(Rec::withdrawal(25)),
+    });
+    assert_eq!(cstatus(&b.hop(20, query(20, 0))), CStatus::StorageFailure);
+}
+
+// ------------------------------------------------------ host faults (4.0) and index loss (4.5)
+
+#[test]
+fn a_poisoned_call_refuses_every_later_write() {
+    let mut b = t(20);
+    b.faults.read_armed = Some(0);
+    let out = b.call(Input::Hop {
+        from: 30,
+        frame: query(30, 0),
+    });
+    assert!(out.poisoned);
+    assert_eq!(b.store.succ().current, None, "the record write was refused");
+}
+
+#[test]
+fn undecryptable_index_while_listed_is_index_loss() {
+    let mut b = t(20);
+    b.set(PState::Writer(WFields::default()), &[key(0, 5)]);
+    b.store.secrets.insert(SName::Parts, SVal::Parts);
+    b.store.secrets.insert(SName::Idx, SVal::Undecryptable);
+    assert!(b.store.index_lost());
+    // no handover frame is answered
+    assert_eq!(b.hop(30, query(30, 7)), None);
+    assert_eq!(b.hop(10, complete(20, &[])), None);
+    // status reports partition_state 7 and problems bit 6
+    match b
+        .call(Input::Poke {
+            flags: 0,
+            rec: None,
+        })
+        .reply
+    {
+        Reply::Status(s) => {
+            assert!(s.index_lost);
+            assert_eq!(s.problems & PROBLEM_INDEX_LOST, PROBLEM_INDEX_LOST);
+        }
+        r => panic!("{r:?}"),
+    }
+    // reads work by the direct-read rule; changes are refused
+    match b.call(Input::Op(Op::PublicKey { slot: 0 })).reply {
+        Reply::Op(r) => assert_eq!(r, OpRes::Key(5)),
+        r => panic!("{r:?}"),
+    }
+    assert_eq!(generate(&mut b), OpRes::Refused(12));
+    // ResetPartition writes a fresh WRITER index
+    b.call(Input::Op(Op::Reset));
+    assert_eq!(b.state(), PState::Writer(WFields::default()));
+    assert!(!b.store.index_lost());
+}
+
+#[test]
+fn undecryptable_index_without_parts_reads_as_none() {
+    let mut b = t(20);
+    b.store.secrets.insert(SName::Idx, SVal::Undecryptable);
+    assert!(!b.store.index_lost());
+    assert_eq!(cstatus(&b.hop(30, query(30, 0))), CStatus::NoState);
 }
 
 // ------------------------------------------------------ sender (7.3 to 7.5)

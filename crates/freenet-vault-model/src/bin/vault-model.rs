@@ -126,7 +126,7 @@ fn main() {
     let mut cov = Cov::default();
     let mut by_inv: BTreeMap<&'static str, Vec<u64>> = BTreeMap::new();
     let mut corrupt_sealed = 0u64;
-    let mut shapes: BTreeMap<String, u64> = BTreeMap::new();
+    let mut shapes: BTreeMap<String, (u64, u64)> = BTreeMap::new();
     let extra: std::collections::BTreeSet<u64> = COVERAGE_SEEDS
         .iter()
         .map(|(s, _)| *s)
@@ -139,9 +139,10 @@ fn main() {
         corrupt_sealed += o.sealed_corrupt_sent;
         if let Some(v) = o.violation {
             by_inv.entry(v.inv).or_default().push(seed);
-            *shapes
+            let e = shapes
                 .entry(format!("{}: {}", v.inv, shape(&v.msg)))
-                .or_insert(0) += 1;
+                .or_insert((0, seed));
+            e.0 += 1;
         }
     }
     let mut directed_violations = vec![];
@@ -181,8 +182,8 @@ fn main() {
             &s[..s.len().min(8)]
         );
     }
-    for (k, n) in &shapes {
-        println!("  shape {n:>6} {k}");
+    for (k, (n, first)) in &shapes {
+        println!("  shape {n:>6} (first seed {first:>6}) {k}");
     }
     println!("sealed build sent a corrupt entry: {corrupt_sealed} times");
     let missing = cov.missing();
@@ -229,19 +230,30 @@ fn print_trace(cfg: &Cfg, sc: &freenet_vault_model::world::Scenario, seed: u64) 
 /// A violation message with its numbers replaced and its oracle detail cut,
 /// so that violations of the same kind count together.
 fn shape(msg: &str) -> String {
+    // tokens of digits, and the four-hex-digit manifest abbreviations
     let mut out = String::new();
-    let mut in_num = false;
-    for c in msg.chars() {
-        if c.is_ascii_digit() || (in_num && c.is_ascii_hexdigit()) {
-            if !in_num {
+    let mut tok = String::new();
+    let flush = |tok: &mut String, out: &mut String| {
+        if !tok.is_empty() {
+            let hex = tok.chars().all(|c| c.is_ascii_hexdigit());
+            let num = tok.chars().any(|c| c.is_ascii_digit());
+            if hex && (num || tok.len() == 4) {
                 out.push('#');
-                in_num = true;
+            } else {
+                out.push_str(tok);
             }
+            tok.clear();
+        }
+    };
+    for c in msg.chars() {
+        if c.is_ascii_alphanumeric() {
+            tok.push(c);
         } else {
-            in_num = false;
+            flush(&mut tok, &mut out);
             out.push(c);
         }
     }
+    flush(&mut tok, &mut out);
     let cut = out
         .find("; acknowledged")
         .or_else(|| out.find("; possible"))

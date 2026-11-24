@@ -407,18 +407,14 @@ pub fn shrink(cfg: &Cfg, sc: &Scenario, inv: &str) -> Scenario {
 /// `vault-model --find <counter>`; `coverage_seeds_still_hit_their_rows`
 /// fails if a generator change moves one off its row.
 pub const COVERAGE_SEEDS: &[(u64, &str)] = &[
-    (2678, "7.6/RECEIVING(higher)/Chunk"),
-    (3750, "7.6/stopped/Complete"),
-    (3750, "7.5/completeack/Stopped"),
-    (3750, "sent/CompleteAck/Stopped"),
-    (6734, "7.6/RECEIVING(lower)/Chunk"),
-    (7305, "7.6/other-writer-or-not-from-P/Abort"),
-    (9790, "7.6/RECEIVING(higher)/Complete"),
-    (9790, "7.5/completeack/HigherBuild"),
-    (9790, "sent/CompleteAck/HigherBuild"),
-    (11646, "7.6/RECEIVING(lower)/Complete"),
-    (14630, "4.3/corrupt-rewritten-flagged"),
-    (15873, "7.6/stopped/Chunk"),
-    (15873, "7.3/ack/Stopped"),
-    (17039, "7.2/outcome-staging-full"),
+    (4954, "7.6/RECEIVING(higher)/Chunk"),
+    (5630, "7.6/other-writer-or-not-from-P/Abort"),
+    (9445, "7.6/stopped/Complete"),
+    (9445, "7.5/completeack/Stopped"),
+    (9445, "sent/CompleteAck/Stopped"),
+    (12214, "7.6/RECEIVING(lower)/Complete"),
+    (47871, "4.3/corrupt-rewritten-flagged"),
+    (64534, "7.6/RECEIVING(higher)/Complete"),
+    (64534, "7.5/completeack/HigherBuild"),
+    (64534, "sent/CompleteAck/HigherBuild"),
 ];

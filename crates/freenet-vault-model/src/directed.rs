@@ -126,11 +126,35 @@ fn other_writer_retired(cfg: &Cfg) -> Option<Scenario> {
     Some(r.done())
 }
 
+/// 3 and 5.3 (revision 8): a fresh install while the domain is stopped.
+/// Ledger 10, 20, withdrawal 25, all published before the first load. The
+/// courier arms 20 (the newest non-withdrawal record below the
+/// withdrawal); 20 probes 10, which already stored the withdrawal 25 from
+/// the courier's pokes, so 20's record is "not newer" there, is never
+/// stored, and 10 never answers 0x0B: 20 never creates.
+pub fn fresh_install_while_stopped(cfg: &Cfg) -> Scenario {
+    let mut r = Rec_::new(
+        cfg,
+        vec![Rec::build(10), Rec::build(20), Rec::withdrawal(25)],
+    );
+    r.act(Action::Publish);
+    r.act(Action::Publish);
+    r.act(Action::Publish);
+    for _ in 0..4 {
+        r.load(vec![Op::Generate { slot: 0, seed: 77 }]);
+    }
+    r.done()
+}
+
 /// Every directed scenario with the row it exists to reach.
 pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
     let mut v = vec![];
     if let Some(sc) = other_writer_retired(cfg) {
         v.push(("7.6/other-writer-or-not-from-P/Retired", sc));
     }
+    v.push((
+        "finding/creation-probe-blocked-by-withdrawal",
+        fresh_install_while_stopped(cfg),
+    ));
     v
 }

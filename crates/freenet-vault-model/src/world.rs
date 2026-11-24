@@ -1681,8 +1681,11 @@ impl World {
         notes: &[Note],
     ) {
         let v = ver(b);
-        // I4: no unseal without a "did not take over" answer from the target
-        if let (PState::Sealed { target, m, .. }, PState::Writer(_)) = (&before.state, &after.state)
+        // I4: no unseal without a "did not take over" answer from the target.
+        // A ResetPartition over a lost index (4.5) is checked by I1-reset.
+        let was_reset = notes.iter().any(|n| matches!(n, Note::Reset));
+        if let (PState::Sealed { target, m, .. }, PState::Writer(_), false) =
+            (&before.state, &after.state, was_reset)
         {
             let intent = notes
                 .iter()

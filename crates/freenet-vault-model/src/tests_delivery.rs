@@ -9,14 +9,14 @@ use crate::world::{Cfg, Delivery};
 fn queued_mode_reproduces_f3() {
     let mut cfg = Cfg::gate();
     cfg.delivery = Delivery::Queued;
-    let o = run(&cfg, &gen_scenario(237, &cfg));
+    let o = run(&cfg, &gen_scenario(288, &cfg));
     assert_eq!(o.violation.map(|v| v.inv), Some("I4"));
 }
 
 #[test]
 fn core_mode_has_no_f3_on_the_queued_mode_seeds() {
     let cfg = Cfg::gate();
-    for seed in [122, 166, 237, 357, 487, 488, 564, 568, 994, 1545] {
+    for seed in [288, 410, 564, 615, 795, 863, 1364, 1618] {
         let o = run(&cfg, &gen_scenario(seed, &cfg));
         let inv = o.violation.map(|v| v.inv);
         assert!(
@@ -57,6 +57,19 @@ fn directed_scenarios_hit_their_rows() {
             "directed scenario for {k} no longer hits it"
         );
     }
+}
+
+/// Finding (revision 8): a fresh install while stopped never creates; no
+/// invariant covers it (I7 is not checked while the newest record is a
+/// withdrawal), so it is pinned here.
+#[test]
+fn fresh_install_while_stopped_never_creates() {
+    let cfg = Cfg::gate();
+    let o = run(&cfg, &crate::directed::fresh_install_while_stopped(&cfg));
+    assert!(o.violation.is_none(), "{:?}", o.violation);
+    assert_eq!(o.cov.get("5.1/created"), 0);
+    assert!(o.cov.get("13.1/armed-while-stopped") > 0);
+    assert!(o.cov.get("finding/creation-probe-blocked-by-withdrawal") > 0);
 }
 
 #[test]
