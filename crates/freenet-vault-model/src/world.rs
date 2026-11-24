@@ -1904,8 +1904,12 @@ impl World {
                 let id = (KIND_KEY, *slot);
                 let v = ver(b);
                 let acked = self.oracle.get(&id).is_some_and(|p| p.acked.is_some());
+                let maybe_deleted = self.oracle.get(&id).is_some_and(|p| p.allows(&None));
                 let cause = if !acked {
                     "no-acknowledged-key"
+                } else if maybe_deleted {
+                    // a Delete whose outcome the client never learned
+                    "delete-outcome-unknown"
                 } else if self.entry_damaged.contains(&(v, id)) || self.tainted.contains(&id) {
                     // damaged here, or a flagged (corrupt) entry copied from
                     // a build where it was damaged
