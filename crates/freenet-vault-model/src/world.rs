@@ -392,8 +392,16 @@ pub struct World {
     /// named them (left by a failed or interrupted write), as (build,
     /// identity, content).
     orphans: BTreeSet<(Ver, Ident, u32)>,
-    /// Entry names dropped from vault:gc while their copy was on disk.
-    gc_dropped: BTreeSet<(Ver, SName)>,
+    /// Per build, identities whose last change or Delete did not finish
+    /// (a fault, crash or refusal in that call) and that no later finished
+    /// write or finished mirror sweep has repaired: the slots 4.5 allows to
+    /// be unavailable after an index loss.
+    incomplete: BTreeSet<(Ver, Ident)>,
+    /// Entry copies damaged by the operator, per build.
+    entry_damaged: BTreeSet<(Ver, Ident)>,
+    /// Slots excluded from I3 because a restore rolled their bytes back
+    /// (damage alone never excuses serving a wrong key).
+    i3_exempt: BTreeSet<Ident>,
     /// Per predecessor, the queriers it answered 0x0B (decision 1).
     nostate_to: BTreeMap<Ver, BTreeSet<Ver>>,
 }
@@ -441,7 +449,9 @@ impl World {
             real_restore: false,
             routed: BTreeSet::new(),
             orphans: BTreeSet::new(),
-            gc_dropped: BTreeSet::new(),
+            incomplete: BTreeSet::new(),
+            entry_damaged: BTreeSet::new(),
+            i3_exempt: BTreeSet::new(),
             nostate_to: BTreeMap::new(),
             cfg,
         }
@@ -512,10 +522,6 @@ impl World {
         let before = self.stores[b].idx_or_none();
         let before_lost = self.stores[b].index_lost();
         let before_succ = self.stores[b].succ();
-        let gc_before = match self.stores[b].secrets.get(&SName::Gc) {
-            Some(SVal::Gc(g)) => g.clone(),
-            _ => BTreeSet::new(),
-        };
         // A Query (creation probe, m zero; or an awaiting successor's
         // Query, m non-zero) reaching a NONE predecessor.
         let query_to_none = match &input {
@@ -561,20 +567,65 @@ impl World {
                 .unwrap_or(notes.len());
             let notes = &notes[..upto];
             if let Some(k) = notes.iter().rev().find_map(|n| match n {
-                Note::EntryStep(k) => Some(*k),
+                Note::EntryStep(k, _) => Some(*k),
+                Note::DeleteStep(..) => Some(0),
                 _ => None,
             }) {
-                self.cov.hit(&format!("4.2/entry-write/fault-at-step-{k}"));
-                self.cov
-                    .hit(&format!("4.2/entry-write/fault-at-step-{k}/{what}"));
+                if k > 0 {
+                    self.cov.hit(&format!("4.2/entry-write/fault-at-step-{k}"));
+                    self.cov
+                        .hit(&format!("4.2/entry-write/fault-at-step-{k}/{what}"));
+                }
             }
             if let Some(k) = notes.iter().rev().find_map(|n| match n {
-                Note::DeleteStep(k) => Some(*k),
+                Note::DeleteStep(k, _) => Some(*k),
+                Note::EntryStep(..) => Some(0),
                 _ => None,
             }) {
-                self.cov.hit(&format!("4.2/delete/fault-at-step-{k}"));
-                self.cov
-                    .hit(&format!("4.2/delete/fault-at-step-{k}/{what}"));
+                if k > 0 {
+                    self.cov.hit(&format!("4.2/delete/fault-at-step-{k}"));
+                    self.cov
+                        .hit(&format!("4.2/delete/fault-at-step-{k}/{what}"));
+                }
+            }
+        }
+        // ground truth for the availability claim of 4.5: which slots'
+        // last change or Delete finished
+        {
+            let v = ver(b);
+            let mut pending: BTreeSet<Ident> = BTreeSet::new();
+            for n in &notes {
+                match n {
+                    Note::SweepDone => {
+                        self.incomplete.retain(|(x, _)| *x != v);
+                    }
+                    Note::EntryStep(_, id) | Note::DeleteStep(_, id) => {
+                        pending.insert(*id);
+                    }
+                    Note::Mirrored(id) => {
+                        if pending.remove(id) {
+                            self.incomplete.remove(&(v, *id));
+                        }
+                    }
+                    Note::Faulted => {
+                        for id in std::mem::take(&mut pending) {
+                            self.incomplete.insert((v, id));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for id in pending {
+                // a Delete that committed and finished leaves no named
+                // identity; anything else unfinished is incomplete
+                let named = self.stores[b]
+                    .idx()
+                    .is_some_and(|i| i.entries.contains_key(&id));
+                if named || crashed {
+                    self.incomplete.insert((v, id));
+                } else {
+                    self.incomplete.remove(&(v, id));
+                }
             }
         }
         if notes.iter().any(|n| matches!(n, Note::Listed))
@@ -594,20 +645,13 @@ impl World {
         if let Some(i) = self.stores[b].idx() {
             if !self.stores[b].index_lost() {
                 self.last_good.insert(ver(b), i.state.clone());
-                let gc = match self.stores[b].secrets.get(&SName::Gc) {
-                    Some(SVal::Gc(g)) => g.clone(),
-                    _ => BTreeSet::new(),
-                };
                 for (n, val) in &self.stores[b].secrets {
-                    if let (SName::E(id, par), SVal::E(en)) = (n, val) {
-                        let named = i.entries.get(id).map(|x| x.parity) == Some(*par);
-                        // a name that left vault:gc in this call while its
-                        // copy is still on disk was dropped from the list,
-                        // not left by a failed write
-                        if !named && !gc.contains(n) && gc_before.contains(n) {
-                            self.gc_dropped.insert((ver(b), *n));
-                        }
-                        if !named && !gc.contains(n) && !self.gc_dropped.contains(&(ver(b), *n)) {
+                    if let (SName::E(id, _), SVal::E(en)) = (n, val) {
+                        // revision 10: a copy the committed index does not
+                        // stand behind (its identity is not named, or it
+                        // differs from the named value)
+                        let named = i.entries.get(id).is_some_and(|x| x.digest == en.digest());
+                        if !named {
                             self.orphans.insert((ver(b), *id, en.content));
                         }
                     }
@@ -1323,6 +1367,7 @@ impl World {
                         self.cov.hit("fault/restore-secret");
                         if let SName::E(id, _) = n {
                             self.tainted.insert(id);
+                            self.i3_exempt.insert(id);
                         }
                         match s.secrets.get(&n) {
                             Some(v) => {
@@ -1365,6 +1410,21 @@ impl World {
                     .collect();
                 if !es.is_empty() {
                     let n = es[pick as usize % es.len()];
+                    // 15.3 "corrupt bytes": an entry copy may be damaged
+                    // into bytes that still parse (a changed seed, or a
+                    // changed key field), as 4.3 allows for
+                    let variant = (pick as usize / es.len()) % 3;
+                    if let (SName::E(_, par), false, 1 | 2) = (n, undecryptable, variant) {
+                        if let Some(SVal::E(e)) = self.stores[b].secrets.get(&n).cloned() {
+                            let mut c = e.clone();
+                            c.content ^= 0x00C0_FFEE ^ (par as u32);
+                            if variant == 2 {
+                                c.key ^= 0x100;
+                            }
+                            self.damage_to(b, n, SVal::E(c), false);
+                            return;
+                        }
+                    }
                     self.damage(b, n, undecryptable, false);
                 }
             }
@@ -1417,6 +1477,17 @@ impl World {
     /// Damage secret `n` of build `b` (15.3): bytes that no longer parse,
     /// or (`undecryptable`) bytes that read as absent (4.0).
     fn damage(&mut self, b: usize, n: SName, undecryptable: bool, aimed: bool) {
+        let val = if undecryptable {
+            SVal::Undecryptable
+        } else {
+            SVal::Garbled
+        };
+        self.damage_to(b, n, val, aimed)
+    }
+
+    fn damage_to(&mut self, b: usize, n: SName, val: SVal, aimed: bool) {
+        let undecryptable = val == SVal::Undecryptable;
+        let parses = matches!(val, SVal::E(_));
         let v = ver(b);
         let had_state = self.stores[b].has_state();
         let before_idx = self.stores[b].idx().cloned();
@@ -1429,22 +1500,21 @@ impl World {
             "fault/{}/{}",
             if undecryptable {
                 "undecryptable"
+            } else if parses {
+                "corrupt-but-parses"
             } else {
                 "malformed"
             },
             kind
         ));
         if let SName::E(id, _) = n {
+            // I2 is not asked of a slot whose bytes the operator damaged
+            // (4.3 counts it lost); I3 still is: damage never excuses a
+            // wrong key
             self.tainted.insert(id);
+            self.entry_damaged.insert((v, id));
         }
-        self.stores[b].secrets.insert(
-            n,
-            if undecryptable {
-                SVal::Undecryptable
-            } else {
-                SVal::Garbled
-            },
-        );
+        self.stores[b].secrets.insert(n, val);
         self.garbled = true;
         // I7 scopes of revision 10 (designer checklist items 5 and 6)
         let control =
@@ -1823,7 +1893,10 @@ impl World {
             | (Op::Batch { slot, .. }, OpRes::Key(k))
             | (Op::Export { slot }, OpRes::Key(k)) => {
                 let id = (KIND_KEY, *slot);
-                if !self.restored && !self.tainted.contains(&id) {
+                // a damaged slot is still checked for a wrong key, except an
+                // Export, which 4.3 allows on a flagged (corrupt) slot
+                let damaged_export = self.tainted.contains(&id) && matches!(op, Op::Export { .. });
+                if !self.restored && !self.i3_exempt.contains(&id) && !damaged_export {
                     let p = self.oracle.get(&id).cloned().unwrap_or_default();
                     if !p.allows(&Some(key_entry(*slot, *k))) {
                         let label = self.i3_label(b, sid, id, Some(*k));
@@ -2169,13 +2242,8 @@ impl World {
             // storage failure and no copy of an allowed value on disk; two
             // different unlisted copies need a restore or a leftover (4.5)
             let unlisted_two = {
-                let gc = match s.secrets.get(&SName::Gc) {
-                    Some(SVal::Gc(g)) => g.clone(),
-                    _ => BTreeSet::new(),
-                };
                 let vals: BTreeSet<u32> = [SName::E(id, false), SName::E(id, true)]
                     .iter()
-                    .filter(|n| !gc.contains(n))
                     .filter_map(|n| match s.secrets.get(n) {
                         Some(SVal::E(e)) => Some(e.content),
                         _ => None,
@@ -2261,6 +2329,9 @@ impl World {
             if !held {
                 self.cov.hit("restore/acknowledged-value-destroyed");
                 self.tainted.insert(*id);
+                if restore {
+                    self.i3_exempt.insert(*id);
+                }
             }
         }
     }
@@ -2321,6 +2392,47 @@ impl World {
                             ie.parity
                         ),
                     );
+                }
+            }
+        }
+        // 4.5 availability claim (revision 10): "every slot whose last write
+        // completed signs". A listed, unsealed-or-sealed build whose mirror
+        // sweep has finished keeps both copies of every named identity whose
+        // last change finished byte-identical, so a later index loss leaves
+        // it served. Checked without restores, on undamaged copies.
+        if !self.restored {
+            for b in 0..NBUILDS {
+                let s = &self.stores[b];
+                if s.index_lost() || !self.vols[b].swept || !s.listed() {
+                    continue;
+                }
+                let idx = s.idx_or_none();
+                if !matches!(idx.state, PState::Writer(_) | PState::Sealed { .. }) {
+                    continue;
+                }
+                for (id, ie) in &idx.entries {
+                    let v = ver(b);
+                    if self.incomplete.contains(&(v, *id)) || self.entry_damaged.contains(&(v, *id))
+                    {
+                        continue;
+                    }
+                    let c = s.secrets.get(&SName::E(*id, ie.parity));
+                    let m = s.secrets.get(&SName::E(*id, !ie.parity));
+                    let good = matches!(c, Some(SVal::E(e)) if e.digest() == ie.digest);
+                    if good && c != m {
+                        self.cov.hit("AVAIL/violated");
+                        self.fail(
+                            "AVAIL",
+                            format!(
+                                "build {v} ({}) slot {id:?}: last change finished and the sweep is done, but the mirror is {m:?}",
+                                idx.state.code()
+                            ),
+                        );
+                        return;
+                    }
+                    if good {
+                        self.cov.hit("AVAIL/checked");
+                    }
                 }
             }
         }

@@ -273,11 +273,7 @@ thread_local! {
 /// restore-class or model-scope artefacts: a mutant caught only by these is
 /// not caught (rule (a)). `--not-blocking` adds this run's finding labels.
 const NOT_BLOCKING: &[&str] = &[
-    "I2-direct-read-gc-lost",
-    "I3-direct-read-gc-lost",
-    "I2-receiver-leftover",
-    "I3-receiver-leftover",
-    "I3-retired-still-listed",
+    "I7-retired-still-listed",
     "I2-two-index-lost",
     "I1-restore-unreported",
     "I5-after-restore",

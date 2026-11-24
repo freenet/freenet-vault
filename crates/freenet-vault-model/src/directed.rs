@@ -227,8 +227,10 @@ pub fn query_crash_after_record_stored(cfg: &Cfg) -> Option<Scenario> {
         fate: Fate::Drop,
     });
     r.act(Action::Wipe { b: bi(10) as u8 });
+    // revision 10: 20's step first writes the mirror of its one entry
+    // (the sweep after take-over); the next write is 10's record
     r.act(Action::ArmWriteFault {
-        after: 0,
+        after: 1,
         fault: WriteFault::CrashAfter,
     });
     r.act(Action::Wakeup { b: bi(20) as u8 });
@@ -343,9 +345,9 @@ pub fn read_only_end_to_end(cfg: &Cfg) -> Scenario {
 /// not) at write `j` of a key change at writer 10, followed by the loss of
 /// 10's index (undecryptable or malformed), then reads of every slot by
 /// direct read, by the courier and by a cached caller. `replace`: an Import
-/// over slot 0, which has a copy (writes: 0 vault:gc listing both names, 1
-/// the entry, 2 the index, 3 the old copy's removal, 4 vault:gc); else a
-/// Generate into the new slot 1 (0 vault:gc, 1 entry, 2 index, 3 vault:gc).
+/// over slot 0, which the index names (writes: 0 the entry, step 2; 1 the
+/// index, step 3; 2 the mirror, step 4); else a Generate into the new slot
+/// 1, whose step 1 finds nothing to remove (same three writes).
 pub fn entry_write_fault_then_index_lost(
     cfg: &Cfg,
     replace: bool,
@@ -387,7 +389,8 @@ pub fn entry_write_fault_then_index_lost(
 
 /// Revision 10 (checklist item 7): a crash or a failed write at write `j`
 /// of a Delete of slot 1 at writer 10 (writes: 0 vault:gc listing both
-/// names, 1 the index, 2 the removal of the copy, 3 vault:gc), then the
+/// names, step 1; 1 the mirror's removal, step 2; 2 the index, step 3; 3
+/// the other copy's removal and 4 vault:gc, step 4), then the
 /// loss of 10's index; reads of slot 1 must answer storage failure or the
 /// acknowledged key, never Absent and never a deleted key.
 pub fn delete_fault_then_index_lost(
@@ -879,6 +882,142 @@ pub fn orphan_copy_of_failed_write(cfg: &Cfg) -> Scenario {
     r.done()
 }
 
+/// Revision 10 (checklist item 8): slot 1 holds 501 at parity 1 (Generate
+/// 777, then Import 501 over it). A Delete of slot 1 commits, but gc's
+/// removal of the named copy fails, leaving 501 at parity 1 on disk, and
+/// vault:gc is then lost (undecryptable), so nothing removes it. Slot 1
+/// is then generated again with the same seed 501, with a fault `fault` at
+/// write `j` of that change (0 step 1's removal of the leftover, 1 the
+/// entry, 2 the index), and 10's index is lost. Direct read must never
+/// serve the deleted 501 unless the new change was acknowledged.
+pub fn delete_then_recreate_same_seed(cfg: &Cfg, j: u8, fault: WriteFault) -> Scenario {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10)]);
+    r.act(Action::Publish);
+    r.load(vec![
+        Op::Generate { slot: 0, seed: 500 },
+        Op::Generate { slot: 1, seed: 777 },
+        Op::Import {
+            slot: 1,
+            seed: 501,
+            replace: true,
+        },
+    ]);
+    // Delete writes: 0 vault:gc, 1 mirror removal, 2 index, 3 removal of
+    // the named copy (fails, not landed)
+    r.act(Action::ArmWriteFault {
+        after: 3,
+        fault: WriteFault::Fail,
+    });
+    r.act(Action::Cached {
+        op: Op::Delete { slot: 1 },
+        b: Some(0),
+    });
+    // vault:gc, which still lists the leftover, is lost (4.4: the copies it
+    // listed stay on disk until the slot is next written or deleted)
+    r.act(Action::GarbleNamed {
+        b: 0,
+        which: 1,
+        undecryptable: true,
+    });
+    r.act(Action::ArmWriteFault { after: j, fault });
+    r.act(Action::Cached {
+        op: Op::Generate { slot: 1, seed: 501 },
+        b: Some(0),
+    });
+    r.act(Action::GarbleIndex {
+        b: 0,
+        undecryptable: true,
+    });
+    for _ in 0..2 {
+        r.act(Action::Cached {
+            op: Op::PublicKey { slot: 1 },
+            b: Some(0),
+        });
+        r.act(Action::Cached {
+            op: Op::Export { slot: 1 },
+            b: Some(0),
+        });
+    }
+    r.load(vec![]);
+    r.done()
+}
+
+/// Revision 10 (checklist item 8): 10 hands over to 40 and 40's index is
+/// lost right after the take-over, before its mirror sweep ran. 40's keys
+/// are single copies, so every slot answers storage failure (accepted by
+/// the coordinator); never Absent and never a wrong key.
+pub fn index_lost_after_take_over_before_sweep(cfg: &Cfg, malformed: bool) -> Option<Scenario> {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10), Rec::build(40)]);
+    r.act(Action::Publish);
+    r.load(vec![
+        Op::Generate { slot: 0, seed: 500 },
+        Op::Generate { slot: 1, seed: 501 },
+    ]);
+    r.act(Action::Publish);
+    r.act(Action::Load {
+        client: 0,
+        fetch: Fetch::Newest,
+        ops: vec![],
+    });
+    if !r.steps_until(|r| matches!(r.state(40), PState::Writer(_))) {
+        return None;
+    }
+    r.act(Action::GarbleIndex {
+        b: 3,
+        undecryptable: !malformed,
+    });
+    r.drain();
+    for slot in 0..2 {
+        r.act(Action::Cached {
+            op: Op::PublicKey { slot },
+            b: Some(3),
+        });
+    }
+    r.load(vec![Op::PublicKey { slot: 0 }, Op::Export { slot: 1 }]);
+    Some(r.done())
+}
+
+/// Revision 10 (checklist item 7, liveness): writer 10's mirror writes
+/// fail for a while (the third write of each change: the mirror), then
+/// faults stop, the node restarts and the sweep repairs every mirror; the
+/// index is then lost and every slot must sign.
+pub fn mirror_writes_failing_then_restart(cfg: &Cfg) -> Scenario {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10)]);
+    r.act(Action::Publish);
+    r.load(vec![Op::Generate { slot: 0, seed: 500 }]);
+    for (slot, seed) in [(1u16, 501u32), (2, 502), (0, 600)] {
+        r.act(Action::ArmWriteFault {
+            after: 2,
+            fault: WriteFault::Fail,
+        });
+        let op = if slot == 0 {
+            Op::Import {
+                slot,
+                seed,
+                replace: true,
+            }
+        } else {
+            Op::Generate { slot, seed }
+        };
+        r.act(Action::Cached { op, b: Some(0) });
+    }
+    r.act(Action::Crash);
+    r.drain();
+    r.act(Action::Wakeup { b: 0 });
+    r.drain();
+    r.act(Action::GarbleIndex {
+        b: 0,
+        undecryptable: true,
+    });
+    for slot in 0..3 {
+        r.act(Action::Cached {
+            op: Op::PublicKey { slot },
+            b: Some(0),
+        });
+    }
+    r.done()
+}
+
 /// Every directed scenario with the row it exists to reach.
 pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
     let mut v = vec![];
@@ -899,36 +1038,47 @@ pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
     ];
     for malformed in [false, true] {
         for f in faults {
-            for j in 0..5u8 {
+            for j in 0..3u8 {
+                let row = match j {
+                    0 => "4.2/entry-write/fault-at-step-2",
+                    1 => "4.2/entry-write/fault-at-step-3",
+                    _ => "4.2/entry-write/fault-at-step-4",
+                };
                 v.push((
-                    match j {
-                        0 => "4.2/entry-write/fault-at-step-1",
-                        1 => "4.2/entry-write/fault-at-step-2",
-                        2 => "4.2/entry-write/fault-at-step-3",
-                        _ => "4.2/entry-write/fault-at-step-4",
-                    },
+                    row,
                     entry_write_fault_then_index_lost(cfg, true, j, f, malformed),
                 ));
-            }
-            for j in 0..4u8 {
                 v.push((
-                    match j {
-                        0 => "4.2/entry-write/fault-at-step-1",
-                        1 => "4.2/entry-write/fault-at-step-2",
-                        2 => "4.2/entry-write/fault-at-step-3",
-                        _ => "4.2/entry-write/fault-at-step-4",
-                    },
+                    row,
                     entry_write_fault_then_index_lost(cfg, false, j, f, malformed),
                 ));
+            }
+            for j in 0..5u8 {
                 v.push((
                     match j {
                         0 => "4.2/delete/fault-at-step-1",
                         1 => "4.2/delete/fault-at-step-2",
-                        _ => "4.2/delete/fault-at-step-3",
+                        2 => "4.2/delete/fault-at-step-3",
+                        _ => "4.2/delete/fault-at-step-4",
                     },
                     delete_fault_then_index_lost(cfg, j, f, malformed),
                 ));
             }
+            if !malformed {
+                for j in 0..3u8 {
+                    v.push((
+                        if j == 0 {
+                            "4.2/entry-write/fault-at-step-1"
+                        } else {
+                            "4.2/step-1/leftover-found"
+                        },
+                        delete_then_recreate_same_seed(cfg, j, f),
+                    ));
+                }
+            }
+        }
+        if let Some(sc) = index_lost_after_take_over_before_sweep(cfg, malformed) {
+            v.push(("4.5/direct-read-unavailable/missing-copy", sc));
         }
         if let Some(sc) = receiver_index_lost_mid_copy(cfg, malformed) {
             // revision 10 finding G1: a malformed RECEIVING index while
@@ -1001,9 +1151,10 @@ pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
         retired_malformed_index_stale_read(cfg),
     ));
     v.push((
-        "4.5/direct-read-listed-copy-skipped",
+        "4.5/direct-read-unavailable/missing-copy",
         orphan_copy_of_failed_write(cfg),
     ));
+    v.push(("7.7/sweep-repair", mirror_writes_failing_then_restart(cfg)));
     if let Some(sc) = probe_crash_after_record_stored(cfg) {
         v.push(("5.3/probe-crash-after-record-stored", sc));
     }

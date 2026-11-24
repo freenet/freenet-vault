@@ -58,8 +58,11 @@ impl Default for Params {
     }
 }
 
-/// The mutants of the 15.5 mutation check (revision 10 list, plus the base
-/// mutants carried from revision 9; no repair mutants, 4.6 is v1.1).
+/// The mutants of the 15.5 mutation check (revision 10 final text, the
+/// mirror rule, plus the base mutants carried from revision 9; no repair
+/// mutants, 4.6 is v1.1). The revision 9 mutant "direct read ignoring
+/// vault:gc" is not carried: in revision 10 direct read never reads
+/// vault:gc, so that variant is the correct behaviour.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mutant {
     // ---- carried base mutants (revision 9)
@@ -72,8 +75,6 @@ pub enum Mutant {
     RelistRetired,
     /// List vault:parts before the first WRITER index write.
     PartsBeforeIndex,
-    /// Direct read ignores vault:gc entirely.
-    DirectReadIgnoresGc,
     /// Drop names from vault:gc before they read as absent (the new list is
     /// written first, then the removals).
     GcDropBeforeAbsent,
@@ -82,17 +83,33 @@ pub enum Mutant {
     /// A NONE predecessor answers 0x0B to a creation probe without storing
     /// the record.
     NoState0x0BWithoutStoring,
-    // ---- revision 10 (15.5)
-    /// Write an entry before its name is listed in vault:gc.
-    EntryBeforeGcList,
-    /// List the old copy after the index write instead of before.
-    OldListedAfterIndex,
-    /// Drop a new name from vault:gc before the commit names it.
-    NewDroppedBeforeCommit,
-    /// Direct read uses a listed copy (when the unlisted copies give no
-    /// single value, it falls back to every copy).
-    DirectReadUsesListed,
-    /// Direct read answers Absent when no unlisted copy is usable.
+    // ---- revision 10 (15.5, the mirror)
+    /// Write the mirror (step 4) before the index commits (step 3).
+    MirrorBeforeCommit,
+    /// Write a new identity without first clearing both parity names.
+    NoStep1,
+    /// A Delete commits before its mirror reads back as absent (step 2 is
+    /// skipped; gc removes both copies after the commit).
+    DeleteCommitBeforeMirrorAbsent,
+    /// gc deletes the mirror of a named identity (the revision 9 parity
+    /// rule instead of the identity rule).
+    GcDeletesNamedMirror,
+    /// A receiver writes a mirror after its index commits.
+    ReceiverMirrors,
+    /// The sweep mirrors a named copy without checking the index digest.
+    SweepUncheckedDigest,
+    /// A sealed build runs the mirror sweep.
+    SweepWhileSealed,
+    /// Direct read serves a slot with one authenticating copy and the other
+    /// missing.
+    DirectReadSingleCopy,
+    /// Direct read chooses between two disagreeing authenticating copies
+    /// (the copy at parity 0).
+    DirectReadChooses,
+    /// Direct read ignores eflags and the key check (a flagged copy is
+    /// served as a usable key).
+    DirectReadIgnoresEflagsOrKey,
+    /// Direct read answers Absent when no copy is present.
     DirectReadAbsent,
     /// List a NONE (with an index) or RECEIVING index.
     ListNoneOrReceiving,
@@ -109,19 +126,24 @@ pub enum Mutant {
 }
 
 impl Mutant {
-    pub const ALL: [Mutant; 18] = [
+    pub const ALL: [Mutant; 23] = [
         Mutant::RetiredBeforeUnlist,
         Mutant::NeverUnlist,
         Mutant::RelistRetired,
         Mutant::PartsBeforeIndex,
-        Mutant::DirectReadIgnoresGc,
         Mutant::GcDropBeforeAbsent,
         Mutant::CreateWhileStopped,
         Mutant::NoState0x0BWithoutStoring,
-        Mutant::EntryBeforeGcList,
-        Mutant::OldListedAfterIndex,
-        Mutant::NewDroppedBeforeCommit,
-        Mutant::DirectReadUsesListed,
+        Mutant::MirrorBeforeCommit,
+        Mutant::NoStep1,
+        Mutant::DeleteCommitBeforeMirrorAbsent,
+        Mutant::GcDeletesNamedMirror,
+        Mutant::ReceiverMirrors,
+        Mutant::SweepUncheckedDigest,
+        Mutant::SweepWhileSealed,
+        Mutant::DirectReadSingleCopy,
+        Mutant::DirectReadChooses,
+        Mutant::DirectReadIgnoresEflagsOrKey,
         Mutant::DirectReadAbsent,
         Mutant::ListNoneOrReceiving,
         Mutant::AnswerBeforeListing,
@@ -153,6 +175,9 @@ pub struct BuildDef {
 pub struct Volatile {
     pub in_flight: BTreeSet<Ident>,
     pub complete_in_flight: bool,
+    /// The mirror sweep (7.7) has finished since this build started or
+    /// took over. Volatile: a restart sweeps again.
+    pub swept: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -272,12 +297,17 @@ pub enum Note {
         target: Ver,
         m: Digest,
     },
-    /// Revision 10, 4.2: step k of an entry write is about to happen (1 the
-    /// vault:gc listing, 2 the entry, 3 the index, 4 vault:gc processing).
-    EntryStep(u8),
-    /// Revision 10: step k of a Delete is about to happen (1 vault:gc, 2
-    /// the index, 3 the removals).
-    DeleteStep(u8),
+    /// Revision 10, 4.2: step k of an entry write of this identity is about
+    /// to happen (1 clear both parity names, 2 the entry, 3 the index, 4 the
+    /// mirror). Receivers: 1, 2 and 3 only.
+    EntryStep(u8, Ident),
+    /// Step 4 of an entry write landed: both copies hold the new bytes.
+    Mirrored(Ident),
+    /// Revision 10: step k of a Delete of this identity is about to happen
+    /// (1 vault:gc, 2 remove the mirror, 3 the index, 4 gc processing).
+    DeleteStep(u8, Ident),
+    /// The mirror sweep (7.7) finished in this call.
+    SweepDone,
     /// The partition was listed in vault:parts in this call (4.2).
     Listed,
     /// An injected write fault fired on this write or removal (coverage of
@@ -613,10 +643,33 @@ impl<'a> Cx<'a> {
         self.put(SName::Gc, SVal::Gc(s))
     }
 
-    /// 4.2 (revision 10): a name leaves vault:gc only when the committed
-    /// index names it, or when its secret reads as absent after removal. A
-    /// secret is deleted only if the committed index, read at deletion
-    /// time, does not name it.
+    /// Whether the committed index keeps this name (revision 10, 4.2: gc
+    /// deletes by identity; both parity names of a named identity are in
+    /// use, one as the copy and one as the mirror). Mutant
+    /// GcDeletesNamedMirror keeps only the named parity.
+    fn gc_keeps(&mut self, idx: &Index, n: &SName) -> bool {
+        match n {
+            SName::E(id, par) => match idx.entries.get(id) {
+                None => false,
+                Some(e) if e.parity == *par => true,
+                Some(_) => {
+                    if self.p.mutant == Some(Mutant::GcDeletesNamedMirror) {
+                        self.hit("mutant/gc-deletes-named-mirror");
+                        false
+                    } else {
+                        true
+                    }
+                }
+            },
+            _ => false,
+        }
+    }
+
+    /// 4.2 (revision 10): a name in vault:gc is deleted only if the
+    /// committed index, read at deletion time, does not name its identity;
+    /// a name the committed index still uses is dropped from vault:gc and
+    /// kept. A name leaves vault:gc otherwise only once its secret reads as
+    /// absent after removal.
     fn process_gc(&mut self) -> R<()> {
         let gc = self.gc_set();
         if gc.is_empty() {
@@ -628,10 +681,8 @@ impl<'a> Cx<'a> {
             let idx = self.idx();
             let mut remaining = BTreeSet::new();
             for n in &gc {
-                if let SName::E(id, par) = n {
-                    if idx.entries.get(id).map(|e| e.parity) == Some(*par) {
-                        continue;
-                    }
+                if self.gc_keeps(&idx, n) {
+                    continue;
                 }
                 remaining.insert(*n);
             }
@@ -646,11 +697,7 @@ impl<'a> Cx<'a> {
         let mut remaining = BTreeSet::new();
         for n in gc {
             let idx = self.idx();
-            let named = match n {
-                SName::E(id, par) => idx.entries.get(&id).map(|e| e.parity) == Some(par),
-                _ => false,
-            };
-            if named {
+            if self.gc_keeps(&idx, &n) {
                 self.hit("4.2/gc-dropped-named-by-commit");
                 continue;
             }
@@ -824,73 +871,77 @@ impl<'a> Cx<'a> {
         }
     }
 
-    /// 4.5 direct-read rule (revision 10): read vault:gc (a malformed one
-    /// leaves no copy usable; an absent one lists nothing); use the copies
-    /// whose names it does not list and that decode as a valid entry for
-    /// the slot, if they hold exactly one value; otherwise storage failure
-    /// (Err). Never Absent (Ok(None) only under mutant DirectReadAbsent).
+    /// 4.5 direct-read rule (revision 10 final, the mirror): read both
+    /// parity copies; a copy authenticates if it reads as present and
+    /// parses exactly as a 12.2 entry of kind 0x01, eflags 0, key equal to
+    /// the slot, content_len 32 and an ext_len that fits. Served only when
+    /// both authenticate and their bytes are identical; otherwise storage
+    /// failure (Err). Never Absent (Ok(None) only under mutant
+    /// DirectReadAbsent). vault:gc is never read.
     fn direct_read(&mut self, slot: u16) -> Result<Option<Entry>, ()> {
         let id = (KIND_KEY, slot);
         let m = self.p.mutant;
-        let gc = match self.host.read(&SName::Gc) {
-            Some(SVal::Gc(g)) => g,
-            None => {
-                self.hit("4.5/direct-read-gc-absent-lists-nothing");
-                BTreeSet::new()
-            }
-            Some(_) => {
-                if m == Some(Mutant::DirectReadIgnoresGc) {
-                    BTreeSet::new()
-                } else {
-                    self.hit("4.5/direct-read-gc-malformed-storage-failure");
-                    return Err(());
+        let ign = m == Some(Mutant::DirectReadIgnoresEflagsOrKey);
+        let c0 = self.host.read(&SName::E(id, false));
+        let c1 = self.host.read(&SName::E(id, true));
+        let auth = |v: &Option<SVal>| -> Option<Entry> {
+            match v {
+                Some(SVal::E(e))
+                    if e.kind == KIND_KEY && (ign || (!e.flagged && e.key == slot)) =>
+                {
+                    Some(e.clone())
                 }
+                _ => None,
             }
         };
-        let mut usable: Vec<Entry> = vec![];
-        let mut listed: Vec<Entry> = vec![];
-        for par in [false, true] {
-            let n = SName::E(id, par);
-            if let Some(SVal::E(e)) = self.host.read(&n) {
-                if e.ident() != id {
-                    continue;
+        let (a0, a1) = (auth(&c0), auth(&c1));
+        if ign {
+            let strict = |v: &Option<SVal>| matches!(v, Some(SVal::E(e)) if e.kind == KIND_KEY && !e.flagged && e.key == slot);
+            if a0.is_some() && a1.is_some() && (!strict(&c0) || !strict(&c1)) {
+                self.hit("mutant/direct-read-ignored-eflags-or-key");
+            }
+        }
+        match (&a0, &a1) {
+            (Some(x), Some(y)) if x == y => {
+                self.hit("4.5/direct-read-served");
+                let mut e = x.clone();
+                if ign {
+                    e.flagged = false;
                 }
-                if gc.contains(&n) {
-                    if m == Some(Mutant::DirectReadIgnoresGc) {
-                        self.hit("mutant/direct-read-ignored-gc-listing");
-                        usable.push(e);
-                    } else {
-                        self.hit("4.5/direct-read-listed-copy-skipped");
-                        listed.push(e);
-                    }
+                return Ok(Some(e));
+            }
+            (Some(x), Some(_)) => {
+                if m == Some(Mutant::DirectReadChooses) {
+                    self.hit("mutant/direct-read-chose-between-copies");
+                    return Ok(Some(x.clone()));
+                }
+                self.hit("4.5/direct-read-unavailable/disagreement");
+            }
+            (Some(x), None) | (None, Some(x)) => {
+                let other = if a0.is_some() { &c1 } else { &c0 };
+                if m == Some(Mutant::DirectReadSingleCopy) && other.is_none() {
+                    self.hit("mutant/direct-read-served-single-copy");
+                    return Ok(Some(x.clone()));
+                }
+                self.hit(if other.is_none() {
+                    "4.5/direct-read-unavailable/missing-copy"
                 } else {
-                    usable.push(e);
+                    "4.5/direct-read-unavailable/authentication-failure"
+                });
+            }
+            (None, None) => {
+                if c0.is_none() && c1.is_none() {
+                    if m == Some(Mutant::DirectReadAbsent) {
+                        self.hit("mutant/direct-read-answered-absent");
+                        return Ok(None);
+                    }
+                    self.hit("4.5/direct-read-unavailable/missing-copy");
+                    self.hit("4.5/direct-read-unavailable/no-copy");
+                } else {
+                    self.hit("4.5/direct-read-unavailable/authentication-failure");
                 }
             }
         }
-        usable.dedup();
-        if let [e] = usable.as_slice() {
-            self.hit("4.5/direct-read-served");
-            return Ok(Some(e.clone()));
-        }
-        if m == Some(Mutant::DirectReadUsesListed) && !listed.is_empty() {
-            let mut all = usable.clone();
-            all.extend(listed);
-            all.dedup();
-            if let [e] = all.as_slice() {
-                self.hit("mutant/direct-read-used-listed-copy");
-                return Ok(Some(e.clone()));
-            }
-        }
-        if m == Some(Mutant::DirectReadAbsent) && usable.is_empty() {
-            self.hit("mutant/direct-read-answered-absent");
-            return Ok(None);
-        }
-        self.hit(if usable.is_empty() {
-            "4.5/direct-read-storage-failure/no-usable-copy"
-        } else {
-            "4.5/direct-read-storage-failure/two-values"
-        });
         self.hit("4.5/direct-read-storage-failure");
         Err(())
     }
@@ -1026,7 +1077,13 @@ impl<'a> Cx<'a> {
 
     fn has_work(&self) -> bool {
         let idx = self.idx();
+        let sweep_due = !self.vol.swept
+            && self.parts_listed()
+            && (matches!(idx.state, PState::Writer(_))
+                || (self.p.mutant == Some(Mutant::SweepWhileSealed)
+                    && matches!(idx.state, PState::Sealed { .. })));
         !self.gc_set().is_empty()
+            || sweep_due
             || matches!(idx.state, PState::Sealed { .. })
             || matches!(&idx.state, PState::Writer(w) if w.awaiting)
             || self.copy_target(&idx).is_some()
@@ -1132,6 +1189,9 @@ impl<'a> Cx<'a> {
     fn step(&mut self, window: usize) -> R<bool> {
         self.vol.in_flight.clear();
         self.vol.complete_in_flight = false;
+        // revision 10, 7.7: the mirror sweep, until it has finished since
+        // this build started or took over (not while sealed)
+        self.sweep()?;
         let before = self.out.len();
         let idx = self.idx();
         match idx.state.clone() {
@@ -1639,63 +1699,33 @@ impl<'a> Cx<'a> {
             outcomes.push((d, Outcome::Stored));
         }
         let mut failed = false;
-        // revision 10, 4.2: one vault:gc write per Chunk listing every name
-        // it will write and the old copy of each slot that has one (step 1)
-        let mut names: Vec<SName> = vec![];
-        for (_, e, par) in &plan {
-            let id = e.ident();
-            if self.p.mutant != Some(Mutant::OldListedAfterIndex) {
-                if let Some(x) = idx.entries.get(&id) {
-                    names.push(SName::E(id, x.parity));
-                }
-            }
-            names.push(SName::E(id, *par));
-        }
-        let olds: Vec<SName> = plan
-            .iter()
-            .filter_map(|(_, e, _)| {
-                idx.entries
-                    .get(&e.ident())
-                    .map(|x| SName::E(e.ident(), x.parity))
-            })
-            .collect();
-        let before_entries = self.p.mutant == Some(Mutant::EntryBeforeGcList);
-        let mut gc_ok = true;
-        if !before_entries && !plan.is_empty() {
-            self.notes.push(Note::EntryStep(1));
-            gc_ok = self.gc_add(&names)?;
-        }
+        // revision 10, 4.2: a receiver writes one copy per entry, to the
+        // parity its index does not name, applying step 1 to identities its
+        // index does not name (0x13 if a parity name will not clear); it
+        // never mirrors
+        let mut written: Vec<Entry> = vec![];
         for (i, e, par) in &plan {
-            if gc_ok && {
-                self.notes.push(Note::EntryStep(2));
-                self.put(SName::E(e.ident(), *par), SVal::E(e.clone()))?
-            } {
+            let id = e.ident();
+            let ok = (idx.entries.contains_key(&id) || self.clear_both(id)?) && {
+                self.notes.push(Note::EntryStep(2, id));
+                self.put(SName::E(id, *par), SVal::E(e.clone()))?
+            };
+            if ok {
                 idx.entries.insert(
-                    e.ident(),
+                    id,
                     IdxEnt {
                         parity: *par,
                         digest: e.digest(),
                     },
                 );
+                written.push(e.clone());
                 self.hit("7.2/outcome-stored");
+                self.hit("4.2/receiver/single-copy-written");
             } else {
                 outcomes[*i].1 = Outcome::StorageFailure;
                 self.hit("7.2/outcome-storage-failure");
                 failed = true;
             }
-        }
-        if before_entries && !plan.is_empty() {
-            self.hit("mutant/entry-written-before-gc-listing");
-            self.notes.push(Note::EntryStep(1));
-            self.gc_add(&names)?;
-        }
-        if self.p.mutant == Some(Mutant::NewDroppedBeforeCommit) && !plan.is_empty() {
-            self.hit("mutant/new-name-dropped-before-commit");
-            let mut g = self.gc_set();
-            for (_, e, par) in &plan {
-                g.remove(&SName::E(e.ident(), *par));
-            }
-            self.put(SName::Gc, SVal::Gc(g))?;
         }
         if rx != rx0 && !self.put(SName::Rx, SVal::Rx(rx))? {
             for o in outcomes.iter_mut() {
@@ -1716,8 +1746,8 @@ impl<'a> Cx<'a> {
             from,
             store_failed: prev_failed || failed,
         };
-        if !plan.is_empty() {
-            self.notes.push(Note::EntryStep(3));
+        if let Some(e) = written.first() {
+            self.notes.push(Note::EntryStep(3, e.ident()));
         }
         if !self.commit(&idx)? {
             let disk = self.idx();
@@ -1727,15 +1757,15 @@ impl<'a> Cx<'a> {
                 }
             }
         } else {
-            if self.p.mutant == Some(Mutant::OldListedAfterIndex) && !olds.is_empty() {
-                self.hit("mutant/old-copy-listed-after-index");
-                self.gc_add(&olds)?;
-            }
-            if !plan.is_empty() {
-                // step 4: processing drops the new names and removes the old
-                // copies
-                self.notes.push(Note::EntryStep(4));
-                self.hit("4.2/entry-write/receiver-chunk-step-4");
+            if self.p.mutant == Some(Mutant::ReceiverMirrors) {
+                for e in &written {
+                    let id = e.ident();
+                    let par = idx.entries[&id].parity;
+                    self.hit("mutant/receiver-wrote-mirror");
+                    if !self.put(SName::E(id, !par), SVal::E(e.clone()))? {
+                        break;
+                    }
+                }
             }
             self.process_gc()?;
         }
@@ -1812,6 +1842,8 @@ impl<'a> Cx<'a> {
             self.ensure_parts()?;
             if self.commit(&n)? {
                 self.hit("7.4/took-over");
+                // the new writer mirrors what it took over (7.7)
+                self.vol.swept = false;
                 self.notes.push(Note::TookOver { from, m });
                 // revision 10, F16: "accepted" leaves only after the
                 // partition is listed and the listing reads back; otherwise
@@ -2391,13 +2423,13 @@ impl<'a> Cx<'a> {
             Op::PublicKey { slot } => Ok(match self.read_key(slot)? {
                 Err(()) => OpRes::Missing,
                 Ok(None) => OpRes::Absent,
-                Ok(Some(e)) if e.flagged => OpRes::Unusable,
+                Ok(Some(e)) if e.flagged || self.corrupt_named(&e) => OpRes::Unusable,
                 Ok(Some(e)) => OpRes::Key(e.content),
             }),
             Op::Batch { slot, expected } => Ok(match self.read_key(slot)? {
                 Err(()) => OpRes::Missing,
                 Ok(None) => OpRes::Absent,
-                Ok(Some(e)) if e.flagged => OpRes::Unusable,
+                Ok(Some(e)) if e.flagged || self.corrupt_named(&e) => OpRes::Unusable,
                 Ok(Some(e)) if e.content != expected => OpRes::Refused(14),
                 Ok(Some(e)) => OpRes::Key(e.content),
             }),
@@ -2421,18 +2453,32 @@ impl<'a> Cx<'a> {
                 if !idx.entries.contains_key(&id) {
                     return Ok(OpRes::Absent);
                 }
-                // 4.2: both parity names, whether or not each copy exists,
-                // in the first write; then the index; then the removals
-                self.notes.push(Note::DeleteStep(1));
+                // 4.2 (revision 10, F15): (1) one vault:gc write listing both
+                // parity names; (2) remove the mirror and read it back as
+                // absent; (3) commit; (4) gc removes the other copy
+                let named = idx.entries[&id].parity;
+                self.notes.push(Note::DeleteStep(1, id));
                 if !self.gc_add(&[SName::E(id, false), SName::E(id, true)])? {
                     return Ok(OpRes::Refused(12));
                 }
+                if self.p.mutant == Some(Mutant::DeleteCommitBeforeMirrorAbsent) {
+                    if self.host.read(&SName::E(id, !named)).is_some() {
+                        self.hit("mutant/delete-committed-before-mirror-absent");
+                    }
+                } else {
+                    self.notes.push(Note::DeleteStep(2, id));
+                    let mn = SName::E(id, !named);
+                    if !self.del(mn)? || self.host.read(&mn).is_some() {
+                        self.hit("4.2/delete/step-2-refused");
+                        return Ok(OpRes::Refused(12));
+                    }
+                }
                 let mut n = idx.clone();
                 n.entries.remove(&id);
-                self.notes.push(Note::DeleteStep(2));
+                self.notes.push(Note::DeleteStep(3, id));
                 if self.commit(&n)? {
                     self.hit("ops/delete");
-                    self.notes.push(Note::DeleteStep(3));
+                    self.notes.push(Note::DeleteStep(4, id));
                     self.process_gc()?;
                     Ok(OpRes::Ok)
                 } else {
@@ -2486,6 +2532,17 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// 4.3: while sealed a corrupt slot is not rewritten and answers
+    /// Unusable(corrupt); read_entry hands back the bytes on disk for
+    /// copying, so a digest that differs from the index marks it.
+    fn corrupt_named(&mut self, e: &Entry) -> bool {
+        let bad = self.idx().entries.get(&e.ident()).map(|x| x.digest) != Some(e.digest());
+        if bad {
+            self.hit("4.3/sealed-corrupt-slot-answers-unusable");
+        }
+        bad
+    }
+
     fn read_key(&mut self, slot: u16) -> R<Result<Option<Entry>, ()>> {
         self.read_entry((KIND_KEY, slot))
     }
@@ -2517,49 +2574,58 @@ impl<'a> Cx<'a> {
         self.write_entry_steps(e, &mut n)
     }
 
-    /// Revision 10, 4.2: every entry write takes four steps: (1) one
-    /// vault:gc write listing the name the entry will be written to and,
-    /// when the slot already has a copy, that copy's name; (2) the entry, to
-    /// the parity the index does not name; (3) the index; (4) once the
-    /// index reads back, vault:gc is processed in the same call (dropping
-    /// the new name, removing the old copy). `n` is the index to commit
-    /// (its other fields already set by the caller).
+    /// Revision 10, 4.2 step 1: before writing an identity the index does
+    /// not name, remove both of its parity names and read each back as
+    /// absent. Ok(false): a name still reads as present, or a removal
+    /// failed (the change is refused with storage failure).
+    fn clear_both(&mut self, id: Ident) -> R<bool> {
+        if self.p.mutant == Some(Mutant::NoStep1) {
+            if [false, true]
+                .iter()
+                .any(|p| self.host.store.secrets.contains_key(&SName::E(id, *p)))
+            {
+                self.hit("mutant/no-step-1-leftover-kept");
+            }
+            return Ok(true);
+        }
+        self.notes.push(Note::EntryStep(1, id));
+        for par in [false, true] {
+            let n = SName::E(id, par);
+            if self.host.store.secrets.contains_key(&n) {
+                self.hit("4.2/step-1/leftover-found");
+            }
+            if !self.del(n)? {
+                self.hit("4.2/step-1/removal-failed-refused");
+                return Ok(false);
+            }
+            if self.host.read(&n).is_some() {
+                self.hit("4.2/step-1/still-present-refused");
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Revision 10, 4.2: an entry write by a listed build takes four steps:
+    /// (1) if the index does not name the identity, clear both parity names
+    /// with read-back; (2) the entry, to the parity the index does not name;
+    /// (3) the index, read back; (4) the same bytes to the other parity (the
+    /// mirror). The answer depends on step 3 only: a failed step 4 leaves
+    /// the slot served from the index. `n` is the index to commit (its
+    /// other fields already set by the caller).
     fn write_entry_steps(&mut self, e: Entry, n: &mut Index) -> R<bool> {
         let id = e.ident();
-        let par = n.entries.get(&id).map(|x| !x.parity).unwrap_or(false);
-        let old = n.entries.get(&id).map(|x| SName::E(id, x.parity));
+        let named = n.entries.get(&id).map(|x| x.parity);
+        let par = named.map(|p| !p).unwrap_or(false);
         let new = SName::E(id, par);
-        let mut first: Vec<SName> = vec![new];
-        if let Some(o) = old {
-            if self.p.mutant != Some(Mutant::OldListedAfterIndex) {
-                first.push(o);
-            }
-        }
+        let mirror = SName::E(id, !par);
         let m = self.p.mutant;
-        if m != Some(Mutant::EntryBeforeGcList) {
-            self.notes.push(Note::EntryStep(1));
-            if !self.gc_add(&first)? {
-                return Ok(false);
-            }
-        }
-        self.notes.push(Note::EntryStep(2));
-        if !self.put(new, SVal::E(e.clone()))? {
+        if named.is_none() && !self.clear_both(id)? {
             return Ok(false);
         }
-        if m == Some(Mutant::EntryBeforeGcList) {
-            self.hit("mutant/entry-written-before-gc-listing");
-            self.notes.push(Note::EntryStep(1));
-            if !self.gc_add(&first)? {
-                return Ok(false);
-            }
-        }
-        if m == Some(Mutant::NewDroppedBeforeCommit) {
-            self.hit("mutant/new-name-dropped-before-commit");
-            let mut g = self.gc_set();
-            g.remove(&new);
-            if !self.put(SName::Gc, SVal::Gc(g))? {
-                return Ok(false);
-            }
+        self.notes.push(Note::EntryStep(2, id));
+        if !self.put(new, SVal::E(e.clone()))? {
+            return Ok(false);
         }
         n.entries.insert(
             id,
@@ -2571,18 +2637,86 @@ impl<'a> Cx<'a> {
         if e.flagged {
             n.problems |= PROBLEM_CORRUPT;
         }
-        self.notes.push(Note::EntryStep(3));
+        if m == Some(Mutant::MirrorBeforeCommit) {
+            self.hit("mutant/mirror-before-commit");
+            self.notes.push(Note::EntryStep(4, id));
+            if !self.put(mirror, SVal::E(e.clone()))? {
+                return Ok(false);
+            }
+        }
+        self.notes.push(Note::EntryStep(3, id));
         if !self.commit(n)? {
             return Ok(false);
         }
-        if let (Some(o), Some(Mutant::OldListedAfterIndex)) = (old, m) {
-            self.hit("mutant/old-copy-listed-after-index");
-            self.gc_add(&[o])?;
+        if m != Some(Mutant::MirrorBeforeCommit) {
+            self.notes.push(Note::EntryStep(4, id));
+            if self.put(mirror, SVal::E(e.clone()))? {
+                self.hit("4.2/entry-write/step-4");
+                self.notes.push(Note::Mirrored(id));
+            } else {
+                self.hit("4.2/entry-write/mirror-failed-committed");
+            }
+        } else {
+            self.notes.push(Note::Mirrored(id));
         }
-        self.notes.push(Note::EntryStep(4));
-        self.hit("4.2/entry-write/step-4");
-        self.process_gc()?;
         Ok(true)
+    }
+
+    /// 7.7 (revision 10): the mirror sweep of a listed, unsealed build. For
+    /// each identity the index names, read both copies; where the mirror is
+    /// missing or differs, write it from the named copy after checking that
+    /// copy against the index digest. Progress is volatile.
+    fn sweep(&mut self) -> R<()> {
+        if self.vol.swept || !self.parts_listed() {
+            return Ok(());
+        }
+        let idx = self.idx();
+        match idx.state {
+            PState::Writer(_) => {}
+            PState::Sealed { .. } if self.p.mutant == Some(Mutant::SweepWhileSealed) => {
+                self.hit("mutant/sweep-while-sealed");
+            }
+            _ => return Ok(()),
+        }
+        for (id, ie) in &idx.entries {
+            let named = self.host.read(&SName::E(*id, ie.parity));
+            let mirror = SName::E(*id, !ie.parity);
+            let mv = self.host.read(&mirror);
+            if mv.is_some() && mv == named {
+                continue;
+            }
+            let ok = match &named {
+                Some(SVal::E(e)) => {
+                    if e.digest() == ie.digest {
+                        true
+                    } else if self.p.mutant == Some(Mutant::SweepUncheckedDigest) {
+                        self.hit("mutant/sweep-mirrored-unchecked-copy");
+                        true
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            };
+            if !ok {
+                self.hit("7.7/sweep-skipped-named-copy-fails-digest");
+                continue;
+            }
+            if !self.put(mirror, named.clone().unwrap())? {
+                self.hit("7.7/sweep-write-failed");
+                return Ok(());
+            }
+            self.hit("7.7/sweep-repair");
+        }
+        if self.host.poisoned.get() {
+            // a failed read poisons the call (4.0): its reads may have
+            // returned nothing, so the sweep has not finished
+            return Ok(());
+        }
+        self.vol.swept = true;
+        self.notes.push(Note::SweepDone);
+        self.hit("7.7/sweep-finished");
+        Ok(())
     }
 }
 

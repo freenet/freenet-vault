@@ -813,6 +813,10 @@ fn a_poisoned_call_refuses_every_later_write() {
 fn undecryptable_index_while_listed_is_index_loss() {
     let mut b = t(20);
     b.set(PState::Writer(WFields::default()), &[key(0, 5)]);
+    // revision 10: a listed build keeps the mirror
+    b.store
+        .secrets
+        .insert(SName::E((KIND_KEY, 0), true), SVal::E(key(0, 5)));
     b.store.secrets.insert(SName::Parts, SVal::Parts);
     b.store.secrets.insert(SName::Idx, SVal::Undecryptable);
     assert!(b.store.index_lost());
@@ -847,74 +851,99 @@ fn undecryptable_index_while_listed_is_index_loss() {
     }
 }
 
-/// Revision 10 (F13, F15): direct read uses only copies vault:gc does not
-/// list; a malformed vault:gc leaves every slot at storage failure.
+/// Revision 10 final (F13, F15, the mirror): direct read serves a slot
+/// only when both parity copies authenticate and are byte-identical; a
+/// single copy, two disagreeing copies, a flagged pair or a pair with the
+/// wrong key answer storage failure, never Absent; vault:gc is not read.
 #[test]
-fn direct_read_skips_listed_copies_and_fails_on_a_malformed_gc() {
+fn direct_read_serves_only_complete_agreeing_authenticating_pairs() {
+    let id = (KIND_KEY, 0);
+    let read = |b: &mut T, op: Op| match b.call(Input::Op(op)).reply {
+        Reply::Op(r) => r,
+        r => panic!("{r:?}"),
+    };
     let mut b = t(20);
     b.set(PState::Writer(WFields::default()), &[key(0, 5)]);
     b.store.secrets.insert(SName::Parts, SVal::Parts);
-    // an orphan of a failed write to the other parity, listed in vault:gc
     b.store
         .secrets
-        .insert(SName::E((KIND_KEY, 0), true), SVal::E(key(0, 9)));
-    b.store.secrets.insert(
-        SName::Gc,
-        SVal::Gc([SName::E((KIND_KEY, 0), true)].into_iter().collect()),
-    );
+        .insert(SName::E(id, true), SVal::E(key(0, 5)));
     b.store.secrets.insert(SName::Idx, SVal::Undecryptable);
-    match b.call(Input::Op(Op::PublicKey { slot: 0 })).reply {
-        Reply::Op(r) => assert_eq!(r, OpRes::Key(5)),
-        r => panic!("{r:?}"),
-    }
-    // both names listed (an incomplete Delete): storage failure, not Absent
-    b.store.secrets.insert(
-        SName::Gc,
-        SVal::Gc(
-            [
-                SName::E((KIND_KEY, 0), false),
-                SName::E((KIND_KEY, 0), true),
-            ]
-            .into_iter()
-            .collect(),
-        ),
-    );
-    match b.call(Input::Op(Op::PublicKey { slot: 0 })).reply {
-        Reply::Op(r) => assert_eq!(r, OpRes::Refused(12)),
-        r => panic!("{r:?}"),
-    }
+    assert_eq!(read(&mut b, Op::PublicKey { slot: 0 }), OpRes::Key(5));
+    // a malformed vault:gc listing both names changes nothing
     b.store.secrets.insert(SName::Gc, SVal::Garbled);
-    match b.call(Input::Op(Op::Export { slot: 0 })).reply {
-        Reply::Op(r) => assert_eq!(r, OpRes::Refused(12)),
-        r => panic!("{r:?}"),
-    }
+    assert_eq!(read(&mut b, Op::Export { slot: 0 }), OpRes::Key(5));
+    // two copies that disagree
+    b.store
+        .secrets
+        .insert(SName::E(id, true), SVal::E(key(0, 9)));
+    assert_eq!(read(&mut b, Op::PublicKey { slot: 0 }), OpRes::Refused(12));
+    // a single copy
+    b.store.secrets.remove(&SName::E(id, true));
+    assert_eq!(read(&mut b, Op::PublicKey { slot: 0 }), OpRes::Refused(12));
+    // a copy that does not authenticate (undecryptable, flagged, wrong key)
+    b.store
+        .secrets
+        .insert(SName::E(id, true), SVal::Undecryptable);
+    assert_eq!(read(&mut b, Op::Export { slot: 0 }), OpRes::Refused(12));
+    let flagged = Entry {
+        flagged: true,
+        ..key(0, 5)
+    };
+    b.store
+        .secrets
+        .insert(SName::E(id, false), SVal::E(flagged.clone()));
+    b.store.secrets.insert(SName::E(id, true), SVal::E(flagged));
+    assert_eq!(read(&mut b, Op::Export { slot: 0 }), OpRes::Refused(12));
+    let wrong = Entry {
+        key: 7,
+        ..key(0, 5)
+    };
+    b.store
+        .secrets
+        .insert(SName::E(id, false), SVal::E(wrong.clone()));
+    b.store.secrets.insert(SName::E(id, true), SVal::E(wrong));
+    assert_eq!(read(&mut b, Op::PublicKey { slot: 0 }), OpRes::Refused(12));
+    // no copy at all: storage failure, never Absent
+    b.store.secrets.remove(&SName::E(id, false));
+    b.store.secrets.remove(&SName::E(id, true));
+    assert_eq!(read(&mut b, Op::PublicKey { slot: 0 }), OpRes::Refused(12));
 }
 
-/// Revision 10 (4.2): an entry write lists the new name and the old copy
-/// in vault:gc first, and the same call's processing leaves only the copy
-/// the committed index names.
+/// Revision 10 final (4.2): a change writes the parity the index does not
+/// name, commits, then mirrors; a crash before the mirror leaves two
+/// disagreeing copies; a new identity first clears both parity names.
 #[test]
-fn entry_write_lists_names_first_and_processing_cleans_up() {
+fn entry_write_mirrors_after_commit_and_clears_leftovers_first() {
+    let id = (KIND_KEY, 0);
     let mut b = t(20);
     b.set(PState::Writer(WFields::default()), &[key(0, 5)]);
+    b.store
+        .secrets
+        .insert(SName::E(id, true), SVal::E(key(0, 5)));
     b.store.secrets.insert(SName::Parts, SVal::Parts);
-    // crash right after the vault:gc write (step 1)
+    // crash right after the entry write (step 2): the pair disagrees
     b.faults.armed = Some((0, crate::store::WriteFault::CrashAfter));
     let _ = b.try_call(Input::Op(Op::Import {
         slot: 0,
         seed: 6,
         replace: true,
     }));
-    match b.store.secrets.get(&SName::Gc) {
-        Some(SVal::Gc(g)) => {
-            assert!(g.contains(&SName::E((KIND_KEY, 0), true)));
-            assert!(g.contains(&SName::E((KIND_KEY, 0), false)));
-        }
-        v => panic!("{v:?}"),
-    }
-    // a complete write leaves vault:gc empty and one copy on disk
+    assert_eq!(
+        b.store.secrets.get(&SName::E(id, true)),
+        Some(&SVal::E(key(0, 6)))
+    );
+    assert_eq!(
+        b.store.secrets.get(&SName::E(id, false)),
+        Some(&SVal::E(key(0, 5)))
+    );
+    assert_eq!(b.store.direct_value(id), Err(()));
+    // a complete write leaves both copies identical
     let mut b = t(20);
     b.set(PState::Writer(WFields::default()), &[key(0, 5)]);
+    b.store
+        .secrets
+        .insert(SName::E(id, true), SVal::E(key(0, 5)));
     b.store.secrets.insert(SName::Parts, SVal::Parts);
     b.call(Input::Op(Op::Import {
         slot: 0,
@@ -922,13 +951,22 @@ fn entry_write_lists_names_first_and_processing_cleans_up() {
         replace: true,
     }));
     assert_eq!(
-        b.store.secrets.get(&SName::Gc),
-        Some(&SVal::Gc(Default::default()))
+        b.store.secrets.get(&SName::E(id, true)),
+        Some(&SVal::E(key(0, 6)))
     );
-    assert!(!b
-        .store
+    assert_eq!(
+        b.store.secrets.get(&SName::E(id, false)),
+        Some(&SVal::E(key(0, 6)))
+    );
+    // a new identity with a leftover copy: step 1 removes it first
+    let id1 = (KIND_KEY, 1);
+    b.store
         .secrets
-        .contains_key(&SName::E((KIND_KEY, 0), false)));
+        .insert(SName::E(id1, true), SVal::E(key(1, 8)));
+    b.faults.armed = Some((1, crate::store::WriteFault::CrashBefore));
+    let _ = b.try_call(Input::Op(Op::Generate { slot: 1, seed: 8 }));
+    assert!(!b.store.secrets.contains_key(&SName::E(id1, true)));
+    assert_eq!(b.store.direct_value(id1), Err(()));
 }
 
 /// Revision 10 (F14): a malformed index is index loss only while

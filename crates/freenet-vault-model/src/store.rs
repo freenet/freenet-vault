@@ -64,28 +64,20 @@ impl Store {
             || (idx_absent && (listed || parts_malformed))
     }
 
-    /// The 4.5 direct-read rule as the checker's ground truth (revision
-    /// 10): a malformed vault:gc leaves no copy usable; otherwise use the
-    /// copies whose names vault:gc does not list and that decode as a valid
-    /// entry for the slot, if they hold exactly one value. Never Absent:
-    /// Ok(Some) or Err (storage failure).
+    /// The 4.5 direct-read rule as the checker's ground truth (revision 10
+    /// final, the mirror): both parity copies read as present and parse as
+    /// an entry of kind 0x01 with eflags 0 and the key of the slot, and
+    /// their bytes are identical; then that value, else Err (storage
+    /// failure). Never Absent; vault:gc is not read.
     pub fn direct_value(&self, id: Ident) -> Result<Option<Entry>, ()> {
-        let gc = match self.secrets.get(&SName::Gc) {
-            Some(SVal::Gc(g)) => g.clone(),
-            None | Some(SVal::Undecryptable) => Default::default(),
-            Some(_) => return Err(()),
+        let auth = |par: bool| match self.secrets.get(&SName::E(id, par)) {
+            Some(SVal::E(e)) if e.kind == KIND_KEY && !e.flagged && e.ident() == id => {
+                Some(e.clone())
+            }
+            _ => None,
         };
-        let mut vals: Vec<Entry> = [SName::E(id, false), SName::E(id, true)]
-            .iter()
-            .filter(|n| !gc.contains(n))
-            .filter_map(|n| match self.secrets.get(n) {
-                Some(SVal::E(e)) if e.ident() == id => Some(e.clone()),
-                _ => None,
-            })
-            .collect();
-        vals.dedup();
-        match vals.as_slice() {
-            [e] => Ok(Some(e.clone())),
+        match (auth(false), auth(true)) {
+            (Some(a), Some(b)) if a == b => Ok(Some(a)),
             _ => Err(()),
         }
     }
