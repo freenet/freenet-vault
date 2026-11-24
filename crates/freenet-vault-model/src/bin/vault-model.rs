@@ -2,10 +2,17 @@
 //! violations (with shrunk traces) and coverage.
 //!
 //! vault-model [--seeds N] [--start S] [--queued] [--adversarial] [--stale-pointer]
-//!             [--trace SEED] [--quiet]
+//!             [--trace SEED] [--mutant NAME] [--mutants]
+//!             [--gc-old-after-index] [--no-list-none-indexes]
+//!
+//! --mutants runs every mutant of `build::Mutant` over the seed range and
+//! the directed scenarios, and reports for each whether it is caught: a
+//! violation at a seed (or directed scenario) where the unmutated model has
+//! none, or has a different one.
 
 use std::collections::BTreeMap;
 
+use freenet_vault_model::build::Mutant;
 use freenet_vault_model::cov::Cov;
 use freenet_vault_model::directed::directed;
 use freenet_vault_model::gen::{gen_scenario, run, shrink, COVERAGE_SEEDS};
@@ -20,6 +27,7 @@ fn main() {
     let mut shrink_n = 1usize;
     let mut find: Option<String> = None;
     let mut directed_trace = false;
+    let mut mutants = false;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -53,7 +61,13 @@ fn main() {
             "--run-local-fifo" => cfg.d_global_fifo = false,
             "--no-garble" => cfg.garble_hops = false,
             "--no-withdrawals" => cfg.withdrawals = false,
-            "--parts-after-index" => cfg.params.parts_after_index = true,
+            "--mutant" => {
+                cfg.params.mutant = Some(Mutant::parse(&args[i + 1]).expect("unknown mutant"));
+                i += 1;
+            }
+            "--mutants" => mutants = true,
+            "--gc-old-after-index" => cfg.params.gc_old_before_index = false,
+            "--no-list-none-indexes" => cfg.params.list_none_indexes = false,
             a => panic!("unknown argument {a}"),
         }
         i += 1;
@@ -68,6 +82,11 @@ fn main() {
             let small = shrink(&cfg, &sc, inv);
             print_trace(&cfg, &small, seed);
         }
+        return;
+    }
+
+    if mutants {
+        run_mutants(&cfg, start, seeds, shrink_n);
         return;
     }
 
@@ -156,7 +175,7 @@ fn main() {
         }
     }
     println!(
-        "schedules: {seeds} (seeds {start}..{}) plus {} coverage seeds and {} directed scenarios, delivery {:?}, adversarial {}, stale pointer {}, global FIFO {}, parts after index {} (protocol revision 8)",
+        "schedules: {seeds} (seeds {start}..{}) plus {} coverage seeds and {} directed scenarios, delivery {:?}, adversarial {}, stale pointer {}, global FIFO {}, gc old copy before index {}, list NONE indexes {}, mutant {:?} (protocol revision 9)",
         start + seeds,
         extra.len(),
         n_directed,
@@ -164,7 +183,9 @@ fn main() {
         cfg.adversarial,
         cfg.stale_pointer,
         cfg.d_global_fifo,
-        cfg.params.parts_after_index,
+        cfg.params.gc_old_before_index,
+        cfg.params.list_none_indexes,
+        cfg.params.mutant,
     );
     if by_inv.is_empty() && directed_violations.is_empty() {
         println!("violations: none");
@@ -208,6 +229,84 @@ fn main() {
         }
     }
     if !by_inv.is_empty() || !directed_violations.is_empty() || !missing.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+/// Labels of stated residuals and of model-scope artefacts: a mutant caught
+/// only by these is not caught.
+const NOT_BLOCKING: &[&str] = &[
+    "I2-two-index-lost",
+    "I2-direct-read-gc-lost",
+    "I2-reindex-unrecoverable",
+    "I8-reindex",
+    "I1-two-index-lost",
+    "I1-restore-unreported",
+    "I5-after-restore",
+    "I3-cached-never-routed",
+];
+
+/// The mutation check (15.5): each mutant must produce a violation where
+/// the unmutated model produces none (or a different one).
+fn run_mutants(cfg: &Cfg, start: u64, seeds: u64, shrink_n: usize) {
+    let base: Vec<Option<&'static str>> = (start..start + seeds)
+        .map(|s| run(cfg, &gen_scenario(s, cfg)).violation.map(|v| v.inv))
+        .collect();
+    let ds = directed(cfg);
+    let dbase: Vec<Option<&'static str>> = ds
+        .iter()
+        .map(|(_, sc)| run(cfg, sc).violation.map(|v| v.inv))
+        .collect();
+    println!(
+        "mutation check: {seeds} seeds from {start} plus {} directed scenarios, delivery {:?}",
+        ds.len(),
+        cfg.delivery
+    );
+    let mut survivors = 0;
+    for m in Mutant::ALL {
+        let mut c = cfg.clone();
+        c.params.mutant = Some(m);
+        let mut caught: BTreeMap<&'static str, (u64, String)> = BTreeMap::new();
+        for (i, seed) in (start..start + seeds).enumerate() {
+            let o = run(&c, &gen_scenario(seed, &c));
+            if let Some(v) = o.violation {
+                if base[i] != Some(v.inv) && !NOT_BLOCKING.contains(&v.inv) {
+                    let e = caught.entry(v.inv).or_insert((0, format!("seed {seed}")));
+                    e.0 += 1;
+                }
+            }
+        }
+        for (j, (k, sc)) in ds.iter().enumerate() {
+            let o = run(&c, sc);
+            if let Some(v) = o.violation {
+                if dbase[j] != Some(v.inv) && !NOT_BLOCKING.contains(&v.inv) {
+                    let e = caught.entry(v.inv).or_insert((0, format!("directed {k}")));
+                    e.0 += 1;
+                }
+            }
+        }
+        if caught.is_empty() {
+            survivors += 1;
+            println!("mutant {m:?}: SURVIVED");
+        } else {
+            let s: Vec<String> = caught
+                .iter()
+                .map(|(k, (n, first))| format!("{k} x{n} (first {first})"))
+                .collect();
+            println!("mutant {m:?}: caught by {}", s.join(", "));
+            if shrink_n > 0 {
+                let (inv, (_, first)) = caught.iter().next().unwrap();
+                if let Some(seed) = first.strip_prefix("seed ") {
+                    let seed: u64 = seed.parse().unwrap();
+                    let sc = gen_scenario(seed, &c);
+                    let small = shrink(&c, &sc, inv);
+                    print_trace(&c, &small, seed);
+                }
+            }
+        }
+    }
+    println!("mutants surviving: {survivors}");
+    if survivors > 0 {
         std::process::exit(1);
     }
 }

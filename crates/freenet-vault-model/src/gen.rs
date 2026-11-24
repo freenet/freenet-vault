@@ -132,10 +132,16 @@ pub enum Family {
     /// included), read faults and write faults, with no restores or wipes,
     /// so that index loss (4.5) is checked where I1 and I3 apply.
     Damage,
+    /// Revision 9: index loss aimed at a build's index, so that the repair
+    /// of 4.6 (Reindex, REPAIRING, repair probes) runs often, with crashes,
+    /// write faults, read faults, corrupt key listings and new releases at
+    /// any point; no restores or wipes.
+    Repair,
 }
 
 pub fn family_of(seed: u64) -> Family {
     match seed % 8 {
+        4 => Family::Repair,
         5 => Family::Damage,
         6 => Family::RestoreHeavy,
         7 => Family::Busy,
@@ -159,7 +165,7 @@ pub fn gen_scenario(seed: u64, cfg: &Cfg) -> Scenario {
     if family == Family::Busy {
         prof.fault = prof.fault.max(0.08);
     }
-    if family == Family::Damage {
+    if family == Family::Damage || family == Family::Repair {
         prof.restores = false;
         prof.fault = prof.fault.max(0.08);
     }
@@ -270,7 +276,7 @@ pub fn gen_scenario(seed: u64, cfg: &Cfg) -> Scenario {
                 _ => Action::Crash,
             }
         } else if prof.family == Family::Damage && rng.chance(0.4) {
-            match rng.below(4) {
+            match rng.below(5) {
                 0 | 1 => Action::Garble {
                     b: rng.below(NBUILDS as u64) as u8,
                     pick: rng.below(64) as u16,
@@ -278,6 +284,47 @@ pub fn gen_scenario(seed: u64, cfg: &Cfg) -> Scenario {
                 },
                 2 => Action::ArmReadFault {
                     after: rng.below(24) as u8,
+                },
+                3 => Action::CorruptListing {
+                    b: rng.below(NBUILDS as u64) as u8,
+                },
+                _ => Action::Crash,
+            }
+        } else if prof.family == Family::Repair && rng.chance(0.45) {
+            match rng.below(11) {
+                9 | 10 => Action::ReindexAt {
+                    b: rng.below(NBUILDS as u64) as u8,
+                    newest: rng.chance(0.5),
+                },
+                0..=2 => Action::GarbleIndex {
+                    b: rng.below(NBUILDS as u64) as u8,
+                    undecryptable: rng.chance(0.5),
+                },
+                3 => Action::Garble {
+                    b: rng.below(NBUILDS as u64) as u8,
+                    pick: rng.below(64) as u16,
+                    undecryptable: rng.chance(0.5),
+                },
+                4 => Action::ArmReadFault {
+                    after: rng.below(24) as u8,
+                },
+                5 => Action::CorruptListing {
+                    b: rng.below(NBUILDS as u64) as u8,
+                },
+                6 => Action::ArmWriteFault {
+                    after: rng.below(6) as u8,
+                    fault: [
+                        WriteFault::CrashBefore,
+                        WriteFault::CrashAfter,
+                        WriteFault::Fail,
+                        WriteFault::DurableButError,
+                        WriteFault::LandedButError,
+                    ][rng.below(5) as usize],
+                },
+                7 => Action::Load {
+                    client: rng.below(CLIENTS.len() as u64) as u8,
+                    fetch: Fetch::Newest,
+                    ops: (0..rng.below(4)).map(|_| gen_op(&mut rng)).collect(),
                 },
                 _ => Action::Crash,
             }

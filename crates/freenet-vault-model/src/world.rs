@@ -4,7 +4,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use crate::build::{self, BuildDef, Input, Note, Op, OpRes, Params, Reply, Status, Volatile};
+use crate::build::{
+    self, BuildDef, Input, Note, Op, OpRes, Params, Reply, Status, Unrecovered, Volatile,
+};
 use crate::cov::Cov;
 use crate::store::{Crash, Event, FaultPlan, Store, WriteFault};
 use crate::types::*;
@@ -167,6 +169,26 @@ pub enum Action {
     ArmReadFault {
         after: u8,
     },
+    /// Damage the index of build `b` (if it has one): the index-loss case
+    /// of 4.5, aimed (the Repair family).
+    GarbleIndex {
+        b: u8,
+        undecryptable: bool,
+    },
+    /// The host's key listing for build `b` becomes corrupt and reads as
+    /// empty (15.2: list_secrets is advisory).
+    CorruptListing {
+        b: u8,
+    },
+    /// A domain page sends Reindex to build `b` and pokes it while it
+    /// reports state 8, whatever the courier would select: a stale or
+    /// wrong offer (spec 8: "a wrong offer cannot do harm"; 4.6: "The offer
+    /// is only a convenience; safety comes from steps 4 and 5"). Its pokes
+    /// carry the newest record, or none (pointer unreachable).
+    ReindexAt {
+        b: u8,
+        newest: bool,
+    },
     /// A cached caller: addresses the build it last used (`b: None`), or a
     /// build it used long ago (`b: Some`).
     Cached {
@@ -261,6 +283,8 @@ enum Phase {
     Poke(usize),
     Decide,
     Ops,
+    /// 4.6 "Verify": pokes to the REPAIRING build while it reports state 8.
+    RepairPoke(u8),
     Done,
 }
 
@@ -333,14 +357,21 @@ pub struct World {
     pub violation: Option<Violation>,
     step_no: usize,
     pub sealed_corrupt_sent: u64,
-    /// Repair flow (4.5): seeds each session exported, and sessions whose
-    /// ResetPartition succeeded.
-    exports: BTreeMap<usize, BTreeMap<u16, u32>>,
-    reset_done: BTreeSet<usize>,
-    /// Keys whose repair flow ended after the reset and before their
-    /// re-import (labels I2 failures on them).
-    repair_interrupted: BTreeSet<Ident>,
-    repair_tries: BTreeMap<(usize, u16), u8>,
+    /// Builds that left REPAIRING for WRITER (4.6); I1 labels a second
+    /// writer among them I1-reset (15.4).
+    pub repaired: BTreeSet<Ver>,
+    /// Per build, what its last Reindex reported (unrecovered page slots,
+    /// idents the key listing returned, whether the listing was incomplete).
+    reindex_info: BTreeMap<Ver, (Vec<(u16, Unrecovered)>, BTreeSet<Ident>, bool)>,
+    /// Builds whose Reindex call crashed (I2-repair-interrupted).
+    reindex_crashed: BTreeSet<Ver>,
+    /// Per build, the last index state that read back cleanly (ground
+    /// truth for labels after an index loss).
+    last_good: BTreeMap<Ver, PState>,
+    /// Per build, the last good state when a Reindex ran on it.
+    reindexed_from: BTreeMap<Ver, PState>,
+    /// Builds a courier ever chose as the session target.
+    routed: BTreeSet<Ver>,
     /// Per predecessor, the queriers it answered 0x0B (decision 1).
     nostate_to: BTreeMap<Ver, BTreeSet<Ver>>,
 }
@@ -377,10 +408,12 @@ impl World {
             violation: None,
             step_no: 0,
             sealed_corrupt_sent: 0,
-            exports: BTreeMap::new(),
-            reset_done: BTreeSet::new(),
-            repair_interrupted: BTreeSet::new(),
-            repair_tries: BTreeMap::new(),
+            repaired: BTreeSet::new(),
+            reindex_info: BTreeMap::new(),
+            reindex_crashed: BTreeSet::new(),
+            last_good: BTreeMap::new(),
+            reindexed_from: BTreeMap::new(),
+            routed: BTreeSet::new(),
             nostate_to: BTreeMap::new(),
             cfg,
         }
@@ -479,6 +512,47 @@ impl World {
             &mut notes,
             input,
         );
+        for n in &notes {
+            match n {
+                Note::Reindex {
+                    unrecovered,
+                    listed,
+                    listing_incomplete,
+                } => {
+                    self.reindex_info.insert(
+                        ver(b),
+                        (unrecovered.clone(), listed.clone(), *listing_incomplete),
+                    );
+                    if let Some(st) = self.last_good.get(&ver(b)) {
+                        self.reindexed_from.insert(ver(b), st.clone());
+                    }
+                }
+                Note::RepairDone => {
+                    if matches!(self.stores[b].idx(), Some(i) if matches!(i.state, PState::Writer(_)))
+                    {
+                        self.repaired.insert(ver(b));
+                        self.cov.hit("4.6/repair-done");
+                    }
+                }
+                _ => {}
+            }
+        }
+        if res.is_err() {
+            if let Some(k) = notes.iter().rev().find_map(|n| match n {
+                Note::ReindexWrite(k) => Some(*k),
+                _ => None,
+            }) {
+                self.cov.hit(&format!("4.6/reindex-crash-at-write-{k}"));
+                self.reindex_crashed.insert(ver(b));
+            } else if notes.iter().any(|n| matches!(n, Note::Reindex { .. })) {
+                self.cov.hit("4.6/reindex-crash-before-any-write");
+            }
+        }
+        if let Some(i) = self.stores[b].idx() {
+            if !self.stores[b].index_lost() {
+                self.last_good.insert(ver(b), i.state.clone());
+            }
+        }
         let fired: Vec<WriteFault> = self.faults.fired[fired_before..].to_vec();
         for f in fired {
             self.cov.hit(match f {
@@ -501,7 +575,10 @@ impl World {
                 h.remove(0);
             }
         }
-        if matches!(after.state, PState::Writer(_) | PState::Sealed { .. }) {
+        if matches!(
+            after.state,
+            PState::Writer(_) | PState::Sealed { .. } | PState::Repairing { .. }
+        ) {
             self.held.insert(ver(b));
         }
         match res {
@@ -563,18 +640,6 @@ impl World {
     }
 
     fn crash_node(&mut self) {
-        // A repair flow (4.5) that dies after ResetPartition, before its
-        // re-imports, takes the keys it held in memory with it.
-        for sid in self.sessions.keys() {
-            if self.reset_done.contains(sid) {
-                if let Some(e) = self.exports.get(sid) {
-                    for slot in e.keys() {
-                        self.cov.hit("4.5/repair-flow-interrupted-after-reset");
-                        self.repair_interrupted.insert((KIND_KEY, *slot));
-                    }
-                }
-            }
-        }
         self.runs.clear();
         self.sessions.clear();
         self.limbo.clear();
@@ -1212,6 +1277,9 @@ impl World {
                     }
                 }
                 self.vols[b] = Volatile::default();
+                if let Some(i) = self.stores[b].idx() {
+                    self.last_good.insert(ver(b), i.state.clone());
+                }
                 self.taint_unheld();
                 self.restored = true;
             }
@@ -1273,12 +1341,89 @@ impl World {
                     // vault:parts both unreadable) is the same as a wipe:
                     // stated residuals of the same class as restores.
                     let reads_none = !self.stores[b].index_lost() && self.stores[b].idx().is_none();
-                    if (n == SName::Succ && undecryptable) || (had_state && reads_none) {
+                    // revision 9: an unlisted RETIRED build whose index is
+                    // lost reads as NONE by design (4.4), not as a wipe
+                    let was_retired =
+                        matches!(self.last_good.get(&ver(b)), Some(PState::Retired { .. }));
+                    if reads_none && had_state && was_retired {
+                        self.cov.hit("4.4/retired-index-lost-reads-none");
+                    }
+                    if (n == SName::Succ && undecryptable)
+                        || (had_state && reads_none && !was_retired)
+                    {
                         self.cov.hit("fault/garble-equivalent-to-wipe-or-restore");
                         self.restored = true;
                     }
                     self.taint_unheld();
                 }
+            }
+            Action::GarbleIndex { b, undecryptable } => {
+                let b = b as usize % NBUILDS;
+                if matches!(self.stores[b].secrets.get(&SName::Idx), Some(SVal::Idx(_))) {
+                    let had_state = self.stores[b].has_state();
+                    self.cov.hit("fault/garble-index-aimed");
+                    self.stores[b].secrets.insert(
+                        SName::Idx,
+                        if undecryptable {
+                            SVal::Undecryptable
+                        } else {
+                            SVal::Garbled
+                        },
+                    );
+                    self.garbled = true;
+                    let reads_none = !self.stores[b].index_lost() && self.stores[b].idx().is_none();
+                    let was_retired =
+                        matches!(self.last_good.get(&ver(b)), Some(PState::Retired { .. }));
+                    if had_state && reads_none && was_retired {
+                        self.cov.hit("4.4/retired-index-lost-reads-none");
+                    } else if had_state && reads_none {
+                        // an index that was never listed (a crash or failed
+                        // write before the listing) and is then lost: two
+                        // faults, the same class as a wipe (4.4)
+                        self.cov.hit("fault/garble-equivalent-to-wipe-or-restore");
+                        self.restored = true;
+                    }
+                    self.taint_unheld();
+                }
+            }
+            Action::CorruptListing { b } => {
+                let b = b as usize % NBUILDS;
+                self.cov.hit("fault/listing-corrupt");
+                self.stores[b].listing_corrupt = true;
+            }
+            Action::ReindexAt { b, newest } => {
+                let b = b as usize % NBUILDS;
+                self.cov.hit("client/reindex-offer-any-build");
+                let slots: Vec<(u16, u32)> = self
+                    .oracle
+                    .iter()
+                    .filter(|(id, _)| id.0 == KIND_KEY)
+                    .filter_map(|(id, p)| p.acked.as_ref().map(|e| (id.1, e.content)))
+                    .collect();
+                let id = self.next_session;
+                self.next_session += 1;
+                self.registered[b] = true;
+                self.sessions.insert(
+                    id,
+                    Session {
+                        client: 0,
+                        bundle: CLIENTS[0].to_vec(),
+                        fetched: if newest {
+                            self.newest_published()
+                        } else {
+                            None
+                        },
+                        fetched_nonwd: None,
+                        phase: Phase::Ops,
+                        statuses: BTreeMap::new(),
+                        rounds: 0,
+                        again: BTreeSet::new(),
+                        ops: vec![Op::Reindex { slots }, Op::RepairPokes].into(),
+                        target: Some(ver(b)),
+                        run: None,
+                    },
+                );
+                self.session_next(id);
             }
             Action::Cached { op, b } => {
                 let target = match b {
@@ -1414,6 +1559,49 @@ impl World {
                 self.gc_runs();
             }
             Phase::Decide => self.decide(sid),
+            Phase::RepairPoke(i) => {
+                let Some(t) = s.target else {
+                    self.sessions.get_mut(&sid).unwrap().phase = Phase::Done;
+                    return;
+                };
+                let repairing = matches!(
+                    s.statuses.get(&t),
+                    Some(Some(st)) if matches!(st.state, PState::Repairing { .. })
+                );
+                if (i > 0 && !repairing) || i >= 8 {
+                    if i >= 8 && repairing {
+                        // 4.6: "If the build stays at state 8, the UI shows
+                        // the decision 2 message"
+                        self.cov.hit("4.6/ui-repair-stays-at-state-8");
+                    }
+                    self.sessions.get_mut(&sid).unwrap().phase = Phase::Ops;
+                    return self.session_next(sid);
+                }
+                self.sessions.get_mut(&sid).unwrap().phase = Phase::RepairPoke(i + 1);
+                self.cov.hit("4.6/ui-repair-poke");
+                let b = bi(t);
+                let input = Input::Poke {
+                    flags: 0,
+                    rec: s.fetched,
+                };
+                if self.core() {
+                    return self.client_request(sid, b, input);
+                }
+                let r = self.new_run(RunKind::Client(sid));
+                self.sessions.get_mut(&sid).unwrap().run = Some(r);
+                let Some(out) = self.call(b, input) else {
+                    return;
+                };
+                let st = match out.reply {
+                    Reply::Status(st) => Some(st),
+                    _ => None,
+                };
+                self.enqueue(r, t, out.hops);
+                if let Some(sess) = self.sessions.get_mut(&sid) {
+                    sess.statuses.insert(t, st);
+                }
+                self.gc_runs();
+            }
             Phase::Ops => {
                 let Some(t) = s.target else {
                     self.sessions.get_mut(&sid).unwrap().phase = Phase::Done;
@@ -1424,6 +1612,11 @@ impl World {
                     self.sessions.remove(&sid);
                     return;
                 };
+                if op == Op::RepairPokes {
+                    sess.phase = Phase::RepairPoke(0);
+                    self.sessions.insert(sid, sess);
+                    return self.session_next(sid);
+                }
                 self.sessions.insert(sid, sess);
                 let b = bi(t);
                 self.cached_target = Some(t);
@@ -1470,12 +1663,32 @@ impl World {
                 )
             })
             .collect();
+        // 5.2 step 7 (revision 9, F10): while the domain is stopped (any
+        // build reports record_state 2, or the fetched newest record is a
+        // withdrawal) the courier never arms
+        let stopped = s
+            .statuses
+            .values()
+            .any(|st| st.as_ref().is_some_and(|st| st.succ.stopped()))
+            || s.fetched.is_some_and(|r| r.withdrawal);
         let create = match s.fetched {
-            Some(r) if !r.withdrawal => Some(r),
-            Some(_) => s.fetched_nonwd,
-            None => None,
+            Some(r) if !r.withdrawal && !stopped => Some(r),
+            _ => None,
         };
+        let _ = &s.fetched_nonwd;
         let route = route(&states, create);
+        if stopped && matches!(route, Route::Unavailable) {
+            self.cov.hit("5.2/paused-no-arm");
+        }
+        if let Route::Writer(v) | Route::ReadOnly(v) | Route::Create(v) = route {
+            self.routed.insert(v);
+        }
+        let ui_slots: Vec<(u16, u32)> = self
+            .oracle
+            .iter()
+            .filter(|(id, _)| id.0 == KIND_KEY)
+            .filter_map(|(id, p)| p.acked.as_ref().map(|e| (id.1, e.content)))
+            .collect();
         self.log(|| format!("  courier client {} route {route:?}", s.client));
         let sess = self.sessions.get_mut(&sid).unwrap();
         match route {
@@ -1484,18 +1697,32 @@ impl World {
                 sess.phase = Phase::Ops;
             }
             Route::ReadOnly(v) => {
-                // 4.5: reads use the damaged build; the UI offers the repair
-                // (export every slot it knows, ResetPartition, re-import),
-                // after the session's own requests.
+                // 4.5: reads use the damaged build. 4.6: the UI offers the
+                // repair when the build reports no successor (record_state
+                // is not 1), after the session's own requests: Reindex with
+                // every slot it knows and its expected key, pokes while the
+                // build reports state 8, then a PublicKey check per slot.
                 self.cov.hit("4.5/courier-selects-damaged-build");
                 sess.target = Some(v);
                 sess.phase = Phase::Ops;
-                for slot in 0..4 {
-                    sess.ops.push_back(Op::Export { slot });
+                let st = s.statuses.get(&v).cloned().flatten();
+                let lost = st.as_ref().is_some_and(|st| st.index_lost);
+                let repairing = st
+                    .as_ref()
+                    .is_some_and(|st| matches!(st.state, PState::Repairing { .. }));
+                let successor = st.as_ref().is_some_and(|st| st.succ.successor().is_some());
+                if lost && !successor {
+                    sess.ops.push_back(Op::Reindex {
+                        slots: ui_slots.clone(),
+                    });
+                    sess.ops.push_back(Op::RepairPokes);
+                } else if repairing {
+                    sess.ops.push_back(Op::RepairPokes);
+                } else if lost {
+                    self.cov.hit("4.6/ui-no-offer-successor-known");
                 }
-                sess.ops.push_back(Op::Reset);
-                for slot in 0..4 {
-                    sess.ops.push_back(Op::ImportExported { slot });
+                for (slot, _) in &ui_slots {
+                    sess.ops.push_back(Op::PublicKey { slot: *slot });
                 }
             }
             Route::Create(v) => {
@@ -1531,34 +1758,6 @@ impl World {
 
     fn do_op(&mut self, b: usize, op: Op, sid: Option<usize>) {
         let mut op = op;
-        let mut repair_import: Option<(usize, u16, u32)> = None;
-        // 4.5 step 6: re-import an exported seed the UI checked against the
-        // slot's expected public key (the UI's own data: the oracle).
-        if let Op::ImportExported { slot } = op {
-            let Some(sid) = sid else { return };
-            let id = (KIND_KEY, slot);
-            let p = self.oracle.get(&id).cloned().unwrap_or_default();
-            let seed = self.exports.get(&sid).and_then(|e| e.get(&slot)).copied();
-            match seed {
-                Some(seed) if p.allows(&Some(key_entry(slot, seed))) => {
-                    op = Op::Import {
-                        slot,
-                        seed,
-                        replace: true,
-                    };
-                    repair_import = Some((sid, slot, seed));
-                }
-                _ => {
-                    if self.reset_done.contains(&sid) && !p.allows(&None) {
-                        // "these keys could not be recovered" (4.5 step 7):
-                        // a stated residual
-                        self.cov.hit("4.5/repair-key-not-recovered");
-                        self.tainted.insert(id);
-                    }
-                    return;
-                }
-            }
-        }
         if let Op::Batch { slot, expected } = &mut op {
             if *expected == 0 {
                 *expected = self
@@ -1580,61 +1779,18 @@ impl World {
         };
         let Reply::Op(r) = out.reply else { return };
         self.log(|| format!("  op {op:?} at {} -> {r:?}", ver(b)));
-        if let Some((rsid, slot, _seed)) = repair_import {
-            // The UI follows Moved and retries Busy and NotHere (a handover
-            // of the reset partition may be under way); it gives up after a
-            // bounded number of tries, and the seed it held is then lost.
-            let id = (KIND_KEY, slot);
-            let tries = self.repair_tries.entry((rsid, slot)).or_insert(0);
-            match &r {
-                OpRes::Key(_) => {
-                    if let Some(e) = self.exports.get_mut(&rsid) {
-                        e.remove(&slot);
-                    }
-                }
-                OpRes::Moved(_) | OpRes::Busy | OpRes::NotHere if *tries < 8 => {
-                    *tries += 1;
-                    self.cov.hit("4.5/repair-import-retried");
-                    if let Some(sess) = self.sessions.get_mut(&rsid) {
-                        if let OpRes::Moved(rec) = &r {
-                            sess.target = Some(rec.v);
-                        }
-                        sess.ops.push_front(Op::ImportExported { slot });
-                    }
-                }
-                _ => {
-                    self.cov.hit("4.5/repair-import-gave-up");
-                    if let Some(e) = self.exports.get_mut(&rsid) {
-                        e.remove(&slot);
-                    }
-                    self.repair_interrupted.insert(id);
-                }
-            }
-        }
-        match (&op, &r, sid) {
-            (Op::Export { slot }, OpRes::Key(k), Some(sid)) => {
-                self.exports.entry(sid).or_default().insert(*slot, *k);
-            }
-            (Op::Reset, OpRes::Ok, Some(sid)) => {
-                self.cov.hit("4.5/repair-reset-done");
-                self.reset_done.insert(sid);
-            }
-            _ => {}
+        if let Op::Reindex { .. } = &op {
+            self.cov.hit(&format!("4.6/ui-reindex-result/{r:?}"));
         }
         match (&op, &r) {
             (Op::PublicKey { slot }, OpRes::Key(k)) | (Op::Batch { slot, .. }, OpRes::Key(k)) => {
                 let id = (KIND_KEY, *slot);
                 if !self.restored && !self.tainted.contains(&id) {
                     let p = self.oracle.get(&id).cloned().unwrap_or_default();
-                    if !p.allows(&Some(key_entry(*slot, *k))) && self.in_repair_flow(id, &p) {
-                        self.cov.hit("finding/I3-read-in-repair-window");
-                    } else if !p.allows(&Some(key_entry(*slot, *k))) {
+                    if !p.allows(&Some(key_entry(*slot, *k))) {
+                        let label = self.i3_label(b, sid);
                         self.fail(
-                            if self.stores[b].index_lost() {
-                                "I3-direct-read"
-                            } else {
-                                "I3"
-                            },
+                            label,
                             format!(
                                 "build {} answered slot {slot} with key {k}; possible {p:?}",
                                 ver(b)
@@ -1647,13 +1803,10 @@ impl World {
                 let id = (KIND_KEY, *slot);
                 if !self.restored && !self.tainted.contains(&id) {
                     let p = self.oracle.get(&id).cloned().unwrap_or_default();
-                    if !p.allows(&None) && self.in_repair_flow(id, &p) {
-                        // 4.5: between ResetPartition and the re-import the
-                        // reset writer answers Absent for a key it held
-                        self.cov.hit("finding/I3-read-in-repair-window");
-                    } else if !p.allows(&None) {
+                    if !p.allows(&None) {
+                        let label = self.i3_label(b, sid);
                         self.fail(
-                            "I3",
+                            label,
                             format!(
                                 "build {} answered slot {slot} Absent; possible {p:?}",
                                 ver(b)
@@ -1715,9 +1868,7 @@ impl World {
         let v = ver(b);
         // I4: no unseal without a "did not take over" answer from the target.
         // A ResetPartition over a lost index (4.5) is checked by I1-reset.
-        let was_reset = notes.iter().any(|n| matches!(n, Note::Reset));
-        if let (PState::Sealed { target, m, .. }, PState::Writer(_), false) =
-            (&before.state, &after.state, was_reset)
+        if let (PState::Sealed { target, m, .. }, PState::Writer(_)) = (&before.state, &after.state)
         {
             let intent = notes
                 .iter()
@@ -1773,40 +1924,24 @@ impl World {
             }
         }
         // I5: creation only with no state anywhere
-        let reset = notes.iter().any(|n| matches!(n, Note::Reset));
-        if reset && !self.stores[b].index_lost() && matches!(after.state, PState::Writer(_)) {
-            // 4.5: resetting a damaged build while another build is WRITER
-            // or SEALED makes a second writer.
-            self.cov.hit("4.5/reset-applied");
-            for o in 0..NBUILDS {
-                if o != b
-                    && !self.stores[o].index_lost()
-                    && matches!(
-                        self.stores[o].idx_or_none().state,
-                        PState::Writer(_) | PState::Sealed { .. }
-                    )
-                    && !self.restored
-                {
-                    self.fail(
-                        "I1-reset",
-                        format!(
-                            "build {v} was reset to WRITER while build {} is {}",
-                            ver(o),
-                            self.stores[o].idx_or_none().state.code()
-                        ),
-                    );
-                }
-            }
-        }
+        let reset = notes.iter().any(|n| matches!(n, Note::RepairDone));
         let created = notes.iter().any(|n| matches!(n, Note::Created))
             || (before.state.is_none()
                 && !before_lost
                 && !reset
                 && matches!(&after.state, PState::Writer(w) if w.taken_over.is_none()));
+        if created && self.stores[b].succ().stopped() {
+            // 3 (revision 9, F10): no partition is created while the domain
+            // is stopped at the creating build
+            self.fail(
+                "I5-stopped",
+                format!("build {v} created the partition while the domain is stopped there"),
+            );
+        }
         if created {
             self.cov.hit("I5/creation");
             for o in 0..NBUILDS {
-                if o != b && self.stores[o].has_state() {
+                if o != b && self.holds(o) {
                     self.fail(
                         if self.restored {
                             // 5.3: "The guarantee fails only if a
@@ -1830,15 +1965,78 @@ impl World {
         }
     }
 
-    /// A key a live repair session has exported and not yet re-imported.
-    fn in_repair_flow(&self, id: Ident, p: &Possible) -> bool {
-        id.0 == KIND_KEY
-            && self.sessions.keys().any(|sid| {
-                self.exports
-                    .get(sid)
-                    .and_then(|e| e.get(&id.1))
-                    .is_some_and(|seed| p.allows(&Some(key_entry(id.1, *seed))))
-            })
+    /// Label for a stale read by build `b` (15.4 I3, revision 9: direct
+    /// and REPAIRING reads are included; the labels only separate them).
+    fn i3_label(&self, b: usize, sid: Option<usize>) -> &'static str {
+        let v = ver(b);
+        let st = self.stores[b].idx_or_none().state;
+        if sid.is_none() && !self.routed.contains(&v) {
+            // a cached caller addressing a build no courier ever chose
+            // (the model's cached caller may pick any build)
+            "I3-cached-never-routed"
+        } else if self.stores[b].index_lost() {
+            "I3-direct-read"
+        } else if matches!(st, PState::Repairing { .. }) || self.repaired.contains(&v) {
+            "I3-repair"
+        } else {
+            "I3"
+        }
+    }
+
+    /// Label for an I2 or I8 failure of `id` at build `b` (15.4).
+    fn i2_label(&self, b: usize, id: Ident) -> &'static str {
+        let v = ver(b);
+        let st = self.stores[b].idx_or_none().state;
+        let info = self.reindex_info.get(&v);
+        if id.0 == KIND_UNKNOWN {
+            let missed = info.is_some_and(|(_, listed, inc)| *inc || !listed.contains(&id));
+            if missed && (matches!(st, PState::Repairing { .. }) || self.repaired.contains(&v)) {
+                return "I8-reindex";
+            }
+            return "I8";
+        }
+        if self.stores[b].index_lost() {
+            let gc_ok = matches!(
+                self.stores[b].secrets.get(&SName::Gc),
+                Some(SVal::Gc(_)) | None
+            );
+            return if gc_ok {
+                "I2-direct-read"
+            } else {
+                "I2-direct-read-gc-lost"
+            };
+        }
+        if matches!(st, PState::Repairing { .. }) || self.repaired.contains(&v) {
+            let stated = info.is_some_and(|(u, _, _)| {
+                u.iter().any(|(s, r)| {
+                    *s == id.1 && matches!(r, Unrecovered::Ambiguous | Unrecovered::NoCopy)
+                })
+            });
+            if stated {
+                return "I2-reindex-unrecoverable";
+            }
+            if self.reindex_crashed.contains(&v) {
+                return "I2-repair-interrupted";
+            }
+            return "I2-repair";
+        }
+        "I2"
+    }
+
+    /// Ground truth for I5 ("state for it"): a build whose index is lost
+    /// holds state if it holds entry copies or its last readable index had
+    /// state (a listed NONE index, revision 9 reading, holds none).
+    fn holds(&self, b: usize) -> bool {
+        let s = &self.stores[b];
+        if s.index_lost() {
+            let entries = s.secrets.keys().any(|n| matches!(n, SName::E(..)));
+            let last = match self.last_good.get(&ver(b)) {
+                Some(st) => !st.is_none(),
+                None => false,
+            };
+            return entries || last;
+        }
+        s.has_state()
     }
 
     fn accepting_writers(&self) -> Vec<Ver> {
@@ -1855,21 +2053,7 @@ impl World {
     /// whose index is lost holds what the direct-read rule of 4.5 finds.
     fn held_value(&self, b: usize, id: Ident) -> Result<Option<Entry>, ()> {
         if self.stores[b].index_lost() {
-            let vals: Vec<Entry> = [false, true]
-                .iter()
-                .filter_map(
-                    |par| match self.stores[b].secrets.get(&SName::E(id, *par)) {
-                        Some(SVal::E(e)) if e.ident() == id => Some(e.clone()),
-                        _ => None,
-                    },
-                )
-                .collect();
-            return match vals.as_slice() {
-                [] => Ok(None),
-                [e] => Ok(Some(e.clone())),
-                [a, b] if a == b => Ok(Some(a.clone())),
-                _ => Err(()),
-            };
+            return self.stores[b].direct_value(id);
         }
         let idx = self.stores[b].idx_or_none();
         let Some(ie) = idx.entries.get(&id) else {
@@ -1931,7 +2115,25 @@ impl World {
         // I1
         let w = self.accepting_writers();
         if w.len() > 1 && !self.restored {
-            self.fail("I1", format!("two builds accept changes: {w:?}"));
+            let rep: Vec<Ver> = w
+                .iter()
+                .copied()
+                .filter(|v| self.repaired.contains(v))
+                .collect();
+            let label = if rep.is_empty() {
+                "I1"
+            } else if rep
+                .iter()
+                .any(|v| matches!(self.reindexed_from.get(v), Some(PState::Retired { .. })))
+            {
+                "I1-two-index-lost"
+            } else {
+                "I1-reset"
+            };
+            self.fail(
+                label,
+                format!("two builds accept changes: {w:?} (repaired {rep:?})"),
+            );
         }
         // I6 (state form): every name a committed index uses exists
         for b in 0..NBUILDS {
@@ -1967,22 +2169,7 @@ impl World {
                     if self.restored {
                         continue;
                     }
-                    if self.in_repair_flow(*id, p) {
-                        // 4.5 steps 3 to 6: between ResetPartition and the
-                        // re-import the key is held by the running repair
-                        // flow; it is lost if the flow ends first.
-                        self.cov.hit("4.5/key-held-by-repair-flow");
-                        continue;
-                    }
-                    let inv = if id.0 == KIND_UNKNOWN {
-                        "I8"
-                    } else if self.stores[b].index_lost() {
-                        "I2-direct-read"
-                    } else if self.repair_interrupted.contains(id) {
-                        "I2-repair-interrupted"
-                    } else {
-                        "I2"
-                    };
+                    let inv = self.i2_label(b, *id);
                     match self.held_value(b, *id) {
                         Ok(val) => {
                             if !p.allows(&val) {
@@ -2005,6 +2192,11 @@ impl World {
                 if !self.restored {
                     for o in 0..NBUILDS {
                         let st = self.stores[o].idx_or_none().state;
+                        // REPAIRING and index-lost builds are checked when
+                        // they answer a read (op form) and, when the courier
+                        // selects one, by I2: a damaged partial receiver
+                        // holds old keys by design and is never selected
+                        // while a writer exists (4.5)
                         if self.stores[o].index_lost()
                             || !matches!(st, PState::Writer(_) | PState::Sealed { .. })
                         {
@@ -2015,11 +2207,16 @@ impl World {
                                 continue;
                             }
                             if let Ok(val) = self.held_value(o, *id) {
-                                if !p.allows(&val) && self.in_repair_flow(*id, p) {
-                                    self.cov.hit("finding/I3-state-in-repair-window");
-                                } else if !p.allows(&val) {
+                                if !p.allows(&val) {
+                                    let label = if matches!(st, PState::Repairing { .. })
+                                        || self.repaired.contains(&ver(o))
+                                    {
+                                        "I3-repair"
+                                    } else {
+                                        "I3"
+                                    };
                                     self.fail(
-                                        "I3",
+                                        label,
                                         format!(
                                             "build {} ({}) would answer {val:?} for {id:?}; acknowledged {p:?}",
                                             ver(o),
@@ -2044,7 +2241,13 @@ impl World {
                         })
                         .collect();
                     let lost = (0..NBUILDS)
-                        .filter(|b| self.stores[*b].index_lost())
+                        .filter(|b| {
+                            self.stores[*b].index_lost()
+                                || matches!(
+                                    self.stores[*b].idx_or_none().state,
+                                    PState::Repairing { .. }
+                                )
+                        })
                         .count();
                     self.fail(
                         if lost >= 2 {
@@ -2122,15 +2325,36 @@ impl World {
                 return;
             }
         }
-        let i7_scope =
-            !self.restored && !self.garbled && !self.cfg.adversarial && !self.cfg.stale_pointer;
+        let base = !self.restored && !self.cfg.adversarial && !self.cfg.stale_pointer;
+        // 15.4 I7 after a repair (designer item 12): runs with damage whose
+        // damage is gone at the end (no lost or REPAIRING index, no damaged
+        // control secret), in which some build left REPAIRING for WRITER.
+        let damage_gone = (0..NBUILDS).all(|b| {
+            let s = &self.stores[b];
+            !s.index_lost()
+                && !matches!(s.idx_or_none().state, PState::Repairing { .. })
+                && s.secrets.iter().all(|(n, v)| {
+                    matches!(n, SName::E(..)) || !matches!(v, SVal::Garbled | SVal::Undecryptable)
+                })
+        });
+        let after_repair = base && self.garbled && !self.repaired.is_empty() && damage_gone;
+        let i7_scope = (base && !self.garbled) || after_repair;
+        let label = if self.garbled {
+            "I7-after-repair"
+        } else {
+            "I7"
+        };
         let Some(newest) = self.newest_published() else {
             return;
         };
-        if !i7_scope || newest.withdrawal || !(0..NBUILDS).any(|b| self.stores[b].has_state()) {
+        if !i7_scope || newest.withdrawal || !(0..NBUILDS).any(|b| self.holds(b)) {
             return;
         }
-        self.cov.hit("I7/checked");
+        self.cov.hit(if self.garbled {
+            "I7/checked-after-repair"
+        } else {
+            "I7/checked"
+        });
         let nb = bi(newest.v);
         let st = self.stores[nb].idx_or_none().state;
         if !matches!(st, PState::Writer(ref w) if !w.awaiting) {
@@ -2138,7 +2362,7 @@ impl World {
                 .map(|b| format!("{}:{}", ver(b), self.stores[b].idx_or_none().state.code()))
                 .collect();
             self.fail(
-                "I7",
+                label,
                 format!(
                     "after quiescence build {} is {} not WRITER; states {states:?}",
                     newest.v,
@@ -2155,7 +2379,7 @@ impl World {
                 )
             {
                 self.fail(
-                    "I7",
+                    label,
                     format!(
                         "after quiescence build {v} held the partition and is {}",
                         self.stores[bi(v)].idx_or_none().state.code()
@@ -2301,13 +2525,32 @@ pub fn route(states: &BTreeMap<Ver, Option<Seen>>, create: Option<Rec>) -> Route
     if let Some(v) = sealed.iter().max() {
         return Route::Writer(*v);
     }
-    let lost: Vec<Ver> = states
+    // 5.2 step 4 (revision 9): a build reporting partition_state 7 (index
+    // lost) or 8 (repairing) is used only if no build reports RETIRED with
+    // retired_to above it; two such builds: "vault unavailable".
+    let damaged: Vec<Ver> = states
         .iter()
-        .filter(|(_, s)| matches!(s, Some(Seen { lost: true, .. })))
+        .filter(|(_, s)| {
+            matches!(s, Some(Seen { lost: true, .. }))
+                || matches!(
+                    s,
+                    Some(Seen {
+                        state: PState::Repairing { .. },
+                        ..
+                    })
+                )
+        })
         .map(|(v, _)| *v)
         .collect();
-    match lost.as_slice() {
-        [v] => return Route::ReadOnly(*v),
+    match damaged.as_slice() {
+        [v] => {
+            let retired_above = states
+                .keys()
+                .any(|r| matches!(st(r), Some(PState::Retired { to, .. }) if to.v > *v));
+            if !retired_above {
+                return Route::ReadOnly(*v);
+            }
+        }
         [] => {}
         _ => return Route::Unavailable,
     }

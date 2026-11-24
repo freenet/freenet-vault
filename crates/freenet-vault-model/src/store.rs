@@ -1,5 +1,7 @@
 //! The fake host's secret store (15.2), exactly the host of protocol 4.0
-//! (revision 8): per-secret atomic writes; a failed write or removal reports
+//! (revision 9; plus the agreed core #6323 rule: a set_secret over an
+//! undecryptable blob is refused, a remove_secret of it is allowed; and the
+//! advisory list_secrets of 15.2): per-secret atomic writes; a failed write or removal reports
 //! failure and either landed or did not; "durable but error returned" for
 //! first-time secrets; a quota; a read fault poisons the call (later writes,
 //! removals and creation refused, the call's outputs discarded and the
@@ -15,6 +17,9 @@ use crate::types::*;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Store {
     pub secrets: BTreeMap<SName, SVal>,
+    /// The host's key listing for this build's scope is corrupt: it reads
+    /// as empty (15.2, list_secrets is advisory).
+    pub listing_corrupt: bool,
 }
 
 impl Store {
@@ -26,7 +31,9 @@ impl Store {
     }
     /// 4.5 read-only triggers that persist: the index absent (or
     /// undecryptable, which reads as absent) while vault:parts lists the
-    /// partition; the index malformed; vault:parts malformed.
+    /// partition; the index malformed; vault:parts malformed AND the index
+    /// absent (revision 9: a malformed list with a verified index leaves
+    /// the call writable).
     pub fn index_lost(&self) -> bool {
         let parts = self.secrets.get(&SName::Parts);
         let idx = self.secrets.get(&SName::Idx);
@@ -35,7 +42,38 @@ impl Store {
         let idx_absent = matches!(idx, None | Some(SVal::Undecryptable));
         let idx_malformed =
             matches!(idx, Some(v) if !matches!(v, SVal::Idx(_) | SVal::Undecryptable));
-        parts_malformed || idx_malformed || (idx_absent && listed)
+        idx_malformed || (idx_absent && (listed || parts_malformed))
+    }
+    /// The 4.5 direct-read rule as the checker's ground truth (revision 9):
+    /// a slot whose two names vault:gc lists is deleted; one decoding copy
+    /// is used; of two different copies, the one vault:gc does not list.
+    pub fn direct_value(&self, id: Ident) -> Result<Option<Entry>, ()> {
+        let gc = match self.secrets.get(&SName::Gc) {
+            Some(SVal::Gc(g)) => g.clone(),
+            _ => Default::default(),
+        };
+        let (n0, n1) = (SName::E(id, false), SName::E(id, true));
+        if gc.contains(&n0) && gc.contains(&n1) {
+            return Ok(None);
+        }
+        let vals: Vec<(SName, Entry)> = [n0, n1]
+            .iter()
+            .filter_map(|n| match self.secrets.get(n) {
+                Some(SVal::E(e)) if e.ident() == id => Some((*n, e.clone())),
+                _ => None,
+            })
+            .collect();
+        match vals.as_slice() {
+            [] => Ok(None),
+            [(_, e)] => Ok(Some(e.clone())),
+            [(_, a), (_, b)] if a == b => Ok(Some(a.clone())),
+            [(na, a), (nb, b)] => match (gc.contains(na), gc.contains(nb)) {
+                (true, false) => Ok(Some(b.clone())),
+                (false, true) => Ok(Some(a.clone())),
+                _ => Err(()),
+            },
+            _ => Err(()),
+        }
     }
     /// vault:succ is present and malformed (3: never read as "no record").
     pub fn succ_malformed(&self) -> bool {
@@ -139,6 +177,11 @@ pub struct Host<'a> {
     pub poisoned: Cell<bool>,
     /// Writes and removals refused because the call was poisoned.
     pub refused_poisoned: u32,
+    /// set_secret calls refused because the secret held an undecryptable
+    /// blob (core #6323 agreed rule).
+    pub refused_undecryptable: Vec<SName>,
+    /// Maximum names list_secrets returns per scope (15.2; real 4096).
+    pub list_cap: usize,
 }
 
 impl<'a> Host<'a> {
@@ -159,7 +202,29 @@ impl<'a> Host<'a> {
             read_left,
             poisoned: Cell::new(false),
             refused_poisoned: 0,
+            refused_undecryptable: vec![],
+            list_cap: 4096,
         }
+    }
+
+    /// list_secrets over this build's scope with a name prefix (15.2,
+    /// revision 9): advisory. A corrupt listing reads as empty; at most
+    /// `list_cap` names are returned for the whole scope, in name order,
+    /// before the prefix filter. Returns the names and whether the cap cut
+    /// the listing.
+    pub fn list_entries(&self) -> (Vec<SName>, bool) {
+        if self.store.listing_corrupt {
+            return (vec![], true);
+        }
+        let all: Vec<SName> = self.store.secrets.keys().copied().collect();
+        let cut = all.len() > self.list_cap;
+        (
+            all.into_iter()
+                .take(self.list_cap)
+                .filter(|n| matches!(n, SName::E(..)))
+                .collect(),
+            cut,
+        )
     }
 
     /// Write the read-fault countdown back to the plan at the end of a call.
@@ -209,6 +274,12 @@ impl<'a> Host<'a> {
             return Err(WErr::Fail);
         }
         self.writes += 1;
+        if matches!(self.store.secrets.get(&n), Some(SVal::Undecryptable)) {
+            // core #6323 (agreed): a write over an undecryptable blob is
+            // refused; a removal is allowed
+            self.refused_undecryptable.push(n);
+            return Err(WErr::Fail);
+        }
         let first_time = !self.store.secrets.contains_key(&n);
         if first_time {
             if let Some(q) = self.faults.quota {
