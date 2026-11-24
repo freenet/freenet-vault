@@ -1,0 +1,32 @@
+[package]
+name = "freenet-vault-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+ed25519-dalek = { version = "2.1.1", default-features = false, features = ["fast", "zeroize"] }
+freenet-vault = { path = "../crates/freenet-vault", features = ["testing"] }
+freenet-vault-common = { path = "../crates/freenet-vault-common" }
+freenet-stdlib = { version = "0.12.1", features = ["contract"] }
+
+# Not part of the main workspace: it needs a nightly toolchain and cargo-fuzz.
+[workspace]
+
+[[bin]]
+name = "decode"
+path = "fuzz_targets/decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "process"
+path = "fuzz_targets/process.rs"
+test = false
+doc = false
+bench = false

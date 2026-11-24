@@ -1,0 +1,29 @@
+[package]
+name = "freenet-vault"
+description = "Key-vault delegate library for Freenet apps (storage, caller checks, operations)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+# An in-memory `Host` with fault injection, for tests in this crate and in
+# domain crates.
+testing = []
+
+[dependencies]
+freenet-vault-common.workspace = true
+freenet-stdlib.workspace = true
+blake3.workspace = true
+ed25519-dalek.workspace = true
+x25519-dalek.workspace = true
+sha2.workspace = true
+zeroize.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+# Byte-identical cross tests against River's own crypto (spec 7.1, 15).
+# Pinned to the River commit the design documents were checked against.
+river-core = { git = "https://github.com/freenet/river", rev = "4d137e66c12c625df40c91a640059a9a0a59e93b", features = ["ecies", "ecies-randomized", "ecies-client"] }
+aes-gcm = { version = "0.10.3", default-features = false, features = ["aes", "alloc"] }
