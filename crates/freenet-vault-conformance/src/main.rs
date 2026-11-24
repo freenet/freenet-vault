@@ -32,9 +32,23 @@ const LIB_ONLY: [L; 10] = [
     L::WithdrawalLiftsBar,
 ];
 
+/// Seeds on which the library (not the model) reaches a coverage row that
+/// ordinary runs of a few thousand consecutive seeds leave at zero. The
+/// library takes other schedules than the model from the same seed (it
+/// answers a caller-record submission in NONE(armed) as a read, where the
+/// model creates), so the model's own seeds do not carry over. Found with
+/// `--find missing` over the library; replayed on every run unless the
+/// arguments name `--coverage-seeds` themselves.
+const LIB_COVERAGE_SEEDS: &str =
+    "2334,3362,4467,4702,5190,5378,5444,6132,13681,14728,16590,31534,39790";
+
 fn main() {
     freenet_vault_conformance::install();
-    let args: Vec<String> = std::env::args().collect();
+    let mut args: Vec<String> = std::env::args().collect();
+    if !args.iter().any(|a| a == "--coverage-seeds") {
+        args.push("--coverage-seeds".into());
+        args.push(LIB_COVERAGE_SEEDS.into());
+    }
     if args.get(1).map(String::as_str) == Some("--lib-mutants") {
         let seeds: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(2000);
         let mut cfg = Cfg::gate();

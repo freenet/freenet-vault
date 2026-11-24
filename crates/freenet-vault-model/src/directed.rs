@@ -1254,9 +1254,71 @@ pub fn heal_after_failed_change(cfg: &Cfg, what: u8, mode: u8) -> Scenario {
     r.done()
 }
 
+/// 7.2, outcome "staging full": the receiver already stages as many entries
+/// as it may, because the writer dropped one after it was copied, and the
+/// writer's replacement for it arrives in the next copy run. Writer 10 holds
+/// `max_entries` keys and sends them all to 20; every acknowledgement is lost,
+/// so 10 stays WRITER. 10 then deletes slot 0 and generates a key in a slot it
+/// did not hold: still `max_entries` keys, so 10 accepts it, but 20 now stages
+/// the deleted key and the new one is one too many.
+fn staging_full(cfg: &Cfg) -> Option<Scenario> {
+    let n = cfg.params.max_entries as u16;
+    let mut r = Rec_::new(cfg, vec![Rec::build(10), Rec::build(20)]);
+    r.act(Action::Publish);
+    r.load(
+        (0..n)
+            .map(|slot| Op::Generate {
+                slot,
+                seed: 700 + slot as u32,
+            })
+            .collect(),
+    );
+    r.act(Action::Publish);
+    r.act(Action::Load {
+        client: 0,
+        fetch: Fetch::Newest,
+        ops: vec![],
+    });
+    for _ in 0..200 {
+        if r.w.violation.is_some() || r.w.idle() {
+            return None;
+        }
+        if r.w.stores[bi(20)].idx_or_none().entries.len() >= cfg.params.max_entries {
+            break;
+        }
+        r.step();
+    }
+    // the acknowledgements are lost
+    for _ in 0..200 {
+        if r.w.violation.is_some() || r.w.idle() {
+            break;
+        }
+        r.act(Action::Step {
+            pick: 0,
+            fate: Fate::Drop,
+        });
+    }
+    if !matches!(r.state(10), PState::Writer(_)) {
+        return None;
+    }
+    r.act(Action::Cached {
+        op: Op::Delete { slot: 0 },
+        b: Some(0),
+    });
+    r.act(Action::Cached {
+        op: Op::Generate { slot: n, seed: 800 },
+        b: Some(0),
+    });
+    r.load(vec![]);
+    Some(r.done())
+}
+
 /// Every directed scenario with the row it exists to reach.
 pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
     let mut v = vec![];
+    if let Some(sc) = staging_full(cfg) {
+        v.push(("7.2/outcome-staging-full", sc));
+    }
     if let Some(sc) = other_writer_retired(cfg) {
         v.push(("7.6/other-writer-or-not-from-P/Retired", sc));
     }
