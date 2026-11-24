@@ -51,6 +51,12 @@ pub fn process<H: Host>(
     // written or removed, however many stores the call opens.
     let mut latch = host::WriteLatch::new(host);
     let host = &mut latch;
+    // The catch-all (4.2, G3): a valid WRITER or SEALED index that is not listed
+    // is listed first. If that write or its read-back fails the call answers
+    // nothing (the sender or client retries).
+    if storage::ensure_listed(host, &domain.partition()).is_err() {
+        return Ok(vec![]);
+    }
     // A non-empty vault:gc is processed at the start of every call (4.2).
     if let Ok(mut store) = storage::Store::open(host, domain.partition()) {
         store.process_gc();

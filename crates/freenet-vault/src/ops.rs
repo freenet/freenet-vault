@@ -487,7 +487,20 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
             Ok(s) => s,
             Err(_) => return refusal(rid, refused::STORAGE_FAILURE),
         },
-        // The index state is unknown: read-only (protocol 4.5).
+        // The index state is unknown: read-only (protocol 4.5). With
+        // `vault:parts` malformed, a build whose `vault:succ` holds a newer
+        // record may have retired: it answers Moved and never direct-reads
+        // (rev 10.1, G2 and G2b).
+        Some(f)
+            if f.0.parts_malformed() && succ.as_ref().is_some_and(|s| s.successor().is_some()) =>
+        {
+            let record = succ.as_ref().and_then(|s| s.successor()).expect("checked");
+            return status(Status::Moved {
+                request_id: rid,
+                partition: domain.partition(),
+                record,
+            });
+        }
         Some(_) => match (&req.op, caller) {
             // A page may rescue a key with Export, behind the consent prompt.
             (Operation::Export { slot }, Caller::Page { id }) => {
@@ -784,6 +797,15 @@ pub fn export_answer<H: Host>(
     }
     let succ = Succ::load(domain, host).ok();
     let unknown = Store::fault(&*host, &domain.partition());
+    if let (Some(f), Some(record)) = (unknown, succ.as_ref().and_then(|s| s.successor())) {
+        if f.0.parts_malformed() {
+            return Some(status(Status::Moved {
+                request_id: rid,
+                partition: domain.partition(),
+                record,
+            }));
+        }
+    }
     let opened = match unknown {
         None => Store::open(host, domain.partition()).ok(),
         Some(_) => None,
@@ -931,6 +953,8 @@ fn poke<H: Host>(domain: &Domain, host: &mut H, own_page: bool, body: &[u8]) -> 
         extra |= fault_bits(&*host, &domain.partition());
         return handover_status::<H>(domain, Some(&succ), None, step, extra, own_page);
     };
+    // The mirror sweep runs on a poke (the courier pokes on every load).
+    store.mirror_sweep();
     // Any newer record clears creation arming.
     if store.index.state == State::None
         && store.index.armed.is_some()

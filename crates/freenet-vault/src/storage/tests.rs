@@ -58,13 +58,15 @@ fn index_on_disk(host: &MemHost) -> Option<Vec<u8>> {
 }
 
 #[test]
-fn put_writes_entry_then_index_and_reads_back() {
+fn put_writes_entry_then_index_then_the_mirror_and_reads_back() {
     let mut h = MemHost::new();
     let e = key_entry(1, 9);
     put(&mut h, &e).unwrap();
     assert_eq!(read(&mut h, 1), Read::Ok(e.clone()));
-    // Stored exactly as encoded, at parity 0, and no gc left behind.
+    // The named copy at parity 0 and its mirror at parity 1, byte for byte, and
+    // no gc left behind (spec 4.2: a change never uses vault:gc).
     assert_eq!(h.secrets[&entry_name(1, 0)], e.encode().unwrap());
+    assert_eq!(h.secrets[&entry_name(1, 1)], e.encode().unwrap());
     assert!(gc_names(&h).is_empty());
     let s = Store::open(&mut h, P).unwrap();
     assert_eq!(s.index.state, State::Writer);
@@ -72,24 +74,27 @@ fn put_writes_entry_then_index_and_reads_back() {
 }
 
 #[test]
-fn replace_flips_parity_and_removes_the_old_copy() {
+fn replace_flips_the_named_parity_and_rewrites_the_mirror() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
     put(&mut h, &key_entry(1, 8)).unwrap();
     assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 8)));
-    assert!(h.secrets.contains_key(&entry_name(1, 1)));
-    assert!(!h.secrets.contains_key(&entry_name(1, 0)));
+    let new = key_entry(1, 8).encode().unwrap();
+    // The index names parity 1 now; parity 0 holds its mirror.
+    assert_eq!(Store::open(&mut h, P).unwrap().index.entries[0].parity, 1);
+    assert_eq!(h.secrets[&entry_name(1, 1)], new);
+    assert_eq!(h.secrets[&entry_name(1, 0)], new);
     assert!(gc_names(&h).is_empty());
     put(&mut h, &key_entry(1, 7)).unwrap();
-    assert!(h.secrets.contains_key(&entry_name(1, 0)));
-    assert!(!h.secrets.contains_key(&entry_name(1, 1)));
+    let newer = key_entry(1, 7).encode().unwrap();
+    assert_eq!(h.secrets[&entry_name(1, 0)], newer);
+    assert_eq!(h.secrets[&entry_name(1, 1)], newer);
 }
 
 #[test]
-fn failed_entry_write_changes_nothing() {
+fn a_failed_entry_write_changes_no_acknowledged_value() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
-    let before = h.secrets.clone();
     h.set_fault(|name| {
         if name.starts_with(b"vault:e:") {
             WriteFault::DurableButFail
@@ -99,15 +104,17 @@ fn failed_entry_write_changes_nothing() {
     });
     assert_eq!(put(&mut h, &key_entry(1, 8)), Err(PutError::Storage));
     assert_eq!(put(&mut h, &key_entry(2, 8)), Err(PutError::Storage));
-    // Even a value that landed despite the error is removed: nothing references it.
-    assert_eq!(h.secrets, before);
+    h.clear_fault();
+    // The index never moved: the old value is what is served.
+    assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
+    assert_eq!(read(&mut h, 2), Read::Absent);
 }
 
 /// A failed index write with the old index provably on disk: the old value
-/// stays served, the new copy is removed, and the gc list the replace wrote
-/// (naming the old, still-referenced copy) never deletes it.
+/// stays served. The candidate sits at the parity the index does not name (the
+/// old mirror), so the two copies disagree until the sweep repairs the mirror.
 #[test]
-fn failed_index_write_leaves_the_old_value_and_gc_cannot_delete_it() {
+fn failed_index_write_leaves_the_old_value_served_and_the_sweep_repairs_the_mirror() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
     let idx = names::index(&P);
@@ -119,28 +126,16 @@ fn failed_index_write_leaves_the_old_value_and_gc_cannot_delete_it() {
         }
     });
     assert_eq!(put(&mut h, &key_entry(1, 8)), Err(PutError::Storage));
-    // The commit was uncertain, so the call removed nothing: the candidate is
-    // still listed and is collected by the next call.
-    assert!(h.secrets.contains_key(&entry_name(1, 1)));
-    assert!(gc_names(&h).contains(&entry_name(1, 1)));
     h.clear_fault();
+    assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
+    let old = key_entry(1, 9).encode().unwrap();
+    assert_eq!(h.secrets[&entry_name(1, 0)], old);
+    assert_ne!(h.secrets[&entry_name(1, 1)], old, "the candidate");
+    // The sweep rewrites the mirror from the named copy.
     let mut s = Store::open(&mut h, P).unwrap();
-    s.process_gc();
+    s.mirror_sweep();
     drop(s);
-    assert!(!h.secrets.contains_key(&entry_name(1, 1)));
-    assert!(gc_names(&h).is_empty());
-    assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
-    // The same state as after a crash: a gc list naming both copies.
-    h.clear_fault();
-    set_gc(&mut h, &[entry_name(1, 0), entry_name(1, 1)]);
-    for _ in 0..3 {
-        // The second name never existed: removing it is confirmed (it is not
-        // there), so it leaves the list.
-        let mut s = Store::open(&mut h, P).unwrap();
-        s.process_gc();
-    }
-    assert!(gc_names(&h).is_empty());
-    assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
+    assert_eq!(h.secrets[&entry_name(1, 1)], old);
 }
 
 /// A first-time index write that errors after the value became durable
@@ -235,7 +230,8 @@ fn corrupt_but_parseable_entry_is_flagged_and_kept() {
     let mut flagged = tampered.clone();
     flagged[1] |= EFLAG_CORRUPT;
     assert_eq!(h.secrets[&entry_name(1, 1)], flagged);
-    assert!(!h.secrets.contains_key(&name));
+    // The mirror (step 4) holds the same flagged bytes.
+    assert_eq!(h.secrets[&name], flagged);
     let s = Store::open(&mut h, P).unwrap();
     assert_eq!(
         s.index.problems & freenet_vault_common::status::problems::CORRUPT_OR_LOST,
@@ -310,50 +306,47 @@ fn a_read_fault_poisons_the_call_and_no_write_follows() {
     );
 }
 
-/// A failed removal keeps its name listed and is retried by the next call
-/// (item 6); the list is cleared only when every removal is confirmed.
 #[test]
 fn gc_keeps_names_whose_removal_failed_and_retries() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
-    // The replace lists parity 0 for removal; make that removal fail.
-    h.undeletable.insert(entry_name(1, 0));
-    put(&mut h, &key_entry(1, 8)).unwrap();
-    assert!(h.secrets.contains_key(&entry_name(1, 0)));
-    assert_eq!(gc_names(&h), vec![entry_name(1, 0)]);
-    // Still failing: still listed.
+    // A deleted slot's copy that will not remove stays listed.
+    let stray = entry_name(5, 0);
+    h.secrets.insert(stray.clone(), vec![1]);
+    h.undeletable.insert(stray.clone());
+    set_gc(&mut h, std::slice::from_ref(&stray));
     let mut s = Store::open(&mut h, P).unwrap();
     s.process_gc();
     drop(s);
-    assert!(!gc_names(&h).is_empty());
+    assert_eq!(gc_names(&h), vec![stray.clone()]);
     // The host recovers: the next call removes it and clears the list.
     h.undeletable.clear();
     let mut s = Store::open(&mut h, P).unwrap();
     s.process_gc();
     drop(s);
-    assert!(!h.secrets.contains_key(&entry_name(1, 0)));
+    assert!(!h.secrets.contains_key(&stray));
     assert!(gc_names(&h).is_empty());
-    assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 8)));
+    assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
 }
 
-/// An entry copy written and not committed (a crash between the two) is named
-/// in `vault:gc` before it is written, so the next call removes it (item 7).
+/// A change that dies after writing its candidate and before the index commit
+/// leaves the old value served (the candidate sits at the old mirror), and the
+/// next call's sweep repairs the mirror.
 #[test]
-fn an_interrupted_entry_write_is_reachable_by_gc() {
+fn an_interrupted_entry_write_leaves_the_old_value_served() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
-    // Die right after the new copy lands: both gc list copies (2), the removal
-    // of the absent candidate name (1), the entry (1).
-    h.crash_after(4);
+    let old = key_entry(1, 9).encode().unwrap();
+    // The candidate write is the first mutation.
+    h.crash_after(1);
     let _ = put(&mut h, &key_entry(1, 8));
-    assert!(h.secrets.contains_key(&entry_name(1, 1)));
     let mut h = h.restart();
-    let mut s = Store::open(&mut h, P).unwrap();
-    s.process_gc();
-    drop(s);
-    assert!(!h.secrets.contains_key(&entry_name(1, 1)));
     assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
-    assert!(gc_names(&h).is_empty());
+    let mut s = Store::open(&mut h, P).unwrap();
+    s.mirror_sweep();
+    drop(s);
+    assert_eq!(h.secrets[&entry_name(1, 1)], old);
+    assert_eq!(h.secrets[&entry_name(1, 0)], old);
 }
 
 /// A gc list copy damaged by a torn write contributes nothing; the other copy
@@ -382,8 +375,8 @@ fn the_gc_list_survives_one_damaged_copy() {
     assert!(!h.secrets.contains_key(&stray));
 }
 
-/// The list is bounded: a write that would exceed it fails and leaves the
-/// pending names alone, instead of wrapping its count and erasing itself.
+/// The list is bounded: a Delete whose names would exceed it fails and leaves
+/// the pending names alone, instead of wrapping its count and erasing itself.
 #[test]
 fn the_gc_list_is_bounded_and_never_erases_itself() {
     let mut h = MemHost::new();
@@ -400,7 +393,9 @@ fn the_gc_list_is_bounded_and_never_erases_itself() {
     set_gc(&mut h, &full);
     let before = gc_names(&h);
     assert_eq!(before.len(), MAX_GC_NAMES);
-    assert_eq!(put(&mut h, &key_entry(1, 8)), Err(PutError::Storage));
+    let mut s = Store::open(&mut h, P).unwrap();
+    assert_eq!(s.delete(KIND_KEY, &[1; 32]), Err(StorageFailure));
+    drop(s);
     assert_eq!(gc_names(&h), before, "the list was not erased or truncated");
     assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
 }
@@ -437,11 +432,10 @@ fn a_name_is_dropped_only_when_the_secret_reads_absent() {
     assert!(gc_names(&h).is_empty());
 }
 
-/// Adding names needs both gc list copies to take, so no name ends up held by
-/// one copy only (the state a later read miss would erase). A write that
-/// cannot list its names is refused before it touches an entry.
+/// A Delete lists both names in `vault:gc` first, and both copies must take: a
+/// Delete that cannot list is refused before it touches an entry.
 #[test]
-fn a_write_whose_names_cannot_reach_both_gc_copies_is_refused() {
+fn a_delete_whose_names_cannot_reach_both_gc_copies_is_refused() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
     let gc2 = names::gc2(&P);
@@ -452,38 +446,13 @@ fn a_write_whose_names_cannot_reach_both_gc_copies_is_refused() {
             WriteFault::None
         }
     });
-    let before_entries = h.names_with_prefix(&names::entry_prefix(&P));
-    assert_eq!(put(&mut h, &key_entry(1, 8)), Err(PutError::Storage));
-    assert_eq!(
-        h.names_with_prefix(&names::entry_prefix(&P)),
-        before_entries
-    );
+    let before = h.names_with_prefix(&names::entry_prefix(&P));
+    let mut s = Store::open(&mut h, P).unwrap();
+    assert_eq!(s.delete(KIND_KEY, &[1; 32]), Err(StorageFailure));
+    drop(s);
+    assert_eq!(h.names_with_prefix(&names::entry_prefix(&P)), before);
     h.clear_fault();
     assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
-}
-
-/// A write reported as failed whose follow-up read misses may have landed; its
-/// name stays listed so gc can still remove it.
-#[test]
-fn a_failed_candidate_write_with_a_read_miss_stays_listed() {
-    let mut h = MemHost::new();
-    put(&mut h, &key_entry(1, 9)).unwrap();
-    let cand = entry_name(1, 1);
-    let c2 = cand.clone();
-    h.set_fault(move |n| {
-        if n == c2.as_slice() {
-            WriteFault::DurableButFail
-        } else {
-            WriteFault::None
-        }
-    });
-    h.undeletable.insert(cand.clone());
-    assert_eq!(put(&mut h, &key_entry(1, 8)), Err(PutError::Storage));
-    assert!(
-        gc_names(&h).contains(&cand),
-        "the landed candidate was forgotten"
-    );
-    assert!(h.secrets.contains_key(&cand));
 }
 
 /// An index write that fails and leaves something that is neither the old nor
@@ -821,14 +790,16 @@ fn unknown_index_state_is_read_only_and_only_positive_absence_is_new() {
     assert!(!Store::open(&mut fresh, P).unwrap().has_index());
 }
 
-/// A verified index puts the partition back in `vault:parts` (a crash between
-/// the first commit and the listing).
+/// The catch-all (spec 4.2): a valid WRITER index for an unlisted partition is
+/// listed, and read back, before anything else; `open` itself lists nothing.
 #[test]
-fn open_lists_a_partition_whose_index_reads() {
+fn the_catch_all_lists_a_writer_index_and_open_does_not() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
     h.secrets.remove(names::PARTS);
     assert!(Store::open(&mut h, P).is_ok());
+    assert!(!h.secrets.contains_key(names::PARTS), "open listed");
+    ensure_listed(&mut h, &P).unwrap();
     assert!(h.secrets[names::PARTS].chunks(32).any(|c| c == P));
 }
 
@@ -881,33 +852,6 @@ fn an_uncertain_commit_makes_the_rest_of_the_call_read_only() {
     assert_eq!(s.delete(KIND_KEY, &[1; 32]), Err(StorageFailure));
 }
 
-/// A full gc list refuses writes that need a gc entry; no name is dropped to
-/// make room.
-#[test]
-fn a_full_gc_list_refuses_writes_and_drops_nothing() {
-    let mut h = MemHost::new();
-    put(&mut h, &key_entry(1, 9)).unwrap();
-    let prefix = names::entry_prefix(&P);
-    let prefix_full: Vec<Vec<u8>> = (0..MAX_GC_NAMES)
-        .map(|i| [prefix.as_slice(), format!("{i:05}").as_bytes()].concat())
-        .collect();
-    let full = &prefix_full;
-    let b = encode_names(full).unwrap();
-    h.secrets.insert(names::gc(&P), b.clone());
-    h.secrets.insert(names::gc2(&P), b);
-    for g in full {
-        h.secrets.insert(g.clone(), vec![1]);
-        h.undeletable.insert(g.clone());
-    }
-    let mut s = Store::open(&mut h, P).unwrap();
-    assert_eq!(
-        s.put(&key_entry(1, 8), &QUOTA, |_| {}),
-        Err(PutError::Storage)
-    );
-    drop(s);
-    assert_eq!(gc_names(&h).len(), MAX_GC_NAMES);
-}
-
 /// Export while the index state is unknown: exactly one decodable copy of the
 /// slot gives the seed; none or two refuse.
 #[test]
@@ -934,14 +878,12 @@ fn rescue_export_needs_exactly_one_decodable_copy() {
     assert_eq!(rescue_export_seed(&h, &P, &slot), None);
 }
 
-/// After an index reset the entry list is empty but old copies remain. A new
-/// identity writes parity 0 only; a stale, different copy at parity 1 must be
-/// collected, or a later direct read would meet two different copies.
+/// Step 1 of a change to a new identity removes both parity names first, so a
+/// stale copy left at either parity never pairs with the new value.
 #[test]
-fn a_new_identity_collects_a_stale_copy_at_the_other_parity() {
+fn a_new_identity_clears_a_stale_copy_at_the_other_parity_first() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
-    // The entry list is emptied (as a Reset does), the old copy stays.
     let mut s = Store::open(&mut h, P).unwrap();
     s.update(|ix| ix.entries.clear()).unwrap();
     drop(s);
@@ -950,6 +892,8 @@ fn a_new_identity_collects_a_stale_copy_at_the_other_parity() {
         .unwrap();
     h.secrets.insert(entry_name(1, 1), stale);
     put(&mut h, &key_entry(1, 8)).unwrap();
-    assert_eq!(h.secrets.get(&entry_name(1, 1)), None, "stale copy left");
+    let new = key_entry(1, 8).encode().unwrap();
+    assert_eq!(h.secrets[&entry_name(1, 0)], new);
+    assert_eq!(h.secrets[&entry_name(1, 1)], new, "the stale copy stayed");
     assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 8)));
 }

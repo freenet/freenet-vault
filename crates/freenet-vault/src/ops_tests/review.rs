@@ -857,18 +857,26 @@ type NamedEntry = (Vec<u8>, [u8; 32]);
 fn assert_sound(h: &mut MemHost, what: &str, clean: bool) {
     use freenet_vault_common::hash::entry_digest;
     let p = domain().partition();
-    let named: Vec<NamedEntry> = {
+    let (named, identities): (Vec<NamedEntry>, Vec<NamedEntry>) = {
         let s = Store::open(h, p).unwrap_or_else(|_| panic!("{what}: index malformed"));
         if clean {
             assert_eq!(s.index.lost_entries, 0, "{what}: lost entries");
             assert_eq!(s.index.problems, 0, "{what}: problems raised");
         }
-        s.index
-            .entries
-            .iter()
-            .map(|e| (names::entry(&p, e.kind, &e.key, e.parity), e.digest))
-            .collect()
+        (
+            s.index
+                .entries
+                .iter()
+                .map(|e| (names::entry(&p, e.kind, &e.key, e.parity), e.digest))
+                .collect(),
+            s.index
+                .entries
+                .iter()
+                .map(|e| (names::entry(&p, e.kind, &e.key, 0), e.digest))
+                .collect(),
+        )
     };
+    // The named copy of every identity the index names exists and matches.
     for (n, digest) in &named {
         let b = h
             .secrets
@@ -880,18 +888,50 @@ fn assert_sound(h: &mut MemHost, what: &str, clean: bool) {
             assert!(!e.is_flagged_corrupt(), "{what}");
         }
     }
-    for n in h.names_with_prefix(&names::entry_prefix(&p)) {
-        assert!(
-            named.iter().any(|(m, _)| m == &n),
-            "{what}: an untracked entry secret"
+    // The mirror invariant (spec 4.2): two present, byte-identical,
+    // authenticating copies of an identity exist only for the value the
+    // committed index names. A pair for a deleted identity, or for a value the
+    // index does not name, is what direct read would serve wrongly.
+    let prefix = names::entry_prefix(&p);
+    for n in h.names_with_prefix(&prefix) {
+        if !n.ends_with(b":0") {
+            continue;
+        }
+        let other = [&n[..n.len() - 1], b"1".as_slice()].concat();
+        let (Some(c0), Some(c1)) = (h.secrets.get(&n), h.secrets.get(&other)) else {
+            continue;
+        };
+        if c0 != c1 {
+            continue;
+        }
+        let Ok(e) = Entry::decode(c0) else { continue };
+        let authentic = e.eflags == 0
+            && ((e.kind == KIND_KEY && e.content.len() == 32)
+                || (e.kind == KIND_CALLER_MARK && e.content.len() == 100));
+        if !authentic || names::entry(&p, e.kind, &e.key, 0) != n {
+            continue;
+        }
+        let digest = identities
+            .iter()
+            .find(|(m, _)| m == &n)
+            .map(|(_, d)| *d)
+            .unwrap_or_else(|| {
+                panic!("{what}: a servable pair exists for an identity the index does not name")
+            });
+        assert_eq!(
+            entry_digest(c0),
+            digest,
+            "{what}: a servable pair holds a value the index does not name"
         );
     }
-    // A pending gc name may remain while no secret exists under it (a candidate
-    // that never landed is dropped after a few passes); a secret left under a
-    // pending name is caught by the untracked-entry check above.
+    // A pending gc name must not hold a secret after recovery, unless the
+    // committed index names its identity.
     for n in crate::storage::pending_gc_names(h, &p) {
+        let identity_named = named
+            .iter()
+            .any(|(m, _)| m[..m.len() - 1] == n[..n.len() - 1]);
         assert!(
-            !h.secrets.contains_key(&n) || named.iter().any(|(m, _)| m == &n),
+            !h.secrets.contains_key(&n) || identity_named,
             "{what}: a pending gc name still holds a secret"
         );
     }
@@ -2070,9 +2110,8 @@ fn two_damaged_gc_copies_do_not_block_writes() {
     assert!(crate::storage::pending_gc_names(&h, &p).len() <= 2);
 }
 
-/// After a Reset, a stale copy at the other parity is listed and collected by
-/// the next write of the slot, so a later direct read never meets two
-/// different copies.
+/// A stale copy at the other parity is overwritten by the next write of the
+/// slot (the mirror), so a later direct read never meets two different copies.
 #[test]
 fn a_stale_other_parity_copy_is_collected_by_the_next_write() {
     let p = domain().partition();
@@ -2084,10 +2123,12 @@ fn a_stale_other_parity_copy_is_collected_by_the_next_write() {
         .unwrap();
     h.secrets.insert(stale.clone(), other);
     assert!(is_key_result(&import_replace(&mut h, 2, &slot, [0xB2; 32])));
-    // The write used parity 1 (overwriting the stale one) and removed parity 0.
+    // The write used parity 1 (overwriting the stale one) and the mirror
+    // rewrote parity 0: two identical copies of the new value.
     let _ = problems_of(&mut h);
     let live = h.names_with_prefix(&names::entry_prefix(&p));
-    assert_eq!(live.len(), 1, "{live:?}");
+    assert_eq!(live.len(), 2, "{live:?}");
+    assert_eq!(h.secrets[&live[0]], h.secrets[&live[1]]);
 }
 
 // ---- undecryptable blobs read as absent without poisoning (core #6323) ----
