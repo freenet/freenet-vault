@@ -1654,3 +1654,136 @@ fn a_blind_open_never_runs_gc_on_the_committed_original() {
     }
     assert!(total > 2, "the sweep must reach the commit");
 }
+
+// ---- round 3: more crash sweeps ------------------------------------------
+
+/// Export of a corrupt slot, flagged or not yet flagged, never mutates
+/// storage at either stage (prompt or answer), so there is no write to crash
+/// between: the sweep reduces to "zero mutations", and it is checked here.
+#[test]
+fn export_of_a_corrupt_slot_performs_no_writes() {
+    for flag_first in [false, true] {
+        let mut h = MemHost::new();
+        setup_writer_with_key(&mut h);
+        tamper_seed(&mut h, &[1; 32]);
+        if flag_first {
+            let _ = page(&mut h, op(2, Operation::PublicKey { slot: vec![1; 32] }));
+        }
+        let before = h.mutations;
+        let disk = h.secrets.clone();
+        let id = export_prompt(&mut h, &[1; 32], 11);
+        let out = answer(&mut h, page_id(), id, b"Allow").unwrap();
+        assert!(matches!(
+            single_app_reply(out),
+            Reply::Op(11, OpResult::Export { .. })
+        ));
+        assert_eq!(h.mutations, before, "flag_first={flag_first}");
+        assert_eq!(h.secrets, disk, "flag_first={flag_first}");
+    }
+}
+
+/// A mark whose bytes do not parse is replaced by a submitted record. The
+/// process dies at every write of one submit; whatever state that leaves, the
+/// page repeating the submit reaches the new mark, and storage stays sound
+/// (this is the "never stuck" property, since the setup itself is unsound).
+#[test]
+fn crash_sweep_mark_repair_by_submit_record() {
+    let setup = |h: &mut MemHost| {
+        setup_writer_with_key(h);
+        let c = chat(5);
+        let _ = from_delegate_raw(h, c.key, c.key, pk_req(&c, &[1; 32]));
+        let name = entry_name_of(h, KIND_CALLER_MARK, &mark_key());
+        h.secrets.insert(name, vec![0xFF; 5]);
+    };
+    let act = |h: &mut MemHost| {
+        let s = SubmitRecord {
+            header: page_header(6),
+            author_vk: vk(&PUBLISHER_SEED),
+            app_id: CHAT_APP.to_vec(),
+            record: record(&PUBLISHER_SEED, CHAT_APP, 6, [6; 32]),
+            ext: vec![],
+        };
+        let _ = from_page_as(h, page_id(), s.encode().unwrap());
+    };
+    let mut dry = MemHost::new();
+    setup(&mut dry);
+    let start = dry.mutations;
+    act(&mut dry);
+    let total = dry.mutations - start;
+    assert!(total >= 1);
+    for n in 0..=total {
+        let mut h = MemHost::new();
+        setup(&mut h);
+        h.crash_after(n);
+        act(&mut h);
+        let mut h = h.restart();
+        recover(&mut h);
+        act(&mut h);
+        let label = format!("mark repair: crash {n} of {total}");
+        let mut s = Store::open(&mut h, domain().partition()).unwrap();
+        match s.read(KIND_CALLER_MARK, &mark_key(), false) {
+            Read::Ok(e) => assert_eq!(
+                e.content,
+                record(&PUBLISHER_SEED, CHAT_APP, 6, [6; 32]),
+                "{label}"
+            ),
+            other => panic!("{label}: the mark is {other:?}"),
+        }
+        drop(s);
+        assert_sound(&mut h, &label, false);
+    }
+}
+
+fn replace_key(h: &mut MemHost) {
+    act_page(
+        h,
+        Operation::Import {
+            slot: vec![1; 32],
+            seed: [0xB2; 32],
+            replace: true,
+        },
+    );
+}
+
+fn old_or_new(h: &mut MemHost) -> bool {
+    matches!(slot_seed(h, 1), Some(s) if s == [0xA1; 32] || s == [0xB2; 32])
+}
+
+/// The backup index write fails during a replace, then the process dies at
+/// every point: the key is the old or the new one, and recovery re-syncs.
+#[test]
+fn crash_sweep_replace_with_a_failing_second_index_write() {
+    sweep(
+        "second index fails",
+        setup_writer_with_key,
+        |h| {
+            let idx2 = names::index2(&domain().partition());
+            h.set_fault(move |n| {
+                if n == idx2.as_slice() {
+                    WriteFault::Fail
+                } else {
+                    WriteFault::None
+                }
+            });
+            replace_key(h);
+        },
+        old_or_new,
+        true,
+    );
+}
+
+/// Writes that land but report failure, for the first index and for the
+/// entry copies: the read-back decides, and the key is old or new.
+#[test]
+fn crash_sweep_replace_with_writes_that_land_but_report_failure() {
+    sweep(
+        "durable but failed",
+        setup_writer_with_key,
+        |h| {
+            h.set_fault(|_| WriteFault::DurableButFail);
+            replace_key(h);
+        },
+        old_or_new,
+        true,
+    );
+}
