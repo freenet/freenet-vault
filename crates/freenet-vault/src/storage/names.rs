@@ -19,11 +19,6 @@ pub fn index(partition: &[u8; 32]) -> Vec<u8> {
     format!("vault:idx:{}", hex(partition)).into_bytes()
 }
 
-/// The second copy of the index, written after the first (protocol 4.2).
-pub fn index2(partition: &[u8; 32]) -> Vec<u8> {
-    format!("vault:idx2:{}", hex(partition)).into_bytes()
-}
-
 pub fn gc(partition: &[u8; 32]) -> Vec<u8> {
     format!("vault:gc:{}", hex(partition)).into_bytes()
 }
@@ -32,13 +27,6 @@ pub fn gc(partition: &[u8; 32]) -> Vec<u8> {
 /// union, so one copy that fails to read does not lose a pending removal.
 pub fn gc2(partition: &[u8; 32]) -> Vec<u8> {
     format!("vault:gc2:{}", hex(partition)).into_bytes()
-}
-
-/// Set when the first index copy read as absent while the second was valid. A
-/// second sighting on a later call turns "ambiguous" into "lost" and the first
-/// copy is rewritten from the second.
-pub fn index_miss(partition: &[u8; 32]) -> Vec<u8> {
-    format!("vault:idxmiss:{}", hex(partition)).into_bytes()
 }
 
 /// `vault:e:<P>:<key hash>:<p>`.

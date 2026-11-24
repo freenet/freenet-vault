@@ -835,10 +835,9 @@ fn caller_mark_quota_edges() {
 // ---- crash-point sweep through process() ---------------------------------
 
 /// What must hold after any crash and the recovery calls that follow: the
-/// two index copies agree and parse; every entry the index names exists and
+/// index parses; every entry the index names exists and
 /// matches its digest; no entry secret is untracked; nothing is left in the
-/// gc lists; and the vault survives losing either index copy (the other names
-/// entries that still exist). With `clean`, no entry is flagged corrupt and
+/// gc lists. With `clean`, no entry is flagged corrupt and
 /// the index counts no lost entries and no problems.
 /// A named entry secret and the digest the index holds for it.
 type NamedEntry = (Vec<u8>, [u8; 32]);
@@ -846,20 +845,17 @@ type NamedEntry = (Vec<u8>, [u8; 32]);
 fn assert_sound(h: &mut MemHost, what: &str, clean: bool) {
     use freenet_vault_common::hash::entry_digest;
     let p = domain().partition();
-    let (named, has_index): (Vec<NamedEntry>, bool) = {
+    let named: Vec<NamedEntry> = {
         let s = Store::open(h, p).unwrap_or_else(|_| panic!("{what}: index malformed"));
         if clean {
             assert_eq!(s.index.lost_entries, 0, "{what}: lost entries");
             assert_eq!(s.index.problems, 0, "{what}: problems raised");
         }
-        (
-            s.index
-                .entries
-                .iter()
-                .map(|e| (names::entry(&p, e.kind, &e.key, e.parity), e.digest))
-                .collect(),
-            s.has_index(),
-        )
+        s.index
+            .entries
+            .iter()
+            .map(|e| (names::entry(&p, e.kind, &e.key, e.parity), e.digest))
+            .collect()
     };
     for (n, digest) in &named {
         let b = h
@@ -878,30 +874,14 @@ fn assert_sound(h: &mut MemHost, what: &str, clean: bool) {
             "{what}: an untracked entry secret"
         );
     }
-    for g in [names::gc(&p), names::gc2(&p)] {
-        assert!(!h.secrets.contains_key(&g), "{what}: a gc list left behind");
-    }
-    if has_index {
-        assert_eq!(
-            h.secrets.get(&names::index(&p)),
-            h.secrets.get(&names::index2(&p)),
-            "{what}: index copies differ"
+    // A pending gc name may remain while no secret exists under it (a candidate
+    // that never landed is dropped after a few passes); a secret left under a
+    // pending name is caught by the untracked-entry check above.
+    for n in crate::storage::pending_gc_names(h, &p) {
+        assert!(
+            !h.secrets.contains_key(&n) || named.iter().any(|(m, _)| m == &n),
+            "{what}: a pending gc name still holds a secret"
         );
-        // Lose either copy: what the other names must still be there.
-        for lose in [names::index(&p), names::index2(&p)] {
-            let mut d = h.restart();
-            d.secrets.remove(&lose);
-            let mut st = Store::open(&mut d, p)
-                .unwrap_or_else(|_| panic!("{what}: unusable without one index copy"));
-            let entries = st.index.entries.clone();
-            for e in entries {
-                let r = st.read(e.kind, &e.key, true);
-                assert!(
-                    matches!(r, Read::Ok(_) | Read::Corrupt(Some(_))),
-                    "{what}: with one index copy lost an entry reads {r:?}"
-                );
-            }
-        }
     }
 }
 
@@ -1558,60 +1538,46 @@ fn import_replace(h: &mut MemHost, rid: u64, slot: &[u8], seed: [u8; 32]) -> Rep
     )
 }
 
-/// Sequence 1: a replace succeeds with the backup index write failing; a second
-/// replace must not overwrite the entry copy the backup still names, because a
-/// torn primary write and a restart restore that backup and gc then removes the
-/// acknowledged copy.
+/// Round 3's first sequence needed a backup index; there is none now. What
+/// remains of it: a replace whose index write fails is refused, the old key
+/// stays, and the next call (index readable again) finds it intact.
 #[test]
-fn an_unsynced_store_refuses_entry_writes_and_never_loses_the_last_acknowledged_seed() {
+fn a_failed_index_write_refuses_the_replace_and_keeps_the_old_seed() {
     let p = domain().partition();
     let mut h = MemHost::new();
     arm(&mut h);
     let slot = vec![7; 32];
-    let (a, b, c) = ([0xA1; 32], [0xB2; 32], [0xC3; 32]);
-    let imp = |seed| Operation::Import {
-        slot: slot.clone(),
-        seed,
-        replace: true,
-    };
-    assert!(is_key_result(&page(&mut h, op(1, imp(a)))));
+    let (a, b) = ([0xA1; 32], [0xB2; 32]);
+    assert!(is_key_result(&import_replace(&mut h, 1, &slot, a)));
     let idx = names::index(&p);
-    let idx2 = names::index2(&p);
-    // Step 2: the backup write fails, the replace is acknowledged.
-    let i2 = idx2.clone();
-    h.set_fault(move |n| {
-        if n == i2.as_slice() {
-            WriteFault::Fail
+    for fault in [WriteFault::Fail, WriteFault::GarbageButFail] {
+        let mut d = h.restart();
+        let idx = idx.clone();
+        d.set_fault(move |n| {
+            if n == idx.as_slice() {
+                fault
+            } else {
+                WriteFault::None
+            }
+        });
+        let r = import_replace(&mut d, 2, &slot, b);
+        assert!(!is_key_result(&r), "{fault:?}: {r:?}");
+        d.clear_fault();
+        let mut d = d.restart();
+        recover(&mut d);
+        recover(&mut d);
+        // Garbage in the index is not repaired in v1: the store stays
+        // read-only (a stated residual). The key is rescued by Export.
+        if fault == WriteFault::Fail {
+            assert_eq!(seed_of(&d, &slot), a, "{fault:?}");
         } else {
-            WriteFault::None
+            assert!(Store::open(&mut d, p).is_err());
         }
-    });
-    assert!(is_key_result(&import_replace(&mut h, 2, &slot, b)));
-    assert_eq!(seed_of(&h, &slot), b);
-    // Steps 3 and 4: the backup still fails and the primary write tears.
-    let i1 = idx.clone();
-    let i2 = idx2.clone();
-    h.set_fault(move |n| {
-        if n == i1.as_slice() {
-            WriteFault::GarbageButFail
-        } else if n == i2.as_slice() {
-            WriteFault::Fail
-        } else {
-            WriteFault::None
-        }
-    });
-    let r = import_replace(&mut h, 3, &slot, c);
-    assert!(!is_key_result(&r), "C must not be acknowledged: {r:?}");
-    // Step 5 and 6: the host recovers, the process restarts, gc runs.
-    h.clear_fault();
-    let mut h = h.restart();
-    recover(&mut h);
-    recover(&mut h);
-    assert_eq!(seed_of(&h, &slot), b, "the acknowledged seed B survives");
+    }
 }
 
 /// Sequence 2: a replace crashes after writing its candidate and before the
-/// index commit; both indexes still name the original. On restart every index
+/// index commit; the index still names the original. On restart the index
 /// read and the partition list miss transiently while a gc list remains
 /// readable. gc must not treat that as a fresh partition and delete the
 /// original.
@@ -1634,7 +1600,6 @@ fn a_blind_open_never_runs_gc_on_the_committed_original() {
         total = n;
         let mut h = h.restart();
         h.hidden.insert(names::index(&p));
-        h.hidden.insert(names::index2(&p));
         h.hidden.insert(names::PARTS.to_vec());
         let _ = from_page_as(
             &mut h,
@@ -1749,17 +1714,17 @@ fn old_or_new(h: &mut MemHost) -> bool {
     matches!(slot_seed(h, 1), Some(s) if s == [0xA1; 32] || s == [0xB2; 32])
 }
 
-/// The backup index write fails during a replace, then the process dies at
-/// every point: the key is the old or the new one, and recovery re-syncs.
+/// The index write fails during a replace, then the process dies at every
+/// point: the key is the old or the new one.
 #[test]
-fn crash_sweep_replace_with_a_failing_second_index_write() {
+fn crash_sweep_replace_with_a_failing_index_write() {
     sweep(
-        "second index fails",
+        "index write fails",
         setup_writer_with_key,
         |h| {
-            let idx2 = names::index2(&domain().partition());
+            let idx = names::index(&domain().partition());
             h.set_fault(move |n| {
-                if n == idx2.as_slice() {
+                if n == idx.as_slice() {
                     WriteFault::Fail
                 } else {
                     WriteFault::None

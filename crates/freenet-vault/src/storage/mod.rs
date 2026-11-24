@@ -14,22 +14,21 @@
 //! `vault:gc` BEFORE it is written, so a crash between the write and the
 //! index commit leaves a name the next call removes.
 //!
-//! The index is written twice, `vault:idx` then `vault:idx2`, each with a
-//! checksum. `open` reconciles the two before anything else happens:
+//! There is ONE index copy, `vault:idx`, the commit point, with a BLAKE3
+//! checksum. `open` trusts it only when it reads and verifies:
 //!
-//! - first valid: it is the commit point and wins; a second that is absent,
-//!   invalid or different is rewritten from it.
-//! - first present but invalid, second valid: the first is restored from the
-//!   second (the second is at worst one commit behind, and its entry copies
-//!   still exist, because gc never runs while the copies differ).
-//! - first ABSENT, second valid: ambiguous (a lost secret or a transient
-//!   read), so the store is read-only: no write, no gc, no repair of an entry.
-//! - both absent: a new partition, unless `vault:parts` lists it, which is an
-//!   error (never NONE).
+//! - index verified: normal operation.
+//! - index absent, and `vault:parts` reads and does not list the partition (an
+//!   absent `vault:parts` is an empty list): a new partition. Creation and
+//!   arming write the first index; nothing was read, so nothing is removed
+//!   until that index is committed.
+//! - anything else (index present but damaged, absent while `vault:parts`
+//!   lists the partition, or `vault:parts` unreadable): `open` fails and the
+//!   partition is read-only for that call: no write, no gc, no creation, no
+//!   arming. The next call checks again.
 //!
-//! gc runs only when both copies are verified identical, so it can never
-//! remove a copy that either index names. The gc list is kept twice as well
-//! (`vault:gc`, `vault:gc2`) and read as a union.
+//! After a commit whose outcome is uncertain the store is read-only for the
+//! rest of the call.
 
 pub mod index;
 pub mod names;
@@ -85,16 +84,13 @@ pub enum Read {
     Missing,
 }
 
-/// How far the two index copies can be trusted to agree.
+/// Whether the store may write.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
-    /// Both copies are verified identical: reads, writes and gc are allowed.
+    /// Reads, writes and gc are allowed.
     Clean,
-    /// The first copy is valid and authoritative but the second could not be
-    /// brought in line: writes are allowed, gc is not.
-    Unsynced,
-    /// Only the second copy could be used (the first is absent): nothing is
-    /// written, rewritten or removed.
+    /// An index commit was uncertain: nothing more is written or removed in
+    /// this call. Reads answer from the index loaded at the start.
     ReadOnly,
 }
 
@@ -106,100 +102,54 @@ struct GcName {
     uncertain: u8,
 }
 
-/// A name is dropped from the gc list only after a confirmed removal. An
-/// uncertain pass (not removed, not readable) keeps it, and counts. Only when
-/// the list is full are the most-uncertain names made room from.
-/// The gc list never holds more names than this, so it cannot outgrow its
-/// encoding; a write that would exceed it fails until gc drains it.
+/// A name is dropped from the gc list only after a confirmed removal. The
+/// list never holds more names than this, so it cannot outgrow its encoding; a
+/// write that would exceed it fails until gc drains it (no name is ever
+/// dropped to make room).
+/// A name whose removal reports failure while it also reads as absent is
+/// dropped after this many passes: freenet-stdlib's `remove_secret` returns
+/// false for a secret that was never there.
+pub const GC_UNCERTAIN_LIMIT: u8 = 3;
 pub const MAX_GC_NAMES: usize = 4096;
 
 pub struct Store<'a, H: Host> {
     host: &'a mut H,
     partition: [u8; 32],
     pub index: Index,
-    /// The first index copy's bytes known to be on disk, `None` when absent.
+    /// The index bytes known to be on disk, `None` when there is none yet.
     on_disk: Option<Vec<u8>>,
-    /// An index was found, in either copy.
+    /// An index was read (or committed) in this call.
     exists: bool,
     mode: Mode,
-    /// At least one index copy was read and passed its checksum in `open`.
-    /// Without that there is no positive evidence of what the partition holds
-    /// (every read may have missed), so nothing destructive runs.
+    /// An index passed its checksum in this call. Without that there is no
+    /// positive evidence of what the partition holds, so nothing is removed.
     verified: bool,
 }
 
-/// A write that took, by its own report or by reading it back.
-fn write_verified<H: Host>(host: &mut H, name: &[u8], bytes: &[u8]) -> bool {
-    host.set_secret(name, bytes) || host.get_secret(name).as_deref() == Some(bytes)
-}
-
 impl<'a, H: Host> Store<'a, H> {
-    /// Loads the partition and reconciles the two index copies (module
-    /// docs). A malformed index is an error the caller must not treat as
-    /// NONE, and neither is an absent one for a partition `vault:parts` lists.
+    /// Loads the partition (module docs). `Err` means the index state is
+    /// unknown and the caller must treat the partition as read-only; it is
+    /// never read as "no partition".
     pub fn open(host: &'a mut H, partition: [u8; 32]) -> Result<Self, StoredIndexMalformed> {
-        let n1 = names::index(&partition);
-        let n2 = names::index2(&partition);
-        let first = host.get_secret(&n1);
-        let second = host.get_secret(&n2);
-        let d1 = first.as_deref().map(Index::decode);
-        let d2 = second.as_deref().map(Index::decode);
-        let (index, on_disk, mode, exists, verified) = match (d1, d2) {
-            (Some(Ok(i1)), _) => {
-                let b1 = first.expect("decoded");
-                // The first copy reads: a miss marker from an earlier call is
-                // stale (the miss was transient).
-                let miss = names::index_miss(&partition);
-                if host.get_secret(&miss).is_some() {
-                    host.remove_secret(&miss);
-                }
-                // The second copy is brought in line with the first (the
-                // first is the commit point, so it wins) before anything else.
-                let in_line =
-                    second.as_deref() == Some(b1.as_slice()) || write_verified(host, &n2, &b1);
-                let mode = if in_line { Mode::Clean } else { Mode::Unsynced };
-                (i1, Some(b1), mode, true, true)
+        let first = host.get_secret(&names::index(&partition));
+        let (index, on_disk, exists, verified) = match first.as_deref().map(Index::decode) {
+            Some(Ok(ix)) => {
+                // Keeps `vault:parts` in step (best effort; a failure is
+                // retried by the next call).
+                let _ = ensure_part_listed(host, &partition);
+                (ix, first, true, true)
             }
-            // The first copy is there but damaged: restore it from the second.
-            (Some(Err(_)), Some(Ok(i2))) => {
-                let b2 = second.expect("decoded");
-                if write_verified(host, &n1, &b2) {
-                    (i2, Some(b2), Mode::Clean, true, true)
-                } else {
-                    (i2, first, Mode::ReadOnly, true, true)
+            Some(Err(_)) => return Err(StoredIndexMalformed),
+            None => {
+                // Absent. A new partition only when `vault:parts` reads and
+                // does not name it.
+                match host.get_secret(names::PARTS) {
+                    Some(l) if l.len() % 32 != 0 || l.chunks(32).any(|c| c == partition) => {
+                        return Err(StoredIndexMalformed)
+                    }
+                    _ => (Index::none(), None, false, false),
                 }
             }
-            // Absent first, valid second: ambiguous (a lost secret or a
-            // transient miss), so read-only on the first sighting. Seen
-            // absent again on a later call it is taken as lost, and the first
-            // copy is rewritten from the second, which is verified.
-            (None, Some(Ok(i2))) => {
-                let b2 = second.expect("decoded");
-                let miss = names::index_miss(&partition);
-                if host.get_secret(&miss).is_none() {
-                    // Best effort: with no marker the next call is read-only too.
-                    let _ = host.set_secret(&miss, b"1");
-                    (i2, None, Mode::ReadOnly, true, true)
-                } else if write_verified(host, &n1, &b2) {
-                    host.remove_secret(&miss);
-                    (i2, Some(b2), Mode::Clean, true, true)
-                } else {
-                    (i2, None, Mode::ReadOnly, true, true)
-                }
-            }
-            (None, None) => {
-                let listed = host
-                    .get_secret(names::PARTS)
-                    .is_some_and(|l| l.len() % 32 == 0 && l.chunks(32).any(|c| c == partition));
-                if listed {
-                    return Err(StoredIndexMalformed);
-                }
-                // No index was read: a new partition, or every read missed. Entries
-                // may be written (a new partition must start), but nothing is
-                // removed in this call (`verified` stays false).
-                (Index::none(), None, Mode::Clean, false, false)
-            }
-            _ => return Err(StoredIndexMalformed),
         };
         Ok(Self {
             host,
@@ -207,7 +157,7 @@ impl<'a, H: Host> Store<'a, H> {
             index,
             on_disk,
             exists,
-            mode,
+            mode: Mode::Clean,
             verified,
         })
     }
@@ -216,8 +166,6 @@ impl<'a, H: Host> Store<'a, H> {
         self.mode
     }
 
-    /// Writes need both index copies in line: while the backup is stale it
-    /// still names entry copies, and a write could overwrite one of them.
     fn writable(&self) -> Result<(), StorageFailure> {
         if self.mode != Mode::Clean {
             Err(StorageFailure)
@@ -235,39 +183,36 @@ impl<'a, H: Host> Store<'a, H> {
     }
 
     /// Writes `new` as the index. On a failed write, reads back: the commit
-    /// stands if the disk holds exactly `new`.
+    /// stands if the disk holds exactly `new`. Any other outcome is uncertain
+    /// (the write may still land), so the store is read-only for the rest of
+    /// the call.
     pub fn commit(&mut self, new: Index) -> Result<(), CommitFailure> {
         if self.mode != Mode::Clean {
             return Err(CommitFailure { old_intact: true });
         }
         let name = names::index(&self.partition);
         let bytes = new.encode();
-        let ok = self.host.set_secret(&name, &bytes) || {
+        if !self.host.set_secret(&name, &bytes) {
             let back = self.host.get_secret(&name);
-            if back.as_deref() == Some(bytes.as_slice()) {
-                true
-            } else {
+            if back.as_deref() != Some(bytes.as_slice()) {
+                self.mode = Mode::ReadOnly;
                 // Answer from what is on disk (4.2).
                 let old_intact = back == self.on_disk;
                 return Err(CommitFailure { old_intact });
             }
-        };
-        debug_assert!(ok);
-        // The second copy goes after the first. The first is the commit point,
-        // so a failure here is not an error, but until the second is written
-        // gc must not run (it could remove a copy the second still names);
-        // the next `open` or commit writes it again.
-        self.mode = if write_verified(self.host, &names::index2(&self.partition), &bytes) {
-            Mode::Clean
-        } else {
-            Mode::Unsynced
-        };
+        }
+        let first = !self.exists;
         self.index = new;
         self.on_disk = Some(bytes);
         self.exists = true;
-        // The index just committed is the evidence from here on (a partition
-        // that began blind is a new one once it holds an index of its own).
+        // The index just committed is the evidence from here on.
         self.verified = true;
+        if first {
+            // Listed after the index, so a crash between the two leaves an
+            // index with no listing (repaired by the next `open`), never a
+            // listing with no index.
+            let _ = ensure_part_listed(self.host, &self.partition);
+        }
         Ok(())
     }
 
@@ -282,13 +227,18 @@ impl<'a, H: Host> Store<'a, H> {
         names::entry(&self.partition, kind, key, parity)
     }
 
-    /// The union of both gc list copies. A copy that is absent or does not
-    /// parse contributes nothing (a lost list costs quota, never a key: gc
-    /// removes only unreferenced names).
-    fn read_gc(&self) -> Vec<GcName> {
+    /// The union of both gc list copies, and whether the list can be trusted.
+    /// A list is always present once any entry was written (an emptied list is
+    /// stored as an empty list, never removed), so BOTH copies reading as
+    /// nothing while the index names entries means the reads failed: the list
+    /// is not trusted and nothing is rewritten or run from it. A copy that is
+    /// absent or does not parse contributes nothing.
+    fn read_gc(&self) -> (Vec<GcName>, bool) {
         let mut out: Vec<GcName> = Vec::new();
+        let mut any = false;
         for name in [names::gc(&self.partition), names::gc2(&self.partition)] {
             if let Some(list) = self.host.get_secret(&name).and_then(|b| decode_names(&b)) {
+                any = true;
                 for g in list {
                     match out.iter_mut().find(|x| x.name == g.name) {
                         Some(x) => x.uncertain = x.uncertain.min(g.uncertain),
@@ -297,7 +247,8 @@ impl<'a, H: Host> Store<'a, H> {
                 }
             }
         }
-        out
+        let trusted = any || self.index.entries.is_empty();
+        (out, trusted)
     }
 
     /// Writes both gc list copies. With `both`, a copy that does not take is
@@ -316,12 +267,15 @@ impl<'a, H: Host> Store<'a, H> {
         }
     }
 
-    /// Adds names to the gc list. Fails, writing nothing, when the list would
-    /// exceed [`MAX_GC_NAMES`] even after dropping the names whose removal has
-    /// stayed uncertain, most uncertain first; and when either copy cannot be
+    /// Adds names to the gc list. Fails, writing nothing, when the list is not
+    /// trusted (both copies unreadable), when it would exceed [`MAX_GC_NAMES`]
+    /// (no name is dropped to make room), or when either copy cannot be
     /// written.
     fn add_gc(&mut self, add: &[Vec<u8>]) -> Result<(), StorageFailure> {
-        let mut list = self.read_gc();
+        let (mut list, trusted) = self.read_gc();
+        if !trusted {
+            return Err(StorageFailure);
+        }
         for n in add {
             if !list.iter().any(|g| &g.name == n) {
                 list.push(GcName {
@@ -330,35 +284,21 @@ impl<'a, H: Host> Store<'a, H> {
                 });
             }
         }
-        while list.len() > MAX_GC_NAMES {
-            let worst = list
-                .iter()
-                .enumerate()
-                .filter(|(_, g)| g.uncertain > 0 && !add.contains(&g.name))
-                .max_by_key(|(_, g)| g.uncertain)
-                .map(|(i, _)| i);
-            match worst {
-                Some(i) => {
-                    list.remove(i);
-                }
-                None => return Err(StorageFailure),
-            }
-        }
         self.write_gc(&list, true)
     }
 
     /// Processes a non-empty `vault:gc`: removes every listed entry secret
     /// the index does not reference. Names whose removal did not take stay
-    /// listed (and are retried by the next call); the list is cleared only
-    /// when every removal is confirmed.
+    /// listed (and are retried by the next call). A drained list is stored
+    /// empty, not removed.
     pub fn process_gc(&mut self) {
-        // Only when both index copies are verified identical: otherwise a name
-        // that one of them references could be removed.
+        // Only on positive evidence of what the index names, and with a list
+        // that can be trusted.
         if self.mode != Mode::Clean || !self.verified {
             return;
         }
-        let list = self.read_gc();
-        if list.is_empty() {
+        let (list, trusted) = self.read_gc();
+        if list.is_empty() || !trusted {
             return;
         }
         let prefix = names::entry_prefix(&self.partition);
@@ -373,25 +313,23 @@ impl<'a, H: Host> Store<'a, H> {
             if !g.name.starts_with(&prefix) || referenced.contains(&g.name) {
                 continue;
             }
+            // `removed` is true when the secret is gone. freenet-stdlib answers
+            // false for a secret that was not there, so a name that neither
+            // removes nor reads is counted, and dropped after
+            // [`GC_UNCERTAIN_LIMIT`] such passes (otherwise every candidate
+            // that never landed would stay listed for ever and fill the list).
             let removed = self.host.remove_secret(&g.name);
             if self.host.get_secret(&g.name).is_some() {
-                // Still there: retry, whatever the removal reported.
                 keep.push(g);
             } else if !removed {
-                // Neither removed nor readable: it may never have existed, or
-                // the read may have failed. Keep it: only a confirmed removal
-                // drops a name.
                 let uncertain = g.uncertain.saturating_add(1);
-                keep.push(GcName { uncertain, ..g });
+                if uncertain < GC_UNCERTAIN_LIMIT {
+                    keep.push(GcName { uncertain, ..g });
+                }
             }
         }
-        if keep.is_empty() {
-            self.host.remove_secret(&names::gc(&self.partition));
-            self.host.remove_secret(&names::gc2(&self.partition));
-        } else {
-            // If this write fails the old, longer list stays: also fine.
-            let _ = self.write_gc(&keep, false);
-        }
+        // If this write fails the old, longer list stays: also fine.
+        let _ = self.write_gc(&keep, false);
     }
 
     /// Writes `bytes` as the entry `(kind, key)` into the parity slot the
@@ -440,14 +378,10 @@ impl<'a, H: Host> Store<'a, H> {
                 self.process_gc();
                 Ok(())
             }
-            Err(f) => {
-                // Remove the new copy only when the disk provably still holds
-                // the old index; otherwise it may be the committed one.
-                if f.old_intact {
-                    self.process_gc();
-                }
-                Err(StorageFailure)
-            }
+            // The commit was uncertain: the store is read-only for the rest of
+            // the call, so the new copy is left to the next call's gc (it may
+            // be the committed one).
+            Err(_) => Err(StorageFailure),
         }
     }
 
@@ -611,6 +545,50 @@ fn decode_names(bytes: &[u8]) -> Option<Vec<GcName>> {
         Ok(out)
     };
     parse().ok()
+}
+
+/// The names pending in the gc list (either copy), for tests.
+#[cfg(any(test, feature = "testing"))]
+pub fn pending_gc_names<H: Host>(host: &H, partition: &[u8; 32]) -> Vec<Vec<u8>> {
+    let mut out: Vec<Vec<u8>> = Vec::new();
+    for n in [names::gc(partition), names::gc2(partition)] {
+        if let Some(l) = host.get_secret(&n).and_then(|b| decode_names(&b)) {
+            for g in l {
+                if !out.contains(&g.name) {
+                    out.push(g.name);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Export while the index state is unknown: reads both parity copies of the
+/// slot directly and returns a seed only when exactly one of them decodes as a
+/// key entry for that slot with a 32-byte seed.
+pub fn rescue_export_seed<H: Host>(
+    host: &H,
+    partition: &[u8; 32],
+    slot: &[u8],
+) -> Option<[u8; 32]> {
+    let mut found: Vec<[u8; 32]> = Vec::new();
+    for parity in 0..2u8 {
+        let name = names::entry(partition, KIND_KEY, slot, parity);
+        let Some(bytes) = host.get_secret(&name) else {
+            continue;
+        };
+        if let Ok(e) = Entry::decode(&bytes) {
+            if e.kind == KIND_KEY && e.key == slot {
+                if let Ok(seed) = <[u8; 32]>::try_from(e.content.as_slice()) {
+                    found.push(seed);
+                }
+            }
+        }
+    }
+    match found.as_slice() {
+        [one] => Some(*one),
+        _ => None,
+    }
 }
 
 /// `vault:parts`: the partition ids this build holds state for.

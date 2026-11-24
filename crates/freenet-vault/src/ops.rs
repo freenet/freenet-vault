@@ -8,7 +8,7 @@ use crate::crypto;
 use crate::domain::Domain;
 use crate::host::Host;
 use crate::storage::index::State;
-use crate::storage::{ensure_part_listed, PutError, Quota, Read, Store};
+use crate::storage::{rescue_export_seed, PutError, Quota, Read, Store};
 use crate::succ::{accept_record, Succ};
 use freenet_vault_common::bounds::FORBIDDEN_SIGNING_PREFIX;
 use freenet_vault_common::codec::Malformed;
@@ -399,7 +399,6 @@ fn gate_caller<H: Host>(
     caller: &Caller,
     sealed: bool,
     changes_busy: bool,
-    creating: bool,
     create: impl FnOnce(&mut crate::storage::index::Index),
     answer: Option<Box<Status>>,
     rid: u64,
@@ -427,9 +426,6 @@ fn gate_caller<H: Host>(
                     request_id: rid,
                     partition: domain.partition(),
                 }));
-            }
-            if creating && ensure_part_listed(store.host(), &domain.partition()).is_err() {
-                return Some(refusal(rid, refused::STORAGE_FAILURE));
             }
             // The floor is never silently lost: a failed raise refuses.
             raise_mark(store, domain, key, record, create)
@@ -463,6 +459,12 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
     );
     let succ = Succ::load(domain, host).ok();
     let Ok(mut store) = Store::open(host, domain.partition()) else {
+        // The index state is unknown: read-only. A page may still rescue a
+        // key with Export, behind the consent prompt (the answer reads the
+        // entry copies directly).
+        if let (Operation::Export { slot }, Caller::Page { id }) = (&req.op, caller) {
+            return export_prompt(domain, host, id, rid, slot);
+        }
         return refusal(rid, refused::STORAGE_FAILURE);
     };
     let (sealed, changes_busy, creating) = match route(domain, &store, &succ, is_change, rid) {
@@ -488,7 +490,6 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
         caller,
         sealed,
         changes_busy,
-        creating,
         create,
         None,
         rid,
@@ -501,12 +502,6 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
             request_id: rid,
             partition: domain.partition(),
         });
-    }
-    if creating
-        && !matches!(req.op, Operation::Delete { .. })
-        && ensure_part_listed(store.host(), &domain.partition()).is_err()
-    {
-        return refusal(rid, refused::STORAGE_FAILURE);
     }
 
     match req.op {
@@ -638,32 +633,44 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
             if let Err(o) = usable_seed(domain, &mut store, &slot, sealed, true, rid) {
                 return o;
             }
-            let mut idb = [0u8; 4];
-            let mut prompt_id = 0u32;
-            for _ in 0..2 {
-                store.host().random_bytes(&mut idb);
-                prompt_id = u32::from_be_bytes(idb);
-                if prompt_id != 0 {
-                    break;
-                }
-            }
-            if prompt_id == 0 {
-                return refusal(rid, refused::STORAGE_FAILURE);
-            }
-            let pending = Pending {
-                prompt_id,
-                origin: *id,
-                request_id: rid,
-                slot: slot.clone(),
-            };
-            if !store.host().write_context(&pending.encode()) {
-                return refusal(rid, refused::STORAGE_FAILURE);
-            }
-            Outcome::Prompt {
-                prompt_id,
-                text: (domain.export_prompt)(&slot),
-            }
+            export_prompt(domain, store.host(), id, rid, &slot)
         }
+    }
+}
+
+/// Stores the pending Export and asks the user. The prompt does not depend on
+/// the index, so it works while the store is read-only.
+fn export_prompt<H: Host>(
+    domain: &Domain,
+    host: &mut H,
+    origin: &[u8; 32],
+    rid: u64,
+    slot: &[u8],
+) -> Outcome {
+    let mut idb = [0u8; 4];
+    let mut prompt_id = 0u32;
+    for _ in 0..2 {
+        host.random_bytes(&mut idb);
+        prompt_id = u32::from_be_bytes(idb);
+        if prompt_id != 0 {
+            break;
+        }
+    }
+    if prompt_id == 0 {
+        return refusal(rid, refused::STORAGE_FAILURE);
+    }
+    let pending = Pending {
+        prompt_id,
+        origin: *origin,
+        request_id: rid,
+        slot: slot.to_vec(),
+    };
+    if !host.write_context(&pending.encode()) {
+        return refusal(rid, refused::STORAGE_FAILURE);
+    }
+    Outcome::Prompt {
+        prompt_id,
+        text: (domain.export_prompt)(slot),
     }
 }
 
@@ -743,7 +750,14 @@ pub fn export_answer<H: Host>(
     }
     let succ = Succ::load(domain, host).ok();
     let Ok(mut store) = Store::open(host, domain.partition()) else {
-        return Some(refusal(rid, refused::STORAGE_FAILURE));
+        // Unknown index state: read-only. Rescue the key from the entry
+        // copies themselves, and only when exactly one decodes.
+        return Some(
+            match rescue_export_seed(host, &domain.partition(), &pending.slot) {
+                Some(seed) => reply(OpResult::Export { seed }.encode(rid), rid),
+                None => refusal(rid, refused::STORAGE_FAILURE),
+            },
+        );
     };
     let sealed = match route(domain, &store, &succ, false, rid) {
         Route::Answer(s) => return Some(status(s)),
@@ -940,7 +954,6 @@ fn submit_record<H: Host>(
             caller,
             sealed,
             changes_busy,
-            false,
             |_| {},
             answer,
             rid,

@@ -33,6 +33,9 @@ pub struct MemHost {
     pub hidden: BTreeSet<Vec<u8>>,
     /// Secret names `remove_secret` fails to remove.
     pub undeletable: BTreeSet<Vec<u8>>,
+    /// `remove_secret` answers false for a secret that is not there, as
+    /// freenet-stdlib does.
+    pub remove_absent_is_false: bool,
     /// Counts every `set_secret` and `remove_secret`, applied or not.
     pub mutations: usize,
     crash_after: Option<usize>,
@@ -55,6 +58,7 @@ impl MemHost {
             writes: 0,
             hidden: BTreeSet::new(),
             undeletable: BTreeSet::new(),
+            remove_absent_is_false: true,
             mutations: 0,
             crash_after: None,
         }
@@ -143,9 +147,8 @@ impl Host for MemHost {
         if self.undeletable.contains(key) {
             return false;
         }
-        // The post-condition is what is reported: the secret is not there.
-        self.secrets.remove(key);
-        true
+        let was = self.secrets.remove(key).is_some();
+        was || !self.remove_absent_is_false
     }
 
     fn read_context(&self) -> Vec<u8> {
