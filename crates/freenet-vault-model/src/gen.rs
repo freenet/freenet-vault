@@ -151,6 +151,9 @@ pub fn gen_scenario(seed: u64, cfg: &Cfg) -> Scenario {
         prof.restores = true;
         prof.fault = prof.fault.max(0.08);
     }
+    if family == Family::Busy {
+        prof.fault = prof.fault.max(0.08);
+    }
     let n = 60 + rng.below(241) as usize;
     let mut actions = vec![
         Action::Publish,
@@ -166,6 +169,21 @@ pub fn gen_scenario(seed: u64, cfg: &Cfg) -> Scenario {
             ],
         },
     ];
+    if family == Family::Busy {
+        // start the writer at the entry maximum
+        let fill: Vec<Op> = (0..4)
+            .map(|slot| Op::Generate {
+                slot,
+                seed: 100 + rng.below(1_000_000) as u32,
+            })
+            .chain([Op::PutExt { key: 1, content: 2 }])
+            .collect();
+        actions.push(Action::Load {
+            client: 0,
+            fetch: Fetch::Newest,
+            ops: fill,
+        });
+    }
     while actions.len() < n {
         let f = prof.fault;
         let r = rng.below(1000) as f64 / 1000.0;
@@ -355,3 +373,10 @@ pub fn shrink(cfg: &Cfg, sc: &Scenario, inv: &str) -> Scenario {
     }
     cur
 }
+
+/// Seeds replayed on every run, each with a coverage counter that ordinary
+/// runs of a few thousand consecutive seeds reach too rarely (15.5:
+/// "every row ... at least once per pull-request run"). Found with
+/// `vault-model --find <counter>`; `coverage_seeds_still_hit_their_rows`
+/// fails if a generator change moves one off its row.
+pub const COVERAGE_SEEDS: &[(u64, &str)] = &[(17039, "7.2/outcome-staging-full")];

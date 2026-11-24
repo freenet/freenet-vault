@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use freenet_vault_model::cov::Cov;
-use freenet_vault_model::gen::{gen_scenario, run, shrink};
+use freenet_vault_model::gen::{gen_scenario, run, shrink, COVERAGE_SEEDS};
 use freenet_vault_model::world::{Cfg, Delivery};
 
 fn main() {
@@ -17,6 +17,7 @@ fn main() {
     let mut cfg = Cfg::gate();
     let mut trace: Option<u64> = None;
     let mut shrink_n = 1usize;
+    let mut find: Option<String> = None;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -30,6 +31,10 @@ fn main() {
             }
             "--trace" => {
                 trace = Some(args[i + 1].parse().unwrap());
+                i += 1;
+            }
+            "--find" => {
+                find = Some(args[i + 1].clone());
                 i += 1;
             }
             "--shrink" => {
@@ -63,10 +68,28 @@ fn main() {
         return;
     }
 
+    if let Some(k) = find {
+        // seeds whose run hits coverage counter `k` (for COVERAGE_SEEDS)
+        for seed in start..start + seeds {
+            let o = run(&cfg, &gen_scenario(seed, &cfg));
+            if o.cov.get(&k) > 0 {
+                println!(
+                    "seed {seed} hits {k} (violation {:?})",
+                    o.violation.map(|v| v.inv)
+                );
+            }
+        }
+        return;
+    }
+
     let mut cov = Cov::default();
     let mut by_inv: BTreeMap<&'static str, Vec<u64>> = BTreeMap::new();
     let mut corrupt_sealed = 0u64;
-    for seed in start..start + seeds {
+    let extra = COVERAGE_SEEDS
+        .iter()
+        .map(|(s, _)| *s)
+        .filter(|s| !(start..start + seeds).contains(s));
+    for seed in (start..start + seeds).chain(extra) {
         let sc = gen_scenario(seed, &cfg);
         let o = run(&cfg, &sc);
         cov.merge(&o.cov);
@@ -76,8 +99,9 @@ fn main() {
         }
     }
     println!(
-        "schedules: {seeds} (seeds {start}..{}), delivery {:?}, adversarial {}, stale pointer {}, global FIFO {}, accept-query-answer {}",
+        "schedules: {seeds} (seeds {start}..{}) plus {} coverage seeds, delivery {:?}, adversarial {}, stale pointer {}, global FIFO {}, accept-query-answer {}",
         start + seeds,
+        COVERAGE_SEEDS.len(),
         cfg.delivery,
         cfg.adversarial,
         cfg.stale_pointer,

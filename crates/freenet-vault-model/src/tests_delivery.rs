@@ -44,3 +44,12 @@ fn core_mode_exercises_its_delivery_paths() {
         assert!(cov.get(k) > 0, "{k} never hit");
     }
 }
+
+#[test]
+fn coverage_seeds_still_hit_their_rows() {
+    let cfg = Cfg::gate();
+    for (seed, k) in crate::gen::COVERAGE_SEEDS {
+        let o = run(&cfg, &gen_scenario(*seed, &cfg));
+        assert!(o.cov.get(k) > 0, "coverage seed {seed} no longer hits {k}");
+    }
+}
