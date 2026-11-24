@@ -75,6 +75,7 @@ fn main() {
                 }
                 i += 1;
             }
+            "--quiesce-shuffle" => cfg.quiesce_shuffle = true,
             a => panic!("unknown argument {a}"),
         }
         i += 1;
@@ -153,6 +154,7 @@ fn main() {
     let mut by_inv: BTreeMap<&'static str, Vec<u64>> = BTreeMap::new();
     let mut corrupt_sealed = 0u64;
     let mut shapes: BTreeMap<String, (u64, u64)> = BTreeMap::new();
+    let mut ran = 0u64;
     let extra: std::collections::BTreeSet<u64> = COVERAGE_SEEDS
         .iter()
         .map(|(s, _)| *s)
@@ -161,6 +163,7 @@ fn main() {
     for seed in (start..start + seeds).chain(extra.iter().copied()) {
         let sc = gen_scenario(seed, &cfg);
         let o = run(&cfg, &sc);
+        ran += 1;
         cov.merge(&o.cov);
         corrupt_sealed += o.sealed_corrupt_sent;
         if let Some(v) = o.violation {
@@ -214,6 +217,15 @@ fn main() {
         println!("  shape {n:>6} (first seed {first:>6}) {k}");
     }
     println!("sealed build sent a corrupt entry: {corrupt_sealed} times");
+    println!(
+        "schedules run: {ran}; handovers (took over): {}; calls in read-only mode: {}; direct reads served: {}, storage failure: {}; I2 checks in read-only mode: served {}, storage failure with the copy on disk {}",
+        cov.get("7.4/took-over"),
+        cov.get("4.5/index-lost-call"),
+        cov.get("4.5/direct-read-served"),
+        cov.get("4.5/direct-read-storage-failure"),
+        cov.get("I2/read-only-served"),
+        cov.get("I2/read-only-storage-failure-copy-on-disk"),
+    );
     let missing = cov.missing();
     println!(
         "coverage: {} counters, {} required missing",

@@ -81,6 +81,9 @@ pub struct Cfg {
     pub wakeup_hop_cap: usize,
     pub client_iter_cap: usize,
     pub quiesce_rounds: usize,
+    /// Quiescence delivers in a varying order (pick from a hash of the
+    /// step number) instead of always the first candidate.
+    pub quiesce_shuffle: bool,
     pub trace: bool,
     /// Labelled reading of 4.5 condition 2 (revision 10): an absent
     /// vault:parts reads as a valid list (false: the literal reading).
@@ -100,6 +103,7 @@ impl Cfg {
             wakeup_hop_cap: 6,
             client_iter_cap: 14,
             quiesce_rounds: 12,
+            quiesce_shuffle: false,
             trace: false,
             absent_parts_valid_list: false,
         }
@@ -2507,8 +2511,15 @@ impl World {
             if self.candidates().is_empty() || self.violation.is_some() {
                 return;
             }
+            let pick = if self.cfg.quiesce_shuffle {
+                let mut h = Hasher::new(b"quiesce");
+                h.u64(self.step_no as u64);
+                (h.finish() % 64) as u16
+            } else {
+                0
+            };
             self.apply(&Action::Step {
-                pick: 0,
+                pick,
                 fate: Fate::Deliver,
             });
         }
