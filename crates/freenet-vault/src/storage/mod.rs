@@ -903,7 +903,7 @@ pub struct CommitFailure {
 /// `"FVGC" 4 ; count 2 ; count x { len 2 ; name }`. Fails above
 /// [`MAX_GC_NAMES`] names, so the count always fits and a full list is
 /// refused rather than truncated.
-fn encode_names(names: &[Vec<u8>]) -> Result<Vec<u8>, StorageFailure> {
+pub fn encode_names(names: &[Vec<u8>]) -> Result<Vec<u8>, StorageFailure> {
     if names.len() > MAX_GC_NAMES {
         return Err(StorageFailure);
     }
@@ -916,7 +916,7 @@ fn encode_names(names: &[Vec<u8>]) -> Result<Vec<u8>, StorageFailure> {
 }
 
 /// `None` when the bytes are not a gc list this build wrote.
-fn decode_names(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
+pub fn decode_names(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
     let parse = || -> Result<Vec<Vec<u8>>, Malformed> {
         let mut r = Reader::new(bytes);
         if r.take(4, "gc magic")? != b"FVGC" {

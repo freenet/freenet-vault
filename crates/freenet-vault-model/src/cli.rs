@@ -28,6 +28,32 @@ use crate::world::{Cfg, Delivery};
 /// process with status 1 on a violation, a surviving mutant or missing
 /// coverage.
 pub fn run_cli(args: Vec<String>) {
+    run_cli_inner(args);
+    finish();
+}
+
+thread_local! {
+    static FINISH: std::cell::Cell<Option<fn()>> = const { std::cell::Cell::new(None) };
+}
+
+/// A function the runner calls once at the end, before it exits (the
+/// conformance crate prints its bridge findings there).
+pub fn set_finish_hook(f: Option<fn()>) {
+    FINISH.with(|c| c.set(f));
+}
+
+fn finish() {
+    if let Some(f) = FINISH.with(|c| c.take()) {
+        f();
+    }
+}
+
+fn exit_failed() -> ! {
+    finish();
+    std::process::exit(1)
+}
+
+fn run_cli_inner(args: Vec<String>) {
     let mut seeds: u64 = 2000;
     let mut start: u64 = 0;
     let mut cfg = Cfg::gate();
@@ -270,7 +296,7 @@ pub fn run_cli(args: Vec<String>) {
         }
     }
     if !by_inv.is_empty() || !directed_violations.is_empty() || !missing.is_empty() {
-        std::process::exit(1);
+        exit_failed();
     }
 }
 
@@ -389,7 +415,7 @@ fn run_mutants(cfg: &Cfg, start: u64, seeds: u64, shrink_n: usize) {
     }
     println!("mutants surviving: {survivors}");
     if survivors > 0 {
-        std::process::exit(1);
+        exit_failed();
     }
 }
 

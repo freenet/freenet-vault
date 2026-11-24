@@ -5,6 +5,7 @@ members = [
     "crates/freenet-vault",
     "domains/river",
     "crates/freenet-vault-model",
+    "crates/freenet-vault-conformance",
 ]
 
 [workspace.package]
@@ -26,6 +27,15 @@ serde_json = "1"
 freenet-stdlib = { version = "0.12.1", features = ["contract"] }
 freenet-vault-common = { path = "crates/freenet-vault-common" }
 freenet-vault = { path = "crates/freenet-vault" }
+
+# The conformance runner unwinds out of the library on a simulated crash, so
+# it needs unwinding; run it with `--profile conformance`.
+[profile.conformance]
+inherits = "release"
+panic = "unwind"
+opt-level = 3
+lto = false
+codegen-units = 16
 
 [profile.release]
 opt-level = "z"
