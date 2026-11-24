@@ -365,6 +365,10 @@ pub struct World {
     /// Revision 10 stated residual (4.4): builds whose vault:gc was lost
     /// (made undecryptable) while it listed names.
     gc_lost: BTreeSet<Ver>,
+    /// Builds left RETIRED and still listed by a crash or a failed write in
+    /// the retiring call (the window of the 4.4 stated residual
+    /// I3-retired-still-listed).
+    still_listed_window: BTreeSet<Ver>,
     /// Builds whose vault:parts was made undecryptable at some point (4.4
     /// stated residual "both vault:parts and the index undecryptable": the
     /// remove-before-write rule can turn that copy into an absent one).
@@ -430,6 +434,7 @@ impl World {
             last_good: BTreeMap::new(),
             gc_lost: BTreeSet::new(),
             parts_lost: BTreeSet::new(),
+            still_listed_window: BTreeSet::new(),
             receiver_leftover: BTreeSet::new(),
             damage_other: false,
             damage_scoped: BTreeSet::new(),
@@ -576,6 +581,15 @@ impl World {
             && !crate::store::Store::listed(&self.stores[b])
         {
             self.cov.hit("4.2/listing-attempt-did-not-land");
+        }
+        if matches!(
+            self.stores[b].idx().map(|i| &i.state),
+            Some(PState::Retired { .. })
+        ) && self.stores[b].listed()
+            && (res.is_err() || self.faults.fired.len() > fired_before)
+        {
+            self.still_listed_window.insert(ver(b));
+            self.cov.hit("4.4/retired-still-listed-window");
         }
         if let Some(i) = self.stores[b].idx() {
             if !self.stores[b].index_lost() {
@@ -1324,7 +1338,7 @@ impl World {
                 if let Some(i) = self.stores[b].idx() {
                     self.last_good.insert(ver(b), i.state.clone());
                 }
-                self.taint_unheld();
+                self.taint_unheld_by(true);
                 self.restored = true;
                 self.real_restore = true;
             }
@@ -1333,7 +1347,7 @@ impl World {
                 self.cov.hit("fault/wipe");
                 self.stores[b] = Store::default();
                 self.vols[b] = Volatile::default();
-                self.taint_unheld();
+                self.taint_unheld_by(true);
                 self.restored = true;
                 self.real_restore = true;
             }
@@ -2007,6 +2021,17 @@ impl World {
         matches!(self.last_good.get(&ver(b)), Some(PState::Receiving { .. }))
     }
 
+    /// A listed build in state 7 whose last readable index was NONE or
+    /// RECEIVING: revision 10 says such an index is never listed (A1, F16).
+    fn listed_non_writer_lost(&self, b: usize) -> bool {
+        self.stores[b].index_lost()
+            && self.stores[b].listed()
+            && matches!(
+                self.last_good.get(&ver(b)),
+                None | Some(PState::Receiving { .. }) | Some(PState::None { .. })
+            )
+    }
+
     fn is_orphan(&self, id: Ident, content: u32) -> bool {
         self.orphans
             .iter()
@@ -2048,8 +2073,12 @@ impl World {
                 return "I3-receiver-leftover";
             }
             if matches!(last, Some(PState::Retired { .. })) {
-                return if s.listed() {
+                return if s.listed() && self.still_listed_window.contains(&v) {
                     "I3-retired-still-listed"
+                } else if s.listed() {
+                    // listed RETIRED build with no crash or failed write
+                    // in its retiring call: not the stated residual
+                    "I3-retired-listed"
                 } else if matches!(s.secrets.get(&SName::Parts), Some(SVal::Garbled)) {
                     // revision 10 finding G2: a retired build whose index
                     // AND vault:parts are malformed reports state 7
@@ -2062,7 +2091,13 @@ impl World {
                 };
             }
             if self.damaged_partial_receiver(b) {
-                return "I3-damaged-partial-receiver";
+                // listed: the F16 shape revision 10 closes; unlisted (state 7
+                // only because vault:parts is absent): finding G1
+                return if s.listed() {
+                    "I3-damaged-partial-receiver"
+                } else {
+                    "I3-damaged-partial-receiver-unlisted"
+                };
             }
             if self.is_orphan(slot, k) {
                 return "I3-orphan-direct-read";
@@ -2100,8 +2135,10 @@ impl World {
             }
         }
         if matches!(last, Some(PState::Retired { .. })) {
-            return if s.listed() {
+            return if s.listed() && self.still_listed_window.contains(&v) {
                 "I2-retired-still-listed"
+            } else if s.listed() {
+                "I2-retired-listed"
             } else if matches!(s.secrets.get(&SName::Parts), Some(SVal::Garbled)) {
                 "I2-retired-parts-malformed"
             } else if !crate::store::parts_valid_list(s.secrets.get(&SName::Parts)) {
@@ -2114,7 +2151,11 @@ impl World {
             return "I2-incomplete-delete";
         }
         if self.damaged_partial_receiver(b) {
-            return "I2-damaged-partial-receiver";
+            return if s.listed() {
+                "I2-damaged-partial-receiver"
+            } else {
+                "I2-damaged-partial-receiver-unlisted"
+            };
         }
         if let Some(e) = &served {
             if self.is_orphan(id, e.content) {
@@ -2195,10 +2236,28 @@ impl World {
     /// value that no build holds any more is lost by the operator, not by
     /// the protocol: exclude it from I2.
     fn taint_unheld(&mut self) {
+        self.taint_unheld_by(false)
+    }
+
+    /// : a restore or wipe by the operator; only a value some
+    /// build's committed index (or direct read) still yields is held.
+    /// Otherwise (damage) any copy left on a disk counts as held (15.4 I2).
+    fn taint_unheld_by(&mut self, restore: bool) {
         let oracle = self.oracle.clone();
         for (id, p) in &oracle {
-            let held =
-                (0..NBUILDS).any(|b| matches!(self.held_value(b, *id), Ok(ref v) if p.allows(v)));
+            // revision 10: an acknowledged value is destroyed only when no
+            // copy of it is left on any disk; damage to an index or to
+            // vault:gc leaves the entry copies in place (15.4 I2 counts a
+            // copy on disk as held)
+            let held = (0..NBUILDS).any(|b| {
+                matches!(self.held_value(b, *id), Ok(ref v) if p.allows(v))
+                    || !restore
+                        && !self.real_restore
+                        && p.acked
+                            .iter()
+                            .chain(p.maybe.iter().flatten())
+                            .any(|e| self.stores[b].copy_on_disk(*id, e))
+            });
             if !held {
                 self.cov.hit("restore/acknowledged-value-destroyed");
                 self.tainted.insert(*id);
@@ -2384,7 +2443,9 @@ impl World {
                     let receiver_lost = (0..NBUILDS)
                         .any(|b| self.stores[b].index_lost() && !self.stores[b].listed());
                     self.fail(
-                        if lost >= 2 && receiver_lost {
+                        if lost >= 2 && (0..NBUILDS).any(|b| self.listed_non_writer_lost(b)) {
+                            "I2-two-index-lost-listed-non-writer"
+                        } else if lost >= 2 && receiver_lost {
                             "I2-two-index-lost-unlisted-state-7"
                         } else if lost >= 2 {
                             // 5.2 step 4: "if two report state 7, vault
@@ -2487,6 +2548,8 @@ impl World {
         let i7_scope = base && (!self.garbled || scoped) && (self.garbled || !self.restored);
         let label = if !self.garbled {
             "I7"
+        } else if (0..NBUILDS).any(|b| self.listed_non_writer_lost(b)) {
+            "I7-listed-non-writer-index-lost"
         } else if self.damage_scoped.contains("receiver") {
             "I7-receiver-index-lost"
         } else {

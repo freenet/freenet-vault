@@ -1,0 +1,1166 @@
+seed 3572: Some(Violation { inv: "I7-receiver-index-lost", msg: "after quiescence build 60 is NONE not WRITER; states [\"10:RETIRED\", \"20:NONE\", \"30:NONE\", \"40:WRITER\", \"50:NONE\", \"60:NONE\"]", at: 895 })
+
+==== seed 3572: shrunk to 19 actions; ledger [Rec { v: 10, withdrawal: false }, Rec { v: 20, withdrawal: false }, Rec { v: 25, withdrawal: true }, Rec { v: 30, withdrawal: false }, Rec { v: 40, withdrawal: false }, Rec { v: 55, withdrawal: true }, Rec { v: 60, withdrawal: false }]
+violation: Some(Violation { inv: "I7-receiver-index-lost", msg: "after quiescence build 60 is NONE not WRITER; states [\"10:SEALED\", \"20:NONE\", \"30:NONE\", \"40:NONE\", \"50:NONE\", \"60:NONE\"]", at: 748 })
+[1] Publish
+[2] Load { client: 0, fetch: Newest, ops: [Generate { slot: 0, seed: 541299 }, PutExt { key: 0, content: 1 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[3] Publish
+[4] Publish
+[5] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[6] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[7] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[8] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[9] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[10] Publish
+[11] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(10)
+  10 Poke { flags: 2, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [] state NONE -> NONE(armed)
+[12] Step { pick: 0, fate: Deliver }
+  10 Op(Generate { slot: 0, seed: 541299 }) -> "Key(541299)" hops [] state NONE(armed) -> WRITER
+  op Generate { slot: 0, seed: 541299 } at 10 -> Key(541299)
+[13] Publish
+[14] Publish
+[15] Publish
+[16] Load { client: 0, fetch: Newest, ops: [PublicKey { slot: 1 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(WRITER, rec 2)" hops [60:Chunk(rec 60, 1 entries)] state WRITER -> WRITER
+[17] Step { pick: 0, fate: Deliver }
+[18] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Chunk { rec: Rec { v: 60, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 541299, ext: [] }], malformed: false } } -> "Ack(Processed, [(11777849154711563742, Stored)], succ None)" hops [] state NONE -> RECEIVING
+[19] GarbleIndex { b: 5, undecryptable: false }
+== quiescence
+[20] Load { client: 0, fetch: Newest, ops: [] }
+[21] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 60, frame: Ack { tid: (10, Rec { v: 60, withdrawal: false }), status: Processed, succ: None, outcomes: [(11777849154711563742, Stored)] } } -> "-" hops [60:Complete(m ccb0, 1 digests)] state WRITER -> SEALED
+[22] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[23] Step { pick: 0, fate: Deliver }
+[24] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[25] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[26] Step { pick: 0, fate: Deliver }
+[27] Step { pick: 0, fate: Deliver }
+  10 Op(PutExt { key: 0, content: 1 }) -> "Busy" hops [] state SEALED -> SEALED
+  op PutExt { key: 0, content: 1 } at 10 -> Busy
+[28] Step { pick: 0, fate: Deliver }
+[29] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 2)" hops [] state NONE -> NONE
+[30] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 2)" hops [] state NONE -> NONE
+[31] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 2)" hops [] state NONE -> NONE
+[32] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 2)" hops [] state NONE -> NONE
+[33] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[34] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[35] Step { pick: 0, fate: Deliver }
+[36] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[37] Step { pick: 0, fate: Deliver }
+[38] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[39] Step { pick: 0, fate: Deliver }
+[40] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[41] Step { pick: 0, fate: Deliver }
+[42] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[43] Step { pick: 0, fate: Deliver }
+[44] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[45] Step { pick: 0, fate: Deliver }
+[46] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[47] Step { pick: 0, fate: Deliver }
+[48] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[49] Step { pick: 0, fate: Deliver }
+[50] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[51] Step { pick: 0, fate: Deliver }
+[52] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[53] Step { pick: 0, fate: Deliver }
+[54] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[55] Step { pick: 0, fate: Deliver }
+[56] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[57] Step { pick: 0, fate: Deliver }
+[58] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[59] Step { pick: 0, fate: Deliver }
+[60] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[61] Step { pick: 0, fate: Deliver }
+[62] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[63] Step { pick: 0, fate: Deliver }
+[64] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[65] Step { pick: 0, fate: Deliver }
+[66] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[67] Step { pick: 0, fate: Deliver }
+  10 Op(PublicKey { slot: 1 }) -> "Absent" hops [] state SEALED -> SEALED
+  op PublicKey { slot: 1 } at 10 -> Absent
+[68] Step { pick: 0, fate: Deliver }
+[69] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[70] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[71] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[72] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[73] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[74] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[75] Step { pick: 0, fate: Deliver }
+[76] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[77] Step { pick: 0, fate: Deliver }
+[78] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[79] Step { pick: 0, fate: Deliver }
+[80] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[81] Step { pick: 0, fate: Deliver }
+[82] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[83] Step { pick: 0, fate: Deliver }
+[84] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[85] Step { pick: 0, fate: Deliver }
+[86] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[87] Step { pick: 0, fate: Deliver }
+[88] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[89] Step { pick: 0, fate: Deliver }
+[90] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[91] Step { pick: 0, fate: Deliver }
+[92] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[93] Step { pick: 0, fate: Deliver }
+[94] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[95] Step { pick: 0, fate: Deliver }
+[96] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[97] Step { pick: 0, fate: Deliver }
+[98] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[99] Step { pick: 0, fate: Deliver }
+[100] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[101] Step { pick: 0, fate: Deliver }
+[102] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[103] Step { pick: 0, fate: Deliver }
+[104] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[105] Step { pick: 0, fate: Deliver }
+[106] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[107] Step { pick: 0, fate: Deliver }
+[108] Wakeup { b: 0 }
+[109] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[110] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[111] Step { pick: 0, fate: Deliver }
+[112] Wakeup { b: 1 }
+[113] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[114] Wakeup { b: 2 }
+[115] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[116] Wakeup { b: 3 }
+[117] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[118] Wakeup { b: 4 }
+[119] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[120] Wakeup { b: 5 }
+[121] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[122] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[123] Step { pick: 0, fate: Deliver }
+[124] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[125] Step { pick: 0, fate: Deliver }
+[126] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[127] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[128] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[129] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[130] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[131] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[132] Step { pick: 0, fate: Deliver }
+[133] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[134] Step { pick: 0, fate: Deliver }
+[135] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[136] Step { pick: 0, fate: Deliver }
+[137] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[138] Step { pick: 0, fate: Deliver }
+[139] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[140] Step { pick: 0, fate: Deliver }
+[141] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[142] Step { pick: 0, fate: Deliver }
+[143] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[144] Step { pick: 0, fate: Deliver }
+[145] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[146] Step { pick: 0, fate: Deliver }
+[147] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[148] Step { pick: 0, fate: Deliver }
+[149] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[150] Step { pick: 0, fate: Deliver }
+[151] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[152] Step { pick: 0, fate: Deliver }
+[153] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[154] Step { pick: 0, fate: Deliver }
+[155] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[156] Step { pick: 0, fate: Deliver }
+[157] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[158] Step { pick: 0, fate: Deliver }
+[159] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[160] Step { pick: 0, fate: Deliver }
+[161] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[162] Step { pick: 0, fate: Deliver }
+[163] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[164] Step { pick: 0, fate: Deliver }
+[165] Wakeup { b: 0 }
+[166] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[167] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[168] Step { pick: 0, fate: Deliver }
+[169] Wakeup { b: 1 }
+[170] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[171] Wakeup { b: 2 }
+[172] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[173] Wakeup { b: 3 }
+[174] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[175] Wakeup { b: 4 }
+[176] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[177] Wakeup { b: 5 }
+[178] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[179] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[180] Step { pick: 0, fate: Deliver }
+[181] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[182] Step { pick: 0, fate: Deliver }
+[183] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[184] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[185] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[186] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[187] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[188] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[189] Step { pick: 0, fate: Deliver }
+[190] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[191] Step { pick: 0, fate: Deliver }
+[192] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[193] Step { pick: 0, fate: Deliver }
+[194] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[195] Step { pick: 0, fate: Deliver }
+[196] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[197] Step { pick: 0, fate: Deliver }
+[198] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[199] Step { pick: 0, fate: Deliver }
+[200] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[201] Step { pick: 0, fate: Deliver }
+[202] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[203] Step { pick: 0, fate: Deliver }
+[204] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[205] Step { pick: 0, fate: Deliver }
+[206] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[207] Step { pick: 0, fate: Deliver }
+[208] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[209] Step { pick: 0, fate: Deliver }
+[210] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[211] Step { pick: 0, fate: Deliver }
+[212] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[213] Step { pick: 0, fate: Deliver }
+[214] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[215] Step { pick: 0, fate: Deliver }
+[216] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[217] Step { pick: 0, fate: Deliver }
+[218] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[219] Step { pick: 0, fate: Deliver }
+[220] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[221] Step { pick: 0, fate: Deliver }
+[222] Wakeup { b: 0 }
+[223] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[224] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[225] Step { pick: 0, fate: Deliver }
+[226] Wakeup { b: 1 }
+[227] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[228] Wakeup { b: 2 }
+[229] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[230] Wakeup { b: 3 }
+[231] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[232] Wakeup { b: 4 }
+[233] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[234] Wakeup { b: 5 }
+[235] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[236] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[237] Step { pick: 0, fate: Deliver }
+[238] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[239] Step { pick: 0, fate: Deliver }
+[240] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[241] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[242] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[243] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[244] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[245] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[246] Step { pick: 0, fate: Deliver }
+[247] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[248] Step { pick: 0, fate: Deliver }
+[249] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[250] Step { pick: 0, fate: Deliver }
+[251] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[252] Step { pick: 0, fate: Deliver }
+[253] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[254] Step { pick: 0, fate: Deliver }
+[255] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[256] Step { pick: 0, fate: Deliver }
+[257] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[258] Step { pick: 0, fate: Deliver }
+[259] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[260] Step { pick: 0, fate: Deliver }
+[261] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[262] Step { pick: 0, fate: Deliver }
+[263] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[264] Step { pick: 0, fate: Deliver }
+[265] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[266] Step { pick: 0, fate: Deliver }
+[267] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[268] Step { pick: 0, fate: Deliver }
+[269] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[270] Step { pick: 0, fate: Deliver }
+[271] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[272] Step { pick: 0, fate: Deliver }
+[273] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[274] Step { pick: 0, fate: Deliver }
+[275] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[276] Step { pick: 0, fate: Deliver }
+[277] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[278] Step { pick: 0, fate: Deliver }
+[279] Wakeup { b: 0 }
+[280] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[281] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[282] Step { pick: 0, fate: Deliver }
+[283] Wakeup { b: 1 }
+[284] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[285] Wakeup { b: 2 }
+[286] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[287] Wakeup { b: 3 }
+[288] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[289] Wakeup { b: 4 }
+[290] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[291] Wakeup { b: 5 }
+[292] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[293] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[294] Step { pick: 0, fate: Deliver }
+[295] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[296] Step { pick: 0, fate: Deliver }
+[297] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[298] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[299] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[300] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[301] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[302] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[303] Step { pick: 0, fate: Deliver }
+[304] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[305] Step { pick: 0, fate: Deliver }
+[306] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[307] Step { pick: 0, fate: Deliver }
+[308] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[309] Step { pick: 0, fate: Deliver }
+[310] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[311] Step { pick: 0, fate: Deliver }
+[312] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[313] Step { pick: 0, fate: Deliver }
+[314] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[315] Step { pick: 0, fate: Deliver }
+[316] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[317] Step { pick: 0, fate: Deliver }
+[318] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[319] Step { pick: 0, fate: Deliver }
+[320] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[321] Step { pick: 0, fate: Deliver }
+[322] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[323] Step { pick: 0, fate: Deliver }
+[324] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[325] Step { pick: 0, fate: Deliver }
+[326] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[327] Step { pick: 0, fate: Deliver }
+[328] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[329] Step { pick: 0, fate: Deliver }
+[330] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[331] Step { pick: 0, fate: Deliver }
+[332] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[333] Step { pick: 0, fate: Deliver }
+[334] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[335] Step { pick: 0, fate: Deliver }
+[336] Wakeup { b: 0 }
+[337] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[338] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[339] Step { pick: 0, fate: Deliver }
+[340] Wakeup { b: 1 }
+[341] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[342] Wakeup { b: 2 }
+[343] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[344] Wakeup { b: 3 }
+[345] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[346] Wakeup { b: 4 }
+[347] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[348] Wakeup { b: 5 }
+[349] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[350] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[351] Step { pick: 0, fate: Deliver }
+[352] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[353] Step { pick: 0, fate: Deliver }
+[354] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[355] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[356] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[357] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[358] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[359] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[360] Step { pick: 0, fate: Deliver }
+[361] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[362] Step { pick: 0, fate: Deliver }
+[363] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[364] Step { pick: 0, fate: Deliver }
+[365] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[366] Step { pick: 0, fate: Deliver }
+[367] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[368] Step { pick: 0, fate: Deliver }
+[369] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[370] Step { pick: 0, fate: Deliver }
+[371] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[372] Step { pick: 0, fate: Deliver }
+[373] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[374] Step { pick: 0, fate: Deliver }
+[375] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[376] Step { pick: 0, fate: Deliver }
+[377] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[378] Step { pick: 0, fate: Deliver }
+[379] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[380] Step { pick: 0, fate: Deliver }
+[381] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[382] Step { pick: 0, fate: Deliver }
+[383] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[384] Step { pick: 0, fate: Deliver }
+[385] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[386] Step { pick: 0, fate: Deliver }
+[387] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[388] Step { pick: 0, fate: Deliver }
+[389] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[390] Step { pick: 0, fate: Deliver }
+[391] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[392] Step { pick: 0, fate: Deliver }
+[393] Wakeup { b: 0 }
+[394] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[395] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[396] Step { pick: 0, fate: Deliver }
+[397] Wakeup { b: 1 }
+[398] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[399] Wakeup { b: 2 }
+[400] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[401] Wakeup { b: 3 }
+[402] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[403] Wakeup { b: 4 }
+[404] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[405] Wakeup { b: 5 }
+[406] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[407] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[408] Step { pick: 0, fate: Deliver }
+[409] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[410] Step { pick: 0, fate: Deliver }
+[411] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[412] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[413] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[414] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[415] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[416] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[417] Step { pick: 0, fate: Deliver }
+[418] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[419] Step { pick: 0, fate: Deliver }
+[420] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[421] Step { pick: 0, fate: Deliver }
+[422] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[423] Step { pick: 0, fate: Deliver }
+[424] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[425] Step { pick: 0, fate: Deliver }
+[426] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[427] Step { pick: 0, fate: Deliver }
+[428] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[429] Step { pick: 0, fate: Deliver }
+[430] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[431] Step { pick: 0, fate: Deliver }
+[432] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[433] Step { pick: 0, fate: Deliver }
+[434] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[435] Step { pick: 0, fate: Deliver }
+[436] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[437] Step { pick: 0, fate: Deliver }
+[438] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[439] Step { pick: 0, fate: Deliver }
+[440] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[441] Step { pick: 0, fate: Deliver }
+[442] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[443] Step { pick: 0, fate: Deliver }
+[444] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[445] Step { pick: 0, fate: Deliver }
+[446] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[447] Step { pick: 0, fate: Deliver }
+[448] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[449] Step { pick: 0, fate: Deliver }
+[450] Wakeup { b: 0 }
+[451] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[452] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[453] Step { pick: 0, fate: Deliver }
+[454] Wakeup { b: 1 }
+[455] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[456] Wakeup { b: 2 }
+[457] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[458] Wakeup { b: 3 }
+[459] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[460] Wakeup { b: 4 }
+[461] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[462] Wakeup { b: 5 }
+[463] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[464] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[465] Step { pick: 0, fate: Deliver }
+[466] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[467] Step { pick: 0, fate: Deliver }
+[468] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[469] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[470] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[471] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[472] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[473] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[474] Step { pick: 0, fate: Deliver }
+[475] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[476] Step { pick: 0, fate: Deliver }
+[477] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[478] Step { pick: 0, fate: Deliver }
+[479] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[480] Step { pick: 0, fate: Deliver }
+[481] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[482] Step { pick: 0, fate: Deliver }
+[483] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[484] Step { pick: 0, fate: Deliver }
+[485] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[486] Step { pick: 0, fate: Deliver }
+[487] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[488] Step { pick: 0, fate: Deliver }
+[489] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[490] Step { pick: 0, fate: Deliver }
+[491] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[492] Step { pick: 0, fate: Deliver }
+[493] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[494] Step { pick: 0, fate: Deliver }
+[495] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[496] Step { pick: 0, fate: Deliver }
+[497] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[498] Step { pick: 0, fate: Deliver }
+[499] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[500] Step { pick: 0, fate: Deliver }
+[501] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[502] Step { pick: 0, fate: Deliver }
+[503] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[504] Step { pick: 0, fate: Deliver }
+[505] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[506] Step { pick: 0, fate: Deliver }
+[507] Wakeup { b: 0 }
+[508] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[509] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[510] Step { pick: 0, fate: Deliver }
+[511] Wakeup { b: 1 }
+[512] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[513] Wakeup { b: 2 }
+[514] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[515] Wakeup { b: 3 }
+[516] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[517] Wakeup { b: 4 }
+[518] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[519] Wakeup { b: 5 }
+[520] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[521] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[522] Step { pick: 0, fate: Deliver }
+[523] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[524] Step { pick: 0, fate: Deliver }
+[525] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[526] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[527] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[528] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[529] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[530] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[531] Step { pick: 0, fate: Deliver }
+[532] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[533] Step { pick: 0, fate: Deliver }
+[534] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[535] Step { pick: 0, fate: Deliver }
+[536] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[537] Step { pick: 0, fate: Deliver }
+[538] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[539] Step { pick: 0, fate: Deliver }
+[540] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[541] Step { pick: 0, fate: Deliver }
+[542] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[543] Step { pick: 0, fate: Deliver }
+[544] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[545] Step { pick: 0, fate: Deliver }
+[546] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[547] Step { pick: 0, fate: Deliver }
+[548] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[549] Step { pick: 0, fate: Deliver }
+[550] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[551] Step { pick: 0, fate: Deliver }
+[552] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[553] Step { pick: 0, fate: Deliver }
+[554] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[555] Step { pick: 0, fate: Deliver }
+[556] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[557] Step { pick: 0, fate: Deliver }
+[558] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[559] Step { pick: 0, fate: Deliver }
+[560] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[561] Step { pick: 0, fate: Deliver }
+[562] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[563] Step { pick: 0, fate: Deliver }
+[564] Wakeup { b: 0 }
+[565] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[566] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[567] Step { pick: 0, fate: Deliver }
+[568] Wakeup { b: 1 }
+[569] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[570] Wakeup { b: 2 }
+[571] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[572] Wakeup { b: 3 }
+[573] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[574] Wakeup { b: 4 }
+[575] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[576] Wakeup { b: 5 }
+[577] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[578] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[579] Step { pick: 0, fate: Deliver }
+[580] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[581] Step { pick: 0, fate: Deliver }
+[582] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[583] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[584] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[585] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[586] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[587] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[588] Step { pick: 0, fate: Deliver }
+[589] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[590] Step { pick: 0, fate: Deliver }
+[591] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[592] Step { pick: 0, fate: Deliver }
+[593] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[594] Step { pick: 0, fate: Deliver }
+[595] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[596] Step { pick: 0, fate: Deliver }
+[597] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[598] Step { pick: 0, fate: Deliver }
+[599] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[600] Step { pick: 0, fate: Deliver }
+[601] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[602] Step { pick: 0, fate: Deliver }
+[603] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[604] Step { pick: 0, fate: Deliver }
+[605] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[606] Step { pick: 0, fate: Deliver }
+[607] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[608] Step { pick: 0, fate: Deliver }
+[609] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[610] Step { pick: 0, fate: Deliver }
+[611] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[612] Step { pick: 0, fate: Deliver }
+[613] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[614] Step { pick: 0, fate: Deliver }
+[615] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[616] Step { pick: 0, fate: Deliver }
+[617] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[618] Step { pick: 0, fate: Deliver }
+[619] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[620] Step { pick: 0, fate: Deliver }
+[621] Wakeup { b: 0 }
+[622] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[623] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[624] Step { pick: 0, fate: Deliver }
+[625] Wakeup { b: 1 }
+[626] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[627] Wakeup { b: 2 }
+[628] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[629] Wakeup { b: 3 }
+[630] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[631] Wakeup { b: 4 }
+[632] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[633] Wakeup { b: 5 }
+[634] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[635] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[636] Step { pick: 0, fate: Deliver }
+[637] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[638] Step { pick: 0, fate: Deliver }
+[639] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[640] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[641] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[642] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[643] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[644] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[645] Step { pick: 0, fate: Deliver }
+[646] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[647] Step { pick: 0, fate: Deliver }
+[648] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[649] Step { pick: 0, fate: Deliver }
+[650] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[651] Step { pick: 0, fate: Deliver }
+[652] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[653] Step { pick: 0, fate: Deliver }
+[654] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[655] Step { pick: 0, fate: Deliver }
+[656] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[657] Step { pick: 0, fate: Deliver }
+[658] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[659] Step { pick: 0, fate: Deliver }
+[660] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[661] Step { pick: 0, fate: Deliver }
+[662] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[663] Step { pick: 0, fate: Deliver }
+[664] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[665] Step { pick: 0, fate: Deliver }
+[666] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[667] Step { pick: 0, fate: Deliver }
+[668] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[669] Step { pick: 0, fate: Deliver }
+[670] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[671] Step { pick: 0, fate: Deliver }
+[672] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[673] Step { pick: 0, fate: Deliver }
+[674] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[675] Step { pick: 0, fate: Deliver }
+[676] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[677] Step { pick: 0, fate: Deliver }
+[678] Wakeup { b: 0 }
+[679] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[680] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[681] Step { pick: 0, fate: Deliver }
+[682] Wakeup { b: 1 }
+[683] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[684] Wakeup { b: 2 }
+[685] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[686] Wakeup { b: 3 }
+[687] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[688] Wakeup { b: 4 }
+[689] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[690] Wakeup { b: 5 }
+[691] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[692] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[693] Step { pick: 0, fate: Deliver }
+[694] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[695] Step { pick: 0, fate: Deliver }
+[696] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[697] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[698] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[699] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[700] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(INDEX-LOST(7), rec 0)" hops [] state NONE -> NONE
+[701] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[702] Step { pick: 0, fate: Deliver }
+[703] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[704] Step { pick: 0, fate: Deliver }
+[705] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[706] Step { pick: 0, fate: Deliver }
+[707] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[708] Step { pick: 0, fate: Deliver }
+[709] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[710] Step { pick: 0, fate: Deliver }
+[711] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[712] Step { pick: 0, fate: Deliver }
+[713] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[714] Step { pick: 0, fate: Deliver }
+[715] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[716] Step { pick: 0, fate: Deliver }
+[717] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[718] Step { pick: 0, fate: Deliver }
+[719] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[720] Step { pick: 0, fate: Deliver }
+[721] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[722] Step { pick: 0, fate: Deliver }
+[723] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[724] Step { pick: 0, fate: Deliver }
+[725] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[726] Step { pick: 0, fate: Deliver }
+[727] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[728] Step { pick: 0, fate: Deliver }
+[729] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 60, withdrawal: false }) } -> "Status(SEALED, rec 0)" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[730] Step { pick: 0, fate: Deliver }
+[731] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[732] Step { pick: 0, fate: Deliver }
+[733] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(10)
+[734] Step { pick: 0, fate: Deliver }
+[735] Wakeup { b: 0 }
+[736] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [60:Complete(m ccb0, 1 digests)] state SEALED -> SEALED
+[737] Step { pick: 0, fate: Deliver }
+  60 Hop { from: 10, frame: Complete { rec: Rec { v: 60, withdrawal: false }, m: 312370313473019056, digests: [11777849154711563742], malformed: false } } -> "-" hops [] state NONE -> NONE
+[738] Step { pick: 0, fate: Deliver }
+[739] Wakeup { b: 1 }
+[740] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[741] Wakeup { b: 2 }
+[742] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[743] Wakeup { b: 3 }
+[744] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[745] Wakeup { b: 4 }
+[746] Step { pick: 0, fate: Deliver }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[747] Wakeup { b: 5 }
+[748] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+!! I7-receiver-index-lost: after quiescence build 60 is NONE not WRITER; states ["10:SEALED", "20:NONE", "30:NONE", "40:NONE", "50:NONE", "60:NONE"]
