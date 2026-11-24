@@ -224,3 +224,38 @@ fn result_counts_on_decode() {
     assert!(OpResult::decode(types::BATCH_RESULT, &batch(256)).is_ok());
     assert!(OpResult::decode(types::BATCH_RESULT, &batch(257)).is_err());
 }
+
+/// The whole reply frame (10 header bytes + body) is at most 65,536: a batch
+/// result with one item of 65,511 payload bytes is the largest accepted.
+#[test]
+fn reply_frame_exactly_65536_bytes() {
+    let result = |payload: usize| {
+        cat(&[
+            &[0, 0, 0, 0, 0, 0, 0, 1],
+            &1u16.to_be_bytes(),
+            &[0],
+            &(payload as u16).to_be_bytes(),
+            &vec![5; payload],
+            &NO_EXT,
+        ])
+    };
+    let last = result(65_511);
+    assert_eq!(10 + last.len(), 65_536);
+    assert!(OpResult::decode(types::BATCH_RESULT, &last).is_ok());
+    assert!(OpResult::decode(types::BATCH_RESULT, &result(65_512)).is_err());
+    assert!(OpResult::decode(types::BATCH_RESULT, &result(65_535)).is_err());
+}
+
+/// Generate: mode 1 is "generated slot" (length 0); mode 0 names a slot of 1
+/// to 64 bytes. Every other pairing is refused.
+#[test]
+fn generate_named_slot_bounds() {
+    let generate = |mode: u8, n: usize| cat(&[&PAGE, &[mode, n as u8], &vec![9; n], &NO_EXT]);
+    ok(types::GENERATE, &generate(1, 0));
+    ok(types::GENERATE, &generate(0, 1));
+    ok(types::GENERATE, &generate(0, 64));
+    refused(types::GENERATE, &generate(0, 0));
+    refused(types::GENERATE, &generate(0, 65));
+    refused(types::GENERATE, &generate(1, 1));
+    refused(types::GENERATE, &generate(2, 0));
+}

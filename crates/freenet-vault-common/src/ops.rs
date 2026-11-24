@@ -497,6 +497,11 @@ impl OpResult {
 
     /// Decodes a result body; returns `(request_id, result)`.
     pub fn decode(frame_type: u8, body: &[u8]) -> Result<(u64, Self)> {
+        // The whole reply frame is bounded (protocol 11); a longer one is not
+        // something an encoder here can produce, so it is not a result.
+        if frame::HEADER_LEN + body.len() > crate::bounds::MAX_REPLY {
+            return Err(Malformed("reply over 65536 bytes"));
+        }
         let mut r = Reader::new(body);
         let request_id = r.u64("request_id")?;
         let out = match frame_type {
