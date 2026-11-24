@@ -421,6 +421,28 @@ impl<'a, H: Host> Store<'a, H> {
             .index
             .find(kind, key)
             .map(|i| self.index.entries[i].clone());
+        // The index after this change, built up front: the creation shape needs
+        // to know whether it makes the index WRITER.
+        let parity = existing.as_ref().map(|e| 1 - e.parity).unwrap_or(0);
+        let mut staged = self.index.clone();
+        staged.upsert(IndexEntry {
+            kind,
+            key: key.to_vec(),
+            parity,
+            len: bytes.len() as u16,
+            digest: entry_digest(bytes),
+        });
+        meta(&mut staged);
+        // Creation (the index is not WRITER or SEALED and this change makes it
+        // WRITER): the first commit is an EMPTY WRITER index, which is listed and
+        // read back (inside `commit`). Only then is the first entry written and
+        // committed, so a refused listing never leaves a committed key.
+        let listable = |st: index::State| matches!(st, index::State::Writer | index::State::Sealed);
+        if listable(staged.state) && !listable(self.index.state) {
+            let mut empty = staged.clone();
+            empty.entries = self.index.entries.clone();
+            self.commit(empty).map_err(|_| StorageFailure)?;
+        }
         // Step 1 (spec 4.2): an identity the index does not name (a new slot,
         // or one deleted earlier) starts with both parity names removed and
         // read back as absent, so a leftover copy of a failed write or an
@@ -441,22 +463,12 @@ impl<'a, H: Host> Store<'a, H> {
         // Step 2: the parity the index does not name. For a named identity that
         // held the mirror of the old value, so from here until step 4 the two
         // copies disagree.
-        let parity = existing.as_ref().map(|e| 1 - e.parity).unwrap_or(0);
         let new_name = self.entry_name(kind, key, parity);
         if !crate::host::replace_secret(self.host, &new_name, bytes) {
             return Err(StorageFailure);
         }
         // Step 3: the index naming it. The answer depends on this step.
-        let mut new = self.index.clone();
-        new.upsert(IndexEntry {
-            kind,
-            key: key.to_vec(),
-            parity,
-            len: bytes.len() as u16,
-            digest: entry_digest(bytes),
-        });
-        meta(&mut new);
-        self.commit(new).map_err(|_| StorageFailure)?;
+        self.commit(staged).map_err(|_| StorageFailure)?;
         // Step 4: the same bytes to the other parity (the mirror), for a listed
         // build (WRITER). A failed write here is not an error: the slot is
         // served from the index while it is intact, and unavailable to direct
@@ -753,20 +765,25 @@ pub fn ensure_part_listed<H: Host>(
     host: &mut H,
     partition: &[u8; 32],
 ) -> Result<(), StorageFailure> {
-    // A list that reads but does not parse is never replaced: it may hold
-    // other partitions, and writing only this one would erase them. An absent
-    // list is a valid empty list (rev 10.1, G1), so a first listing.
-    let existing = host.get_secret(names::PARTS).unwrap_or_default();
-    if !existing.len().is_multiple_of(32) {
-        return Err(StorageFailure);
-    }
-    if existing.chunks(32).any(|c| c == partition) {
+    // An absent list is a valid empty list (rev 10.1, G1). A malformed list is
+    // overwritten by a list naming this partition (revision 10.2): the index
+    // being listed is valid, and other partitions' valid indexes are listed
+    // again by their own catch-all. A list that reads is written over directly;
+    // one that reads as absent is removed first (replace_secret).
+    let mut list = match host.get_secret(names::PARTS) {
+        Some(l) if l.len() % 32 == 0 => l,
+        _ => Vec::new(),
+    };
+    if list.chunks(32).any(|c| c == partition) {
         return Ok(());
     }
-    let mut list = existing;
     list.extend_from_slice(partition);
-    // The listing counts only once it reads back (spec 4.2).
-    let _ = crate::host::replace_secret(host, names::PARTS, &list);
+    // A write that REPORTS failure is a failure even if it landed (G3, the
+    // model's rule): the call answers nothing and the next one lists it. The
+    // listing also counts only once it reads back.
+    if !crate::host::replace_secret(host, names::PARTS, &list) {
+        return Err(StorageFailure);
+    }
     if host.get_secret(names::PARTS).as_deref() == Some(list.as_slice()) {
         Ok(())
     } else {
@@ -776,8 +793,9 @@ pub fn ensure_part_listed<H: Host>(
 
 /// The catch-all (spec 4.2, rev 10.1 G3): a valid WRITER or SEALED index for a
 /// partition `vault:parts` does not list is listed before the call does
-/// anything else. `Err` means the write or its read-back failed: the call
-/// answers nothing. A malformed `vault:parts` is left untouched.
+/// anything else. `Err` means the write reported failure or its read-back
+/// failed: the call answers nothing. A malformed `vault:parts` is overwritten
+/// by a list naming the partition (revision 10.2).
 pub fn ensure_listed<H: Host>(host: &mut H, partition: &[u8; 32]) -> Result<(), StorageFailure> {
     let Some(Ok(ix)) = host
         .get_secret(&names::index(partition))
@@ -789,9 +807,5 @@ pub fn ensure_listed<H: Host>(host: &mut H, partition: &[u8; 32]) -> Result<(), 
     if !matches!(ix.state, index::State::Writer | index::State::Sealed) {
         return Ok(());
     }
-    match host.get_secret(names::PARTS) {
-        Some(l) if l.len() % 32 != 0 => Ok(()),
-        Some(l) if l.chunks(32).any(|c| c == partition) => Ok(()),
-        _ => ensure_part_listed(host, partition),
-    }
+    ensure_part_listed(host, partition)
 }

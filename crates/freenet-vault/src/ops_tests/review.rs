@@ -1077,7 +1077,9 @@ fn crash_sweep_creation() {
             // Either still NONE and armed with no keys, or a writer with the key.
             match s.index.state {
                 State::None => s.index.entries.is_empty() && s.index.armed.is_some(),
-                State::Writer => s.index.entries.len() == 1,
+                // An empty WRITER index (listed, read back) precedes the first
+                // entry's commit (revision 10.2, creation shape).
+                State::Writer => s.index.entries.len() <= 1,
                 _ => false,
             }
         },
@@ -1231,7 +1233,7 @@ fn crash_sweep_creation_by_import() {
             let s = Store::open(h, domain().partition()).unwrap();
             match s.index.state {
                 State::None => s.index.entries.is_empty(),
-                State::Writer => s.index.entries.len() == 1,
+                State::Writer => s.index.entries.len() <= 1,
                 _ => false,
             }
         },
@@ -2321,22 +2323,19 @@ fn a_delegate_is_still_served_after_a_failed_write_earlier_in_the_call() {
     assert!(is_sig(&from_delegate(&mut h, c6.key, batch)));
 }
 
-/// A malformed `vault:parts` with a verified index: the index verifies, so the
-/// partition stays writable (spec 4.5 as revised), and the malformed list is
-/// never overwritten except by ResetPartition's repair path.
+/// A malformed `vault:parts` with a valid WRITER index (revision 10.2): the
+/// catch-all overwrites it with a list naming this partition, and the vault
+/// stays writable. No index loss is reported.
 #[test]
-fn a_malformed_parts_list_with_a_verified_index_stays_writable_and_untouched() {
+fn a_malformed_parts_list_with_a_valid_index_is_overwritten_by_the_listing() {
+    let p = domain().partition();
     let mut h = MemHost::new();
     let (slot, _) = writer_with_key(&mut h);
     h.secrets.insert(names::PARTS.to_vec(), vec![1; 33]);
     assert_eq!(problems_of(&mut h) & problems::INDEX_LOST, 0);
+    assert_eq!(h.secrets[names::PARTS], p.to_vec(), "not overwritten");
     assert!(is_key_result(&import_replace(&mut h, 2, &slot, [0xB2; 32])));
     assert_eq!(seed_of(&h, &slot), [0xB2; 32]);
-    assert_eq!(
-        h.secrets[names::PARTS],
-        vec![1; 33],
-        "parts was overwritten"
-    );
 }
 
 // ---- round 7 ---------------------------------------------------------------
@@ -2656,4 +2655,139 @@ fn the_export_answer_is_moved_in_the_g2_state() {
             record: domain_record(2, [0x22; 32]),
         })
     );
+}
+
+// ---- round 9 ---------------------------------------------------------------
+
+/// A stopped domain (a withdrawal above its current record) neither arms nor
+/// creates, whenever the arming happened; an existing writer keeps serving.
+#[test]
+fn a_stopped_domain_neither_arms_nor_creates() {
+    let p = domain().partition();
+    // Armed first, withdrawn after: creation is refused (NotHere), nothing written.
+    let mut h = MemHost::new();
+    arm(&mut h);
+    let _ = page(&mut h, poke(0, Some(domain_record(2, [0; 32]))));
+    assert_eq!(
+        handover(page(&mut h, poke(0, None))).record_state,
+        record_state::STOPPED
+    );
+    assert!(matches!(
+        page(&mut h, op(1, Operation::Generate { slot: None })),
+        Reply::St(Status::NotHere { .. })
+    ));
+    let ix = crate::storage::index::Index::decode(&h.secrets[&names::index(&p)]).unwrap();
+    assert_eq!(ix.state, State::None);
+    // Withdrawn first: arming is refused.
+    let mut h = MemHost::new();
+    let _ = page(&mut h, poke(0, Some(domain_record(2, [0; 32]))));
+    let st = handover(page(
+        &mut h,
+        poke(poke_flags::ARM, Some(domain_record(1, [0x11; 32]))),
+    ));
+    assert_eq!(st.partition_state, partition_state::NONE);
+    assert!(!h.secrets.contains_key(&names::index(&p)));
+    // An existing writer keeps serving.
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let _ = page(&mut h, poke(0, Some(domain_record(2, [0; 32]))));
+    assert!(matches!(
+        page(&mut h, op(2, Operation::PublicKey { slot })),
+        Reply::Op(2, OpResult::Key { .. })
+    ));
+}
+
+/// The first commit of a creation is an EMPTY WRITER index, listed and read
+/// back; only then is the first entry committed. A refused listing therefore
+/// never leaves a committed key, and answers Refused(12).
+#[test]
+fn a_refused_listing_never_leaves_a_committed_key() {
+    let p = domain().partition();
+    for fault in [WriteFault::Fail, WriteFault::DurableButFail] {
+        let mut h = MemHost::new();
+        arm(&mut h);
+        h.set_fault(move |n| {
+            if n == names::PARTS {
+                fault
+            } else {
+                WriteFault::None
+            }
+        });
+        assert_eq!(
+            page(&mut h, op(1, Operation::Generate { slot: None })),
+            refused(1, refused::STORAGE_FAILURE),
+            "{fault:?}"
+        );
+        h.clear_fault();
+        let ix = crate::storage::index::Index::decode(&h.secrets[&names::index(&p)]).unwrap();
+        assert_eq!(ix.state, State::Writer, "{fault:?}");
+        assert!(ix.entries.is_empty(), "{fault:?}: a key was committed");
+        // The listing landed in one case and not in the other; either way the
+        // next call lists the WRITER index (G3) and then serves.
+        let _ = problems_of(&mut h);
+        assert!(listed_in_parts(&h));
+    }
+}
+
+/// G3: a listing write that REPORTS failure makes the catch-all answer nothing,
+/// even when the write landed and reads back.
+#[test]
+fn a_listing_write_that_reports_failure_but_landed_answers_nothing() {
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    h.secrets.remove(names::PARTS);
+    h.set_fault(|n| {
+        if n == names::PARTS {
+            WriteFault::DurableButFail
+        } else {
+            WriteFault::None
+        }
+    });
+    let out = from_page_as(
+        &mut h,
+        page_id(),
+        op(2, Operation::PublicKey { slot: slot.clone() }),
+    );
+    assert!(out.is_empty(), "answered: {out:?}");
+    assert!(listed_in_parts(&h), "the write did land");
+    h.clear_fault();
+    assert!(matches!(
+        page(&mut h, op(3, Operation::PublicKey { slot })),
+        Reply::Op(3, OpResult::Key { .. })
+    ));
+}
+
+/// Index loss: no record storage either (spec 4.5). A Poke or SubmitRecord with
+/// a record writes nothing, does not repair a malformed `vault:succ`, and still
+/// reports the loss.
+#[test]
+fn index_loss_stores_no_records() {
+    let p = domain().partition();
+    for malformed_succ in [false, true] {
+        let mut h = MemHost::new();
+        let _ = writer_with_key(&mut h);
+        h.secrets.remove(&names::index(&p));
+        if malformed_succ {
+            h.secrets.insert(names::SUCC.to_vec(), vec![1, 2, 3]);
+        } else {
+            h.secrets.remove(names::SUCC);
+        }
+        let before = h.secrets.clone();
+        let st = handover(page(&mut h, poke(0, Some(domain_record(2, [0x22; 32])))));
+        assert_ne!(st.problems & problems::INDEX_LOST, 0);
+        assert_eq!(
+            h.secrets, before,
+            "a poke stored a record (malformed={malformed_succ})"
+        );
+        let sub = SubmitRecord {
+            header: page_header(8),
+            author_vk: domain().author_vk,
+            app_id: b"test.vault".to_vec(),
+            record: domain_record(2, [0x22; 32]),
+            ext: vec![],
+        };
+        let r = from_page_as(&mut h, page_id(), sub.encode().unwrap());
+        assert_eq!(r.len(), 1);
+        assert_eq!(h.secrets, before, "a SubmitRecord stored a record");
+    }
 }

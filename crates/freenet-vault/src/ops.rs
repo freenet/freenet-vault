@@ -208,7 +208,11 @@ fn route<H: Host>(
             // Re-checked at creation: still armed with a valid record and no
             // non-withdrawn record above OWN_VERSION known (a malformed
             // stored record counts as unknown, so it never creates).
-            let no_newer = succ.as_ref().is_some_and(|s| s.successor().is_none());
+            // A stopped domain (a withdrawal above the current record) neither
+            // arms nor creates, whenever the arming happened.
+            let no_newer = succ
+                .as_ref()
+                .is_some_and(|s| s.successor().is_none() && !s.stopped());
             if is_change && no_newer && armed_ok(domain, &ix.armed) {
                 Route::Create
             } else {
@@ -918,6 +922,21 @@ fn poke<H: Host>(domain: &Domain, host: &mut H, own_page: bool, body: &[u8]) -> 
     if p.partition != domain.partition() {
         return refusal(0, refused::MALFORMED);
     }
+    // Index loss: no record storage either (spec 4.5: no writes), so the guard
+    // comes before record acceptance and before the repair of a malformed
+    // `vault:succ`. The status still reports the loss.
+    if Store::fault(&*host, &domain.partition()).is_some() {
+        let bits = fault_bits(&*host, &domain.partition());
+        let succ = Succ::load(domain, host).ok();
+        return handover_status::<H>(
+            domain,
+            succ.as_ref(),
+            None,
+            step_result::NOTHING,
+            bits,
+            own_page,
+        );
+    }
     let mut succ = match Succ::load(domain, host) {
         Ok(s) => s,
         // A `vault:succ` that no longer verifies is replaced by a record that
@@ -966,6 +985,7 @@ fn poke<H: Host>(domain: &Domain, host: &mut H, own_page: bool, body: &[u8]) -> 
     if own_page && p.flags & poke_flags::ARM != 0 {
         let can_arm = store.index.state == State::None
             && succ.successor().is_none()
+            && !succ.stopped()
             && armed_ok(domain, &p.record);
         if can_arm && store.update(|ix| ix.armed = p.record).is_err() {
             extra |= problems::STORAGE_FAILURE;
@@ -1041,6 +1061,19 @@ fn submit_record<H: Host>(
         }
     }
     if s.author_vk == domain.author_vk && s.app_id == domain.app_id {
+        // Index loss: no record storage (spec 4.5); the status reports the loss.
+        if Store::fault(&*host, &domain.partition()).is_some() {
+            let bits = fault_bits(&*host, &domain.partition());
+            let succ = Succ::load(domain, host).ok();
+            return with_rid(handover_status::<H>(
+                domain,
+                succ.as_ref(),
+                None,
+                step_result::NOTHING,
+                bits,
+                own_page,
+            ));
+        }
         let mut succ = match Succ::load(domain, host) {
             Ok(s) => s,
             Err(_) => match repair_succ(domain, host, &s.record) {

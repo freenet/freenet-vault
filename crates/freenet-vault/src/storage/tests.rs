@@ -710,15 +710,15 @@ fn parts_list_is_idempotent() {
     assert_eq!(h.secrets[names::PARTS].len(), 64);
 }
 
-/// A `vault:parts` that reads but is malformed is left alone, and listing
-/// fails, instead of overwriting what other partitions it may hold.
+/// A `vault:parts` that reads but is malformed is overwritten by a list naming
+/// the partition being listed (revision 10.2); other partitions' valid indexes
+/// are listed again by their own catch-all.
 #[test]
-fn a_malformed_parts_list_is_never_overwritten() {
+fn a_malformed_parts_list_is_overwritten_by_the_listing() {
     let mut h = MemHost::new();
-    let bad = vec![1u8; 33];
-    h.secrets.insert(names::PARTS.to_vec(), bad.clone());
-    assert_eq!(ensure_part_listed(&mut h, &P), Err(StorageFailure));
-    assert_eq!(h.secrets[names::PARTS], bad);
+    h.secrets.insert(names::PARTS.to_vec(), vec![1u8; 33]);
+    ensure_part_listed(&mut h, &P).unwrap();
+    assert_eq!(h.secrets[names::PARTS], P.to_vec());
 }
 
 /// `Index::seal` (used by the fuzz target) gives a body the checksum, so the
