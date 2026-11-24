@@ -69,15 +69,36 @@ fn main() {
     }
 
     if let Some(k) = find {
-        // seeds whose run hits coverage counter `k` (for COVERAGE_SEEDS)
-        for seed in start..start + seeds {
-            let o = run(&cfg, &gen_scenario(seed, &cfg));
-            if o.cov.get(&k) > 0 {
-                println!(
-                    "seed {seed} hits {k} (violation {:?})",
-                    o.violation.map(|v| v.inv)
-                );
+        // For each counter (comma-separated; "missing" = every required
+        // counter the plain range leaves at zero), the first seed whose run
+        // hits it without a violation (for COVERAGE_SEEDS).
+        let mut want: Vec<String> = k.split(',').map(str::to_string).collect();
+        if k == "missing" {
+            let mut c = Cov::default();
+            for seed in 0..2000 {
+                c.merge(&run(&cfg, &gen_scenario(seed, &cfg)).cov);
             }
+            want = c.missing().iter().map(|m| m.to_string()).collect();
+        }
+        for seed in start..start + seeds {
+            if want.is_empty() {
+                break;
+            }
+            let o = run(&cfg, &gen_scenario(seed, &cfg));
+            if o.violation.is_some() {
+                continue;
+            }
+            want.retain(|k| {
+                if o.cov.get(k) > 0 {
+                    println!("    ({seed}, \"{k}\"),");
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        for k in want {
+            println!("    // not found: {k}");
         }
         return;
     }
@@ -85,11 +106,12 @@ fn main() {
     let mut cov = Cov::default();
     let mut by_inv: BTreeMap<&'static str, Vec<u64>> = BTreeMap::new();
     let mut corrupt_sealed = 0u64;
-    let extra = COVERAGE_SEEDS
+    let extra: std::collections::BTreeSet<u64> = COVERAGE_SEEDS
         .iter()
         .map(|(s, _)| *s)
-        .filter(|s| !(start..start + seeds).contains(s));
-    for seed in (start..start + seeds).chain(extra) {
+        .filter(|s| !(start..start + seeds).contains(s))
+        .collect();
+    for seed in (start..start + seeds).chain(extra.iter().copied()) {
         let sc = gen_scenario(seed, &cfg);
         let o = run(&cfg, &sc);
         cov.merge(&o.cov);
@@ -101,7 +123,7 @@ fn main() {
     println!(
         "schedules: {seeds} (seeds {start}..{}) plus {} coverage seeds, delivery {:?}, adversarial {}, stale pointer {}, global FIFO {}, accept-query-answer {}",
         start + seeds,
-        COVERAGE_SEEDS.len(),
+        extra.len(),
         cfg.delivery,
         cfg.adversarial,
         cfg.stale_pointer,
