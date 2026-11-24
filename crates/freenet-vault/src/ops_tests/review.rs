@@ -1752,3 +1752,165 @@ fn crash_sweep_replace_with_writes_that_land_but_report_failure() {
         true,
     );
 }
+
+// ---- round 4: unknown index state through process() -----------------------
+
+/// A writer holding one key, with its index then made unreadable in the way
+/// named: a miss while `vault:parts` lists the partition, or a torn first index.
+fn broken_store(torn: bool) -> (MemHost, Vec<u8>) {
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let idx = names::index(&domain().partition());
+    assert!(h.secrets.contains_key(names::PARTS));
+    if torn {
+        let b = h.secrets[&idx].clone();
+        h.secrets.insert(idx, b[..b.len() - 5].to_vec());
+    } else {
+        h.secrets.remove(&idx);
+    }
+    (h, slot)
+}
+
+/// Every request is refused with storage failure and writes nothing; nothing
+/// is removed either (a pending gc name keeps its secret).
+fn assert_read_only_through_process(torn: bool) {
+    let (mut h, slot) = broken_store(torn);
+    let p = domain().partition();
+    let stray = names::entry(&p, KIND_KEY, &[9; 32], 0);
+    h.secrets.insert(stray.clone(), vec![1]);
+    let gc = crate::storage::encode_gc_for_test(std::slice::from_ref(&stray));
+    h.secrets.insert(names::gc(&p), gc.clone());
+    h.secrets.insert(names::gc2(&p), gc);
+    let before = h.secrets.clone();
+    let m = h.mutations;
+    for o in [
+        Operation::Generate { slot: None },
+        Operation::PublicKey { slot: slot.clone() },
+        Operation::Delete { slot: slot.clone() },
+        Operation::List {
+            after: vec![],
+            max: 10,
+        },
+        Operation::Import {
+            slot: vec![3; 32],
+            seed: [4; 32],
+            replace: true,
+        },
+    ] {
+        assert_eq!(
+            page(&mut h, op(5, o)),
+            refused(5, refused::STORAGE_FAILURE),
+            "torn={torn}"
+        );
+    }
+    // ARM and a record: no arming, and the status reports the failure.
+    let st = handover(page(
+        &mut h,
+        poke(poke_flags::ARM, Some(domain_record(1, [0x11; 32]))),
+    ));
+    assert_ne!(st.problems & problems::STORAGE_FAILURE, 0, "torn={torn}");
+    assert_eq!(h.secrets, before, "torn={torn}: storage changed");
+    assert_eq!(h.mutations, m, "torn={torn}: a write was attempted");
+}
+
+#[test]
+fn a_primary_miss_is_read_only_through_process() {
+    assert_read_only_through_process(false);
+}
+
+#[test]
+fn a_torn_first_index_is_read_only_through_process() {
+    assert_read_only_through_process(true);
+}
+
+/// Export of a slot while the index is unknown: behind consent, the seed comes
+/// back only when exactly one of the two entry copies decodes for the slot.
+#[test]
+fn export_in_read_only_mode_needs_consent_and_exactly_one_decodable_copy() {
+    for torn in [false, true] {
+        let (mut h, slot) = broken_store(torn);
+        let p = domain().partition();
+        let seed = {
+            let n = names::entry(&p, KIND_KEY, &slot, 0);
+            let e = Entry::decode(&h.secrets[&n]).unwrap();
+            <[u8; 32]>::try_from(e.content.as_slice()).unwrap()
+        };
+        let copy0 = names::entry(&p, KIND_KEY, &slot, 0);
+        let copy1 = names::entry(&p, KIND_KEY, &slot, 1);
+        let good = h.secrets[&copy0].clone();
+        // Denied: nothing is returned.
+        let id = export_prompt(&mut h, &slot, 21);
+        assert_eq!(
+            single_app_reply(answer(&mut h, page_id(), id, b"Deny").unwrap()),
+            refused(21, refused::CONSENT_DENIED)
+        );
+        // Zero copies decode.
+        h.secrets.insert(copy0.clone(), vec![0xFF; 4]);
+        let id = export_prompt(&mut h, &slot, 22);
+        assert_eq!(
+            single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()),
+            refused(22, refused::STORAGE_FAILURE)
+        );
+        // Exactly one decodes: allowed.
+        h.secrets.insert(copy0.clone(), good.clone());
+        let id = export_prompt(&mut h, &slot, 23);
+        assert_eq!(
+            single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()),
+            Reply::Op(23, OpResult::Export { seed })
+        );
+        // Two decode: refused.
+        h.secrets.insert(copy1, good);
+        let id = export_prompt(&mut h, &slot, 24);
+        assert_eq!(
+            single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()),
+            refused(24, refused::STORAGE_FAILURE)
+        );
+    }
+}
+
+/// Both gc list copies unreadable while entries exist: a delete (which must
+/// list names) fails and the lists are not rewritten.
+#[test]
+fn both_gc_lists_unreadable_blocks_a_delete_through_process() {
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let p = domain().partition();
+    h.hidden.insert(names::gc(&p));
+    h.hidden.insert(names::gc2(&p));
+    let before = h.secrets.clone();
+    assert_eq!(
+        page(&mut h, op(5, Operation::Delete { slot: slot.clone() })),
+        refused(5, refused::STORAGE_FAILURE)
+    );
+    assert_eq!(h.secrets, before);
+    h.hidden.clear();
+    assert!(matches!(
+        page(&mut h, op(6, Operation::Delete { slot })),
+        Reply::Op(6, OpResult::Ok)
+    ));
+}
+
+/// An uncertain index commit, then a second write in the same call: a Batch of
+/// delegate work cannot reach two commits, so the same-call property is pinned
+/// at the store (`an_uncertain_commit_makes_the_rest_of_the_call_read_only`);
+/// here the next process() call after a torn commit is read-only too.
+#[test]
+fn after_an_uncertain_commit_the_next_call_is_read_only_until_the_index_reads() {
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let idx = names::index(&domain().partition());
+    h.set_fault(move |n| {
+        if n == idx.as_slice() {
+            WriteFault::GarbageButFail
+        } else {
+            WriteFault::None
+        }
+    });
+    let r = import_replace(&mut h, 2, &slot, [0xB2; 32]);
+    assert!(!is_key_result(&r), "{r:?}");
+    h.clear_fault();
+    assert_eq!(
+        page(&mut h, op(3, Operation::PublicKey { slot })),
+        refused(3, refused::STORAGE_FAILURE)
+    );
+}

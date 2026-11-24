@@ -563,6 +563,19 @@ pub fn pending_gc_names<H: Host>(host: &H, partition: &[u8; 32]) -> Vec<Vec<u8>>
     out
 }
 
+/// An encoded gc list naming `names`, for tests.
+#[cfg(any(test, feature = "testing"))]
+pub fn encode_gc_for_test(names: &[Vec<u8>]) -> Vec<u8> {
+    let list: Vec<GcName> = names
+        .iter()
+        .map(|n| GcName {
+            name: n.clone(),
+            uncertain: 0,
+        })
+        .collect();
+    encode_names(&list).expect("short list")
+}
+
 /// Export while the index state is unknown: reads both parity copies of the
 /// slot directly and returns a seed only when exactly one of them decodes as a
 /// key entry for that slot with a 32-byte seed.

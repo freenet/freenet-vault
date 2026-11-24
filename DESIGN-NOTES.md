@@ -78,30 +78,28 @@ Storage and formats:
   byte so a build refuses bytes it did not write. The index decoder enforces
   the frozen bounds (at most 4096 entries, kind not 0, key 1..=256, entry
   length at most 65,399).
-- **The index is stored twice, each copy with a BLAKE3 checksum**,
-  `vault:idx:<P>` then `vault:idx2:<P>`. Every call reconciles them in `open`,
-  before anything else runs: a valid first copy wins and rewrites the second
-  if it is absent, damaged or different; a first copy that is present but
-  damaged is restored from the second; a first copy that is ABSENT with a valid
-  second is ambiguous (lost, or a transient miss), so the store is read-only
-  for that call (no write, no gc, no repair of an entry); both damaged is an
-  error, and both absent is a new partition unless `vault:parts` lists it,
-  which is an error. The checksum is what makes the second copy cover bit rot:
-  a flipped bit that still parses (a digest, a parity, the state) is rejected.
-  **gc runs only when both copies are verified identical**, so it never removes
-  a copy that either index names; if the second copy cannot be written, gc
-  waits (garbage accumulates, nothing is lost) until it can. The layout is
-  build-private. **No entry write or index commit happens unless both copies
-  are in line** (a stale backup still names entry copies that a write could
-  overwrite), and **nothing is removed in a call that did not read and verify an
-  index copy** (a blind open, where every read missed, may be a partition that
-  exists). Recovery of a lost first copy: the first sighting of "first absent,
-  second valid" sets a `vault:idxmiss:<P>` marker and stays read-only; seen
-  absent again on a later call, the first copy is rewritten from the verified
-  second (a first copy that reads in between clears the marker). Importing
-  does NOT recover this state. Residuals: a blind open still allows creating a
-  partition, since a new partition looks the same; and a lost first copy costs
-  two calls of read-only service.
+- **One index copy, with a BLAKE3 checksum** (`vault:idx:<P>`), is the commit
+  point. Decided 2026-11-24 after four review rounds kept finding bugs in a
+  second (backup) copy, which is removed. `open` trusts the index only when it
+  reads and verifies. Anything else is an unknown state and the partition is
+  READ-ONLY for that call (no write, no gc, no creation, no arming; re-checked
+  on every call): the index is present but damaged or torn, absent while
+  `vault:parts` lists the partition, or `vault:parts` is present but malformed.
+  A new partition needs positive absence: no index, and `vault:parts` either
+  absent or not naming the partition. `vault:parts` is written after the first
+  index commit (a crash in between leaves an index with no listing, which
+  `open` repairs; never the reverse, which would brick the partition). After a
+  commit whose outcome is uncertain, the store is read-only for the rest of the
+  call, and gc waits for a later call. gc also needs the index verified in the
+  call. **Export stays possible behind consent** while the index state is
+  unknown: the answer reads both parity copies of the slot directly and returns
+  a seed only when exactly one decodes as a key entry for that slot. HandoverStatus
+  reports `problems` bit 0 (storage failure). Residuals, all by design for v1:
+  losing or tearing the index leaves the partition read-only with its keys
+  exportable by consent and no automatic repair; the host cannot tell an absent
+  secret from a failed read, so a call where the index AND `vault:parts` both
+  miss at once looks like a new partition (creation or arming could then write
+  a fresh index over a real one); a torn index write is not repaired.
 - **A secret that does not read is Missing, never corrupt.** When the index
   names an entry but `get_secret` returns nothing, the vault changes and
   deletes nothing, and answers storage failure (Refused 12). List shows the
@@ -111,17 +109,19 @@ Storage and formats:
   gone for good stays Missing until the page imports over it.
 - **gc is durable and bounded.** Every entry copy is listed in the gc list
   before it is written, so a crash leaves a name the next call removes. The
-  list is kept twice (`vault:gc`, `vault:gc2`) and read as a union, so one copy
-  failing to read does not lose a pending removal. A name leaves the list
-  only after a confirmed removal (`remove_secret` returns true, meaning the
-  secret is gone, absent included, and a read back finds nothing); there is no
-  retry limit. Names are added only when both copies take. The list holds at
-  most 4096 names: when full, the most uncertain names (removal reported
-  failure and read nothing) make room, and when none is uncertain a write
-  fails with storage failure and leaves the list alone, so it can never wrap
-  and erase itself. Residual: both copies of the list failing to read in one
-  call loses the pending names (they cost host quota, never a key,
-  because gc only removes unreferenced names).
+  list is kept twice (`vault:gc`, `vault:gc2`, read as a union) and is stored
+  empty, never removed, once used. If BOTH copies read as nothing while the
+  index names entries, the list is untrusted: gc does not run and a write that
+  must list a name fails with storage failure, so the list is never rewritten
+  without what it held. Names are added only when both copies take. A name
+  leaves the list after a confirmed removal. freenet-stdlib's `remove_secret`
+  returns false for a secret that was not there, so a name that neither
+  removes nor reads back is dropped after 3 such passes (otherwise every
+  candidate that never landed would stay listed and fill the list); a secret
+  that reads is never dropped. Residual: a real secret hidden from reads and
+  undeletable for 3 passes is no longer tracked. The list holds at most 4096
+  names; when full, writes that need a gc entry fail with storage failure and
+  no name is dropped to make room.
 - **Stored successor records are verified on load.** `vault:succ` whose
   `current` or withdrawal no longer verifies under the domain key, is in the
   wrong role, or has `current` at or below OWN_VERSION is read as malformed:
