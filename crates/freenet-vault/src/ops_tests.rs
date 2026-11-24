@@ -936,7 +936,7 @@ fn import_of_the_same_seed_rewrites_a_corrupt_slot_clean() {
     let name = names::entry(&p, KIND_KEY, &slot, 0);
     let mut b = h.secrets[&name].clone();
     b[40] ^= 1;
-    h.secrets.insert(name, b);
+    h.set_pair(&name, b);
     let unusable = Reply::St(Status::Unusable {
         request_id: 2,
         partition: p,
@@ -1118,7 +1118,12 @@ fn delete_then_absent_and_delete_is_idempotent() {
     );
     assert_eq!(
         page(&mut h, op(4, Operation::Delete { slot: slot.clone() })),
-        Reply::Op(4, OpResult::Ok)
+        // A Delete of an absent slot answers Absent (revision 10.2).
+        Reply::St(Status::Absent {
+            request_id: 4,
+            partition: p,
+            slot: slot.clone()
+        })
     );
     assert!(h.names_with_prefix(b"vault:e:").is_empty());
 }
@@ -1187,7 +1192,7 @@ fn list_reports_a_corrupt_slot_with_its_flagged_key() {
     let name = names::entry(&domain().partition(), KIND_KEY, &slot, 0);
     let mut b = h.secrets[&name].clone();
     b[38] ^= 1;
-    h.secrets.insert(name, b);
+    h.set_pair(&name, b);
     let Reply::Op(_, OpResult::List { items, .. }) = page(
         &mut h,
         op(

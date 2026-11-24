@@ -99,6 +99,18 @@ impl MemHost {
         h
     }
 
+    /// Stores `value` under an entry name AND under its parity twin (`...:0` and
+    /// `...:1`): damage that hits both copies of an entry, which the mirror
+    /// cannot repair (revision 10.2: a digest-matching mirror restores the
+    /// named copy).
+    pub fn set_pair(&mut self, name: &[u8], value: Vec<u8>) {
+        let mut twin = name.to_vec();
+        let last = twin.len() - 1;
+        twin[last] = if twin[last] == b'0' { b'1' } else { b'0' };
+        self.secrets.insert(twin, value.clone());
+        self.secrets.insert(name.to_vec(), value);
+    }
+
     /// A read failed in this call: writes are refused and the result must be
     /// discarded.
     pub fn poisoned(&self) -> bool {

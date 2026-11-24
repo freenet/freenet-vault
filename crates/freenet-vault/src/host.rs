@@ -48,8 +48,11 @@ pub fn replace_secret<H: Host>(host: &mut H, name: &[u8], value: &[u8]) -> bool 
 /// call is read-only (every later `set_secret` and `remove_secret` is refused),
 /// because that write may or may not have landed and nothing later in the call
 /// may build on either outcome. This holds across every `Store` the call opens.
-/// A failed removal does not latch: the name stays listed and the next call
-/// retries it.
+/// A failed removal does not latch, on purpose: removals only touch names whose
+/// identity the index does not name (gc, retried by the next call) or, in a
+/// Delete, the mirror, which the Delete reads back as absent before it commits
+/// (and refuses if it is still there), so an uncertain removal never feeds a
+/// later write.
 pub struct WriteLatch<'a, H: Host> {
     inner: &'a mut H,
     failed: bool,

@@ -141,6 +141,10 @@ pub struct Store<'a, H: Host> {
     /// listed (spec 4.2); the index of an unlisted partition is written with
     /// remove before write.
     listed: bool,
+    /// A read or the sweep in this call found an entry the index names whose
+    /// secret reads as absent (revision 10.2: reported as problems bit 1; not
+    /// counted in `lost_entries`, which counts dropped entries only).
+    saw_missing: bool,
     /// An index passed its checksum in this call. Without that there is no
     /// positive evidence of what the partition holds, so nothing is removed.
     verified: bool,
@@ -175,6 +179,7 @@ impl<'a, H: Host> Store<'a, H> {
             mode: Mode::Clean,
             blind: false,
             listed,
+            saw_missing: false,
             verified,
         })
     }
@@ -226,8 +231,14 @@ impl<'a, H: Host> Store<'a, H> {
             mode: Mode::ReadOnly,
             blind: true,
             listed: false,
+            saw_missing: false,
             verified: false,
         }
+    }
+
+    /// A named entry read as absent in this call (see the field).
+    pub fn saw_missing(&self) -> bool {
+        self.saw_missing
     }
 
     pub fn is_blind(&self) -> bool {
@@ -564,6 +575,7 @@ impl<'a, H: Host> Store<'a, H> {
             let named = self.entry_name(ie.kind, &ie.key, ie.parity);
             let mirror = self.entry_name(ie.kind, &ie.key, 1 - ie.parity);
             let Some(bytes) = self.host.get_secret(&named) else {
+                self.saw_missing = true;
                 continue;
             };
             if entry_digest(&bytes) != ie.digest {
@@ -603,6 +615,7 @@ impl<'a, H: Host> Store<'a, H> {
         // judge, and dropping the entry would destroy what a restore could
         // bring back.
         if got.is_none() {
+            self.saw_missing = true;
             return Read::Missing;
         }
         if let Some(b) = &got {
@@ -617,6 +630,32 @@ impl<'a, H: Host> Store<'a, H> {
                     Ok(e) => Read::Ok(e),
                     Err(_) => Read::Corrupt(None),
                 };
+            }
+        }
+        // The mirror first (spec 4.3, revision 10.2): before the named copy is
+        // treated as corrupt or the identity dropped, read the other parity. If
+        // it parses and matches the index digest, it is the committed value (a
+        // restore or a flipped byte damaged the named copy): rewrite the named
+        // copy from it and serve it. Nothing is rewritten while sealed or
+        // read-only; the digest-checked mirror is served all the same.
+        let other = self.entry_name(kind, key, 1 - ie.parity);
+        if let Some(m) = self.host.get_secret(&other) {
+            if entry_digest(&m) == ie.digest {
+                if let Ok(e) = Entry::decode(&m) {
+                    if e.kind == kind && e.key == key {
+                        if !sealed {
+                            let named = self.entry_name(kind, key, ie.parity);
+                            let _ = crate::host::replace_secret(self.host, &named, &m);
+                        }
+                        return if e.has_unknown_flags() {
+                            Read::Corrupt(None)
+                        } else if e.is_flagged_corrupt() {
+                            Read::Corrupt(Some(e))
+                        } else {
+                            Read::Ok(e)
+                        };
+                    }
+                }
             }
         }
         let parsed = got.as_ref().and_then(|b| {

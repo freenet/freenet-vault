@@ -627,10 +627,21 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
             }
             key_result(rid, &slot, pk)
         }
-        Operation::Delete { slot } => match store.delete(KIND_KEY, &slot) {
-            Ok(()) => reply(OpResult::Ok.encode(rid), rid),
-            Err(_) => refusal(rid, refused::STORAGE_FAILURE),
-        },
+        Operation::Delete { slot } => {
+            // A Delete of an absent slot answers Absent (the model's answer; the
+            // page treats Absent as done).
+            if store.index.find(KIND_KEY, &slot).is_none() {
+                return status(Status::Absent {
+                    request_id: rid,
+                    partition: domain.partition(),
+                    slot,
+                });
+            }
+            match store.delete(KIND_KEY, &slot) {
+                Ok(()) => reply(OpResult::Ok.encode(rid), rid),
+                Err(_) => refusal(rid, refused::STORAGE_FAILURE),
+            }
+        }
         Operation::PublicKey { slot } => {
             match usable_seed(domain, &mut store, &slot, sealed, false, rid) {
                 Ok((_, pk)) => key_result(rid, &slot, pk),
@@ -896,6 +907,9 @@ fn handover_status<H: Host>(
             partition_state_of(ix.state, ix.armed.is_some(), ix.awaiting_retirement);
         h.peer_record = ix.peer_record.unwrap_or([0; 100]);
         h.problems |= ix.problems;
+        if s.saw_missing() {
+            h.problems |= problems::CORRUPT_OR_LOST;
+        }
         h.lost_entries = ix.lost_entries;
     } else {
         h.problems |= problems::STORAGE_FAILURE;

@@ -263,6 +263,35 @@ Storage and formats:
   written, answers storage failure under index loss: an accepted availability
   loss, never a wrong key).
 
+- **Round 9 (revision 10.2 alignment).** (1) A stopped domain (a withdrawal
+  above `current`) neither arms nor creates, checked at arming and at creation
+  whenever the arming happened; existing writers keep serving. (2) A creation
+  commits an EMPTY WRITER index first, lists it and reads the listing back, and
+  only then commits the first entry, so a refused listing never leaves a
+  committed key; a creating change that answers Refused(12) therefore means the
+  key does not exist. (3) A listing write that REPORTS failure makes the call
+  answer nothing even if it landed (G3, the model's rule), on both the catch-all
+  and the creating-change path. (4) Listing a WRITER or SEALED index overwrites a
+  malformed `vault:parts` with a list naming the partition; other partitions'
+  valid indexes are listed again by their own catch-all. A malformed
+  `vault:parts` with the index absent or malformed keeps the G2/G2b handling.
+  (5) In index loss Poke and SubmitRecord store no record, including the repair
+  of a malformed `vault:succ` (spec 4.5: no writes, no record storage). (6) 4.3
+  repair reads the mirror first: if the other parity parses and matches the
+  index digest, the named copy is rewritten from it and served (nothing is
+  rewritten while sealed or read-only); only then is a copy flagged or an
+  identity dropped. (7) A named entry that reads as absent is not dropped and is
+  reported as problems bit 1 by any call whose read or sweep sees it;
+  `lost_entries` counts dropped entries only. (8) A Delete of an absent slot
+  answers Absent (the page treats Absent as done); Import over a Missing named
+  slot without `replace` is refused. (9) The write latch does not cover failed
+  removals on purpose: a removal only touches a name whose identity the index
+  does not name (gc, retried next call) or the mirror in a Delete, which is read
+  back as absent before the commit. Notes for later: the sweep runs on every Poke
+  without a bound (the handover step's scheduler must bound it); gc uses the
+  in-memory index, which is correct within one call; direct read of caller marks
+  is an extension the protocol model does not cover (marks are read by the same
+  both-copies rule, kind 2, content length 100).
 - **A secret that is gone is Missing, never corrupt.** When the index
   names an entry but `get_secret` returns nothing (a wipe or restore of that
   secret), the vault changes and

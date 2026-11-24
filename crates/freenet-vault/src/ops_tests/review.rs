@@ -26,7 +26,7 @@ fn tamper_seed(h: &mut MemHost, slot: &[u8]) {
     let mut b = h.secrets[&name].clone();
     // kind 1 + eflags 1 + key_len 2 + key 32 + content_len 2 = 38.
     b[40] ^= 1;
-    h.secrets.insert(name, b);
+    h.set_pair(&name, b);
 }
 
 fn mark_key() -> Vec<u8> {
@@ -251,7 +251,7 @@ fn export_does_not_drop_an_unparseable_slot() {
     let mut h = MemHost::new();
     let (slot, _) = writer_with_key(&mut h);
     let name = entry_name_of(&h, KIND_KEY, &slot);
-    h.secrets.insert(name, vec![0xFF; 5]);
+    h.set_pair(&name, vec![0xFF; 5]);
     let before = h.secrets.clone();
     assert!(matches!(
         page(&mut h, op(2, Operation::Export { slot: slot.clone() })),
@@ -322,7 +322,7 @@ fn export_of_an_unparseable_sealed_slot_is_unusable() {
     let mut h = MemHost::new();
     let (slot, _) = writer_with_key(&mut h);
     let name = entry_name_of(&h, KIND_KEY, &slot);
-    h.secrets.insert(name, vec![0xFF; 5]);
+    h.set_pair(&name, vec![0xFF; 5]);
     set_state(&mut h, |ix| ix.state = State::Sealed);
     assert_eq!(
         page(&mut h, op(2, Operation::Export { slot: slot.clone() })),
@@ -452,7 +452,7 @@ fn min_version_floors_a_fresh_vault_and_one_that_lost_its_mark() {
     // The mark (7) is destroyed beyond parsing: it no longer binds, but the
     // minimum still does, and the next raise rewrites it.
     let name = entry_name_of(&h, KIND_CALLER_MARK, &mark_key());
-    h.secrets.insert(name, vec![0xFF; 5]);
+    h.set_pair(&name, vec![0xFF; 5]);
     assert_eq!(
         go(&mut h, 4),
         Some(refused(77, refused::CALLER_NOT_AUTHORIZED))
@@ -2212,27 +2212,6 @@ fn an_undecryptable_caller_mark_is_rewritten_by_the_next_raise() {
     );
 }
 
-/// Corrupt gc lists read as absent: nothing is removed on that evidence, and
-/// the next write rebuilds them.
-#[test]
-fn undecryptable_gc_lists_remove_nothing() {
-    let p = domain().partition();
-    let mut h = MemHost::new();
-    let (slot, _) = writer_with_key(&mut h);
-    let stray = names::entry(&p, KIND_KEY, &[9; 32], 0);
-    h.secrets.insert(stray.clone(), vec![1]);
-    let list = crate::storage::encode_gc_for_test(std::slice::from_ref(&stray));
-    h.secrets.insert(names::gc(&p), list.clone());
-    h.secrets.insert(names::gc2(&p), list);
-    h.undecryptable.insert(names::gc(&p));
-    h.undecryptable.insert(names::gc2(&p));
-    let _ = problems_of(&mut h);
-    // Removing nothing is the safe outcome; the stray stays (a bounded leak).
-    assert!(h.secrets.contains_key(&stray));
-    assert!(is_key_result(&import_replace(&mut h, 2, &slot, [0xB2; 32])));
-    assert_eq!(seed_of(&h, &slot), [0xB2; 32]);
-}
-
 /// Pins the stated residual: index AND `vault:parts` both undecryptable looks
 /// like a new partition (reads cannot tell absent from corrupt, core #6323).
 /// The keys stay on disk and Export by direct read still finds them.
@@ -2350,7 +2329,7 @@ fn unknown_flags_are_never_served_after_a_digest_mismatch_either() {
     let name = entry_name_of(&h, KIND_KEY, &slot);
     let mut b = h.secrets[&name].clone();
     b[1] |= 0x80; // an unknown flag bit; the index digest is NOT updated
-    h.secrets.insert(name.clone(), b.clone());
+    h.set_pair(&name, b.clone());
     let unusable_reply = |rid| {
         Reply::St(Status::Unusable {
             request_id: rid,
@@ -2550,13 +2529,12 @@ fn a_malformed_parts_list_and_a_newer_record_answer_moved() {
             page(&mut h, op(5, Operation::Delete { slot: slot.clone() })),
             moved(5)
         );
-        let id = export_prompt_for_test(&mut h, &slot, 6);
-        if let Some(id) = id {
-            assert_eq!(
-                single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()),
-                moved(6)
-            );
-        }
+        // The Export request itself answers Moved: no prompt is raised.
+        assert!(export_prompt_for_test(&mut h, &slot, 6).is_none());
+        assert_eq!(
+            page(&mut h, op(6, Operation::Export { slot: slot.clone() })),
+            moved(6)
+        );
     }
     // Without a newer record the same state direct-reads (G2 applies only with
     // a record above OWN_VERSION).
@@ -2790,4 +2768,63 @@ fn index_loss_stores_no_records() {
         assert_eq!(r.len(), 1);
         assert_eq!(h.secrets, before, "a SubmitRecord stored a record");
     }
+}
+
+/// G2 needs a record above OWN_VERSION. With `vault:succ` lost or undecryptable
+/// (it reads as absent) nothing proves the build retired, so the slot is read
+/// directly, as in any index loss.
+#[test]
+fn g2_with_a_lost_or_undecryptable_succ_direct_reads() {
+    let p = domain().partition();
+    for undecryptable in [false, true] {
+        let mut h = MemHost::new();
+        let (slot, pk) = writer_with_key(&mut h);
+        let _ = page(&mut h, poke(0, Some(domain_record(2, [0x22; 32]))));
+        h.secrets.remove(&names::index(&p));
+        h.secrets.insert(names::PARTS.to_vec(), vec![1; 33]);
+        if undecryptable {
+            h.undecryptable.insert(names::SUCC.to_vec());
+        } else {
+            h.secrets.remove(names::SUCC);
+        }
+        assert!(
+            is_sig(&sign_batch(&mut h, 3, &slot, pk)),
+            "undecryptable={undecryptable}"
+        );
+    }
+}
+
+/// An undecryptable `vault:succ` does not block accepting a record: it reads as
+/// absent and is removed before it is written (remove before write).
+#[test]
+fn an_undecryptable_succ_is_replaced_when_a_record_is_accepted() {
+    let mut h = MemHost::new();
+    arm(&mut h);
+    h.undecryptable.insert(names::SUCC.to_vec());
+    let st = handover(page(&mut h, poke(0, Some(domain_record(2, [0x22; 32])))));
+    assert_eq!(st.step_result, step_result::RECORD_ACCEPTED);
+    assert!(!h.undecryptable.contains(names::SUCC));
+    assert_eq!(
+        handover(page(&mut h, poke(0, None))).record_state,
+        record_state::SUCCESSOR
+    );
+}
+
+/// A named entry that reads as absent is reported in the status of a Poke (the
+/// sweep sees it) as problems bit 1; `lost_entries` stays 0 and the entry is
+/// not dropped.
+#[test]
+fn a_missing_named_entry_is_reported_in_the_poke_status() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    assert_eq!(problems_of(&mut h) & problems::CORRUPT_OR_LOST, 0);
+    for parity in 0..2u8 {
+        h.secrets.remove(&names::entry(&p, KIND_KEY, &slot, parity));
+    }
+    let st = handover(page(&mut h, poke(0, None)));
+    assert_ne!(st.problems & problems::CORRUPT_OR_LOST, 0);
+    assert_eq!(st.lost_entries, 0);
+    let ix = crate::storage::index::Index::decode(&h.secrets[&names::index(&p)]).unwrap();
+    assert_eq!(ix.entries.len(), 1, "the entry was dropped");
 }
