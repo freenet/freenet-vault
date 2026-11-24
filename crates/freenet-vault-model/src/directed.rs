@@ -1085,11 +1085,9 @@ pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
             // vault:parts was never written is index loss (4.5 condition 2,
             // literal reading), so the handover never completes
             v.push((
-                if malformed {
-                    "finding/I7-receiver-index-lost"
-                } else {
-                    "4.4/receiver-index-lost-reads-none"
-                },
+                // revision 10.1 (G1): malformed or undecryptable, the
+                // receiver reads as NONE and the handover completes
+                "4.4/receiver-index-lost-reads-none",
                 sc,
             ));
         }

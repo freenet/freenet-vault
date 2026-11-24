@@ -53,7 +53,7 @@ impl Default for Params {
             reject_odd_marks_from: 40,
             mutant: None,
             list_cap: 8,
-            catchall_fail_continues: true,
+            catchall_fail_continues: false,
         }
     }
 }
@@ -123,24 +123,33 @@ pub enum Mutant {
     MalformedUnlistedIsLost,
     /// Write over a secret that reads as absent without removing it first.
     WriteWithoutRemove,
+    /// Revision 10.1 (G2): direct-read in 4.5 condition 3 although
+    /// vault:succ holds a non-withdrawal record above OWN_VERSION.
+    DirectReadDespiteSuccessor,
 }
 
 impl Mutant {
-    pub const ALL: [Mutant; 23] = [
+    /// The revision 10.1 15.5 list (M1 removed GcDropBeforeAbsent,
+    /// GcDeletesNamedMirror and ReceiverMirrors; SweepWhileSealed was
+    /// never in 15.5) plus the G2 mutant. The removed ones stay in
+    /// EQUIVALENT for information.
+    pub const EQUIVALENT: [Mutant; 4] = [
+        Mutant::GcDropBeforeAbsent,
+        Mutant::GcDeletesNamedMirror,
+        Mutant::ReceiverMirrors,
+        Mutant::SweepWhileSealed,
+    ];
+    pub const ALL: [Mutant; 20] = [
         Mutant::RetiredBeforeUnlist,
         Mutant::NeverUnlist,
         Mutant::RelistRetired,
         Mutant::PartsBeforeIndex,
-        Mutant::GcDropBeforeAbsent,
         Mutant::CreateWhileStopped,
         Mutant::NoState0x0BWithoutStoring,
         Mutant::MirrorBeforeCommit,
         Mutant::NoStep1,
         Mutant::DeleteCommitBeforeMirrorAbsent,
-        Mutant::GcDeletesNamedMirror,
-        Mutant::ReceiverMirrors,
         Mutant::SweepUncheckedDigest,
-        Mutant::SweepWhileSealed,
         Mutant::DirectReadSingleCopy,
         Mutant::DirectReadChooses,
         Mutant::DirectReadIgnoresEflagsOrKey,
@@ -150,12 +159,17 @@ impl Mutant {
         Mutant::MalformedListedIsNone,
         Mutant::MalformedUnlistedIsLost,
         Mutant::WriteWithoutRemove,
+        Mutant::DirectReadDespiteSuccessor,
     ];
     pub fn name(self) -> String {
         format!("{self:?}")
     }
     pub fn parse(s: &str) -> Option<Mutant> {
-        Mutant::ALL.iter().copied().find(|m| m.name() == s)
+        Mutant::ALL
+            .iter()
+            .chain(Mutant::EQUIVALENT.iter())
+            .copied()
+            .find(|m| m.name() == s)
     }
 }
 
@@ -882,7 +896,21 @@ impl<'a> Cx<'a> {
                 }
                 Ok(Reply::None)
             }
-            Input::Op(op) => self.lost_op(op).map(Reply::Op),
+            Input::Op(op) => {
+                // revision 10.1 (G2): 4.5 condition 3 with a higher
+                // successor record answers Moved and never direct-reads
+                if let Some(r) = crate::store::g2_moved(self.host.store, self.own()) {
+                    if self.p.mutant == Some(Mutant::DirectReadDespiteSuccessor) {
+                        if !op.is_change() {
+                            self.hit("mutant/direct-read-despite-successor");
+                        }
+                    } else {
+                        self.hit("4.5/g2-condition-3-successor-moved");
+                        return Ok(Reply::Op(OpRes::Moved(r)));
+                    }
+                }
+                self.lost_op(op).map(Reply::Op)
+            }
         }
     }
 

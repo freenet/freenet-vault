@@ -105,7 +105,7 @@ impl Cfg {
             quiesce_rounds: 12,
             quiesce_shuffle: false,
             trace: false,
-            absent_parts_valid_list: false,
+            absent_parts_valid_list: true,
         }
     }
 }
@@ -2492,7 +2492,14 @@ impl World {
                         // lost the key is held if direct read serves it, or
                         // answers storage failure while a copy with that
                         // value is on disk
-                        match self.stores[b].direct_value(*id) {
+                        // revision 10.1 (G2): such a build answers Moved
+                        // and never direct-reads
+                        let dv = if crate::store::g2_moved(&self.stores[b], v).is_some() {
+                            Err(())
+                        } else {
+                            self.stores[b].direct_value(*id)
+                        };
+                        match dv {
                             Ok(Some(val)) => {
                                 if !p.allows(&Some(val.clone())) {
                                     self.fail(

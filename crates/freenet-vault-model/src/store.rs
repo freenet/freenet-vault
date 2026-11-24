@@ -19,16 +19,40 @@ thread_local! {
     /// vault:parts (never written, or undecryptable) "reads as a valid list"
     /// that does not name the partition. false (default) is the literal
     /// reading, most likely to fail: only a list on disk is a valid list.
-    pub static ABSENT_PARTS_IS_VALID_LIST: Cell<bool> = const { Cell::new(false) };
+    pub static ABSENT_PARTS_IS_VALID_LIST: Cell<bool> = const { Cell::new(true) };
+    /// Labelled proposal (sim7b): apply the 10.1 G2 rule to a malformed
+    /// index too, not only an absent one.
+    pub static G2_ALSO_CONDITION_2: Cell<bool> = const { Cell::new(false) };
 }
 
-/// vault:parts reads as a valid list (4.5 condition 2).
+/// vault:parts reads as a valid list (4.5 condition 2). Revision 10.1
+/// (G1): an absent vault:parts (never written, or undecryptable, which
+/// reads as absent) reads as a valid empty list. The old literal reading
+/// is kept behind ABSENT_PARTS_IS_VALID_LIST = false for replays only.
 pub fn parts_valid_list(parts: Option<&SVal>) -> bool {
     match parts {
         Some(SVal::Parts) | Some(SVal::PartsEmpty) => true,
         None | Some(SVal::Undecryptable) => ABSENT_PARTS_IS_VALID_LIST.with(|c| c.get()),
         _ => false,
     }
+}
+
+/// Revision 10.1 (G2), 4.5 condition 3: vault:parts malformed and the
+/// index absent, while vault:succ holds a non-withdrawal record above
+/// `own`: the build answers every read and change Moved(that record) and
+/// never direct-reads.
+pub fn g2_moved(s: &Store, own: Ver) -> Option<Rec> {
+    let parts_malformed = matches!(s.secrets.get(&SName::Parts), Some(SVal::Garbled));
+    let idx_absent = matches!(s.secrets.get(&SName::Idx), None | Some(SVal::Undecryptable));
+    // proposed one-sentence extension (sim7b): the same rule when the index
+    // is malformed too (4.5 condition 2 with vault:parts present but not a
+    // valid list); off by default, the 10.1 text covers condition 3 only
+    let cond2 = G2_ALSO_CONDITION_2.with(|c| c.get())
+        && matches!(s.secrets.get(&SName::Idx), Some(v) if !matches!(v, SVal::Idx(_) | SVal::Undecryptable));
+    if !(parts_malformed && (idx_absent || cond2)) {
+        return None;
+    }
+    s.succ().current.filter(|c| c.v > own && !c.withdrawal)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

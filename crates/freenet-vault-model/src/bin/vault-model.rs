@@ -78,6 +78,9 @@ fn main() {
                 i += 1;
             }
             "--quiesce-shuffle" => cfg.quiesce_shuffle = true,
+            "--g2-also-condition-2" => {
+                freenet_vault_model::store::G2_ALSO_CONDITION_2.with(|c| c.set(true))
+            }
             a => panic!("unknown argument {a}"),
         }
         i += 1;
@@ -274,6 +277,8 @@ thread_local! {
 /// not caught (rule (a)). `--not-blocking` adds this run's finding labels.
 const NOT_BLOCKING: &[&str] = &[
     "I7-retired-still-listed",
+    // revision 10.1, G4 (4.4)
+    "I7-sealed-predecessor-index-lost",
     "I2-two-index-lost",
     "I1-restore-unreported",
     "I5-after-restore",

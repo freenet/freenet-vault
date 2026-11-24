@@ -981,9 +981,11 @@ fn malformed_index_is_none_only_while_parts_is_a_valid_list_without_it() {
     assert!(b.store.index_lost());
     b.store.secrets.remove(&SName::Parts);
     assert!(
-        b.store.index_lost(),
-        "literal reading: absent is not a valid list"
+        !b.store.index_lost(),
+        "revision 10.1 (G1): an absent vault:parts is a valid empty list"
     );
+    b.store.secrets.insert(SName::Parts, SVal::Garbled);
+    assert!(b.store.index_lost(), "present but not a valid list");
 }
 
 /// Revision 10 (F17): an undecryptable vault:parts on a writer whose index
