@@ -1,31 +1,29 @@
 //! Durable state of one partition (protocol 4).
 //!
-//! Write ordering (4.2): the index is the commit point. An entry is written
-//! to the parity slot the index does not name, then the index; a crash in
-//! between leaves the old value intact. Removals go through `vault:gc`:
-//! write the names to remove, then the index without them, then remove the
-//! secrets and clear `vault:gc`. After a failed index write the store reads
-//! the index back and answers from what is on disk.
-//!
-//! Garbage collection removes only names under this partition's entry prefix
-//! that the current index does not reference, so a `vault:gc` left behind by
-//! a failed commit can never delete a live entry. A removal that fails keeps
-//! its name listed until it succeeds. Every entry copy is listed in
-//! `vault:gc` BEFORE it is written, so a crash between the write and the
-//! index commit leaves a name the next call removes.
+//! Write ordering (4.2, revision 10.x): the index is the commit point. A change
+//! to a WRITER has four steps: clear both parity names of an identity the index
+//! does not name; write the parity the index does not name; commit the index;
+//! write the same bytes to the other parity (the mirror). A change never uses
+//! `vault:gc`. A Delete lists both names in `vault:gc`, removes the mirror and
+//! reads it back as absent, commits, and gc removes the other copy. gc works by
+//! identity: it never removes a name whose identity the committed index names.
+//! After a failed index write the store reads the index back and answers from
+//! what is on disk. Direct read (no index) serves a slot only when both parity
+//! copies authenticate and are byte-identical.
 //!
 //! There is ONE index copy, `vault:idx`, the commit point, with a BLAKE3
 //! checksum. `open` trusts it only when it reads and verifies:
 //!
 //! - index verified: normal operation.
-//! - index absent, and `vault:parts` reads and does not list the partition (an
-//!   absent `vault:parts` is an empty list): a new partition. Creation and
-//!   arming write the first index; nothing was read, so nothing is removed
-//!   until that index is committed.
-//! - anything else (index present but damaged, absent while `vault:parts`
-//!   lists the partition, or `vault:parts` unreadable): `open` fails and the
-//!   partition is read-only for that call: no write, no gc, no creation, no
-//!   arming. The next call checks again.
+//! - index absent (or malformed) and `vault:parts` a valid list that does not
+//!   name the partition (an absent `vault:parts` is an empty list): the build is
+//!   NONE for it. Creation and arming write the first index; nothing was read,
+//!   so nothing is removed until that index is committed.
+//! - anything else (see `Store::fault`: index absent while `vault:parts` lists
+//!   the partition or is malformed, or malformed while it lists the partition
+//!   or is malformed): `open` fails and the partition is read-only for that
+//!   call: no write, no gc, no creation, no arming, no record storage. The next
+//!   call checks again.
 //!
 //! After a commit whose outcome is uncertain the store is read-only for the
 //! rest of the call.
