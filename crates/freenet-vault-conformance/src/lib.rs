@@ -561,6 +561,10 @@ fn finish(
                 let to = tb.ver_of_key(dm.target.bytes());
                 let f = match tb.wire_to_frame(def.v, &dm.payload) {
                     Ok(f) => f,
+                    // a poisoned call's outputs are discarded by the runtime
+                    // (4.0): after a failed read the library may hash a
+                    // partial list, and nothing of it reaches the wire
+                    Err(_) if poisoned => continue,
                     Err(why) => {
                         tb.finding(format!(
                             "build {} sent an undecodable hop: {why} (seed {})",
