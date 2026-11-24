@@ -1288,60 +1288,6 @@ fn the_index_of_an_unlisted_partition_is_written_with_remove_before_write() {
 
 // ---- round 9 ---------------------------------------------------------------
 
-/// 4.3 repair, mirror first (revision 10.2): a named copy restored to an older
-/// valid entry (parses, fails the digest) with an intact mirror is rewritten
-/// from the mirror and the committed value is served; so is an unparseable
-/// named copy. While sealed the mirror is served and nothing is rewritten. A
-/// mirror that fails the digest does not help.
-#[test]
-fn a_damaged_named_copy_is_restored_from_an_intact_mirror() {
-    let committed = key_entry(1, 9).encode().unwrap();
-    let older = key_entry(1, 7).encode().unwrap();
-    for (label, damage) in [
-        ("older valid entry", older.clone()),
-        ("unparseable", vec![0xFF; 5]),
-    ] {
-        let mut h = MemHost::new();
-        put(&mut h, &key_entry(1, 9)).unwrap();
-        h.secrets.insert(entry_name(1, 0), damage.clone());
-        assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)), "{label}");
-        assert_eq!(
-            h.secrets[&entry_name(1, 0)],
-            committed,
-            "{label}: not rewritten"
-        );
-        let s = Store::open(&mut h, P).unwrap();
-        assert_eq!(s.index.lost_entries, 0, "{label}: dropped");
-        assert_eq!(s.index.entries.len(), 1, "{label}");
-        drop(s);
-        // Sealed: served, not rewritten.
-        let mut h = MemHost::new();
-        put(&mut h, &key_entry(1, 9)).unwrap();
-        let mut s = Store::open(&mut h, P).unwrap();
-        s.update(|ix| ix.state = State::Sealed).unwrap();
-        drop(s);
-        h.secrets.insert(entry_name(1, 0), damage.clone());
-        let mut s = Store::open(&mut h, P).unwrap();
-        assert_eq!(
-            s.read(KIND_KEY, &[1; 32], true),
-            Read::Ok(key_entry(1, 9)),
-            "{label} sealed"
-        );
-        drop(s);
-        assert_eq!(
-            h.secrets[&entry_name(1, 0)],
-            damage,
-            "{label}: rewritten while sealed"
-        );
-    }
-    // The mirror fails the digest too: the old behaviour (flag, or drop).
-    let mut h = MemHost::new();
-    put(&mut h, &key_entry(1, 9)).unwrap();
-    h.secrets.insert(entry_name(1, 0), older.clone());
-    h.secrets.insert(entry_name(1, 1), older);
-    assert!(matches!(read(&mut h, 1), Read::Corrupt(Some(_))));
-}
-
 /// A named entry that reads as absent is Missing, not dropped, and is reported
 /// (revision 10.2) without inflating `lost_entries`, which counts dropped
 /// entries only.

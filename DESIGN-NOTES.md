@@ -276,11 +276,7 @@ Storage and formats:
   valid indexes are listed again by their own catch-all. A malformed
   `vault:parts` with the index absent or malformed keeps the G2/G2b handling.
   (5) In index loss Poke and SubmitRecord store no record, including the repair
-  of a malformed `vault:succ` (spec 4.5: no writes, no record storage). (6) 4.3
-  repair reads the mirror first: if the other parity parses and matches the
-  index digest, the named copy is rewritten from it and served (nothing is
-  rewritten while sealed or read-only); only then is a copy flagged or an
-  identity dropped. (7) A named entry that reads as absent is not dropped and is
+  of a malformed `vault:succ` (spec 4.5: no writes, no record storage). (6) The 4.3 heal from the mirror (read the other parity first and restore the named copy from a digest-matching mirror) is ON HOLD: the model found a violation in it. It was implemented and reverted in one commit; the implementation is kept on branch `hold/item7-mirror-heal`. (7) A named entry that reads as absent is not dropped and is
   reported as problems bit 1 by any call whose read or sweep sees it;
   `lost_entries` counts dropped entries only. (8) A Delete of an absent slot
   answers Absent (the page treats Absent as done); Import over a Missing named

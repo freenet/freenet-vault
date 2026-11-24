@@ -630,32 +630,6 @@ impl<'a, H: Host> Store<'a, H> {
                 };
             }
         }
-        // The mirror first (spec 4.3, revision 10.2): before the named copy is
-        // treated as corrupt or the identity dropped, read the other parity. If
-        // it parses and matches the index digest, it is the committed value (a
-        // restore or a flipped byte damaged the named copy): rewrite the named
-        // copy from it and serve it. Nothing is rewritten while sealed or
-        // read-only; the digest-checked mirror is served all the same.
-        let other = self.entry_name(kind, key, 1 - ie.parity);
-        if let Some(m) = self.host.get_secret(&other) {
-            if entry_digest(&m) == ie.digest {
-                if let Ok(e) = Entry::decode(&m) {
-                    if e.kind == kind && e.key == key {
-                        if !sealed {
-                            let named = self.entry_name(kind, key, ie.parity);
-                            let _ = crate::host::replace_secret(self.host, &named, &m);
-                        }
-                        return if e.has_unknown_flags() {
-                            Read::Corrupt(None)
-                        } else if e.is_flagged_corrupt() {
-                            Read::Corrupt(Some(e))
-                        } else {
-                            Read::Ok(e)
-                        };
-                    }
-                }
-            }
-        }
         let parsed = got.as_ref().and_then(|b| {
             Entry::decode(b)
                 .ok()
