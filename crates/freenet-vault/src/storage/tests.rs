@@ -507,7 +507,41 @@ fn an_absent_first_index_makes_the_store_read_only() {
     assert_eq!(s.delete(KIND_KEY, &[1; 32]), Err(StorageFailure));
     assert_eq!(s.update(|ix| ix.problems = 1), Err(StorageFailure));
     drop(s);
-    assert_eq!(h.secrets, before, "nothing changed");
+    // Only the miss marker is new.
+    assert!(h.secrets.remove(&names::index_miss(&P)).is_some());
+    assert_eq!(h.secrets, before, "nothing else changed");
+}
+
+/// A first copy that is really gone is rewritten from the verified second
+/// copy on the second sighting; a miss that goes away leaves no trace.
+#[test]
+fn a_permanently_absent_first_index_is_restored_on_the_second_call() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    let good = h.secrets[&names::index(&P)].clone();
+    h.secrets.remove(&names::index(&P));
+    let mut s = Store::open(&mut h, P).unwrap();
+    assert_eq!(s.mode(), Mode::ReadOnly);
+    assert_eq!(s.update(|ix| ix.problems = 1), Err(StorageFailure));
+    drop(s);
+    assert!(!h.secrets.contains_key(&names::index(&P)));
+    let mut s = Store::open(&mut h, P).unwrap();
+    assert_eq!(s.mode(), Mode::Clean);
+    assert_eq!(s.read(KIND_KEY, &[1; 32], false), Read::Ok(key_entry(1, 9)));
+    drop(s);
+    assert_eq!(h.secrets[&names::index(&P)], good);
+    assert!(!h.secrets.contains_key(&names::index_miss(&P)));
+    assert_eq!(put(&mut h, &key_entry(1, 8)), Ok(()));
+
+    // A transient miss: the marker is cleared by the next good read.
+    h.hidden.insert(names::index(&P));
+    assert_eq!(Store::open(&mut h, P).unwrap().mode(), Mode::ReadOnly);
+    h.hidden.clear();
+    assert_eq!(Store::open(&mut h, P).unwrap().mode(), Mode::Clean);
+    assert!(!h.secrets.contains_key(&names::index_miss(&P)));
+    h.hidden.insert(names::index(&P));
+    // Not a second sighting: read-only again.
+    assert_eq!(Store::open(&mut h, P).unwrap().mode(), Mode::ReadOnly);
 }
 
 /// An absent index for a partition `vault:parts` lists is an error, never a

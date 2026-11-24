@@ -91,9 +91,17 @@ Storage and formats:
   **gc runs only when both copies are verified identical**, so it never removes
   a copy that either index names; if the second copy cannot be written, gc
   waits (garbage accumulates, nothing is lost) until it can. The layout is
-  build-private. Residual: a first copy that is permanently absent leaves the
-  vault read-only until the page imports over affected slots or the secret is
-  restored.
+  build-private. **No entry write or index commit happens unless both copies
+  are in line** (a stale backup still names entry copies that a write could
+  overwrite), and **nothing is removed in a call that did not read and verify an
+  index copy** (a blind open, where every read missed, may be a partition that
+  exists). Recovery of a lost first copy: the first sighting of "first absent,
+  second valid" sets a `vault:idxmiss:<P>` marker and stays read-only; seen
+  absent again on a later call, the first copy is rewritten from the verified
+  second (a first copy that reads in between clears the marker). Importing
+  does NOT recover this state. Residuals: a blind open still allows creating a
+  partition, since a new partition looks the same; and a lost first copy costs
+  two calls of read-only service.
 - **A secret that does not read is Missing, never corrupt.** When the index
   names an entry but `get_secret` returns nothing, the vault changes and
   deletes nothing, and answers storage failure (Refused 12). List shows the
@@ -104,13 +112,15 @@ Storage and formats:
 - **gc is durable and bounded.** Every entry copy is listed in the gc list
   before it is written, so a crash leaves a name the next call removes. The
   list is kept twice (`vault:gc`, `vault:gc2`) and read as a union, so one copy
-  failing to read does not lose a pending removal. A removal is confirmed by
-  reading the secret back; a name still present stays listed. A name that
-  neither removes nor reads back is retried once more and then dropped (a copy
-  that never landed). The list holds at most 4096 names: a write that would
-  exceed it fails with storage failure and leaves the list alone, so it can
-  never wrap and erase itself. Residual: both copies of the list failing to
-  read in one call loses the pending names (they cost host quota, never a key,
+  failing to read does not lose a pending removal. A name leaves the list
+  only after a confirmed removal (`remove_secret` returns true, meaning the
+  secret is gone, absent included, and a read back finds nothing); there is no
+  retry limit. Names are added only when both copies take. The list holds at
+  most 4096 names: when full, the most uncertain names (removal reported
+  failure and read nothing) make room, and when none is uncertain a write
+  fails with storage failure and leaves the list alone, so it can never wrap
+  and erase itself. Residual: both copies of the list failing to read in one
+  call loses the pending names (they cost host quota, never a key,
   because gc only removes unreferenced names).
 - **Stored successor records are verified on load.** `vault:succ` whose
   `current` or withdrawal no longer verifies under the domain key, is in the

@@ -34,6 +34,13 @@ pub fn gc2(partition: &[u8; 32]) -> Vec<u8> {
     format!("vault:gc2:{}", hex(partition)).into_bytes()
 }
 
+/// Set when the first index copy read as absent while the second was valid. A
+/// second sighting on a later call turns "ambiguous" into "lost" and the first
+/// copy is rewritten from the second.
+pub fn index_miss(partition: &[u8; 32]) -> Vec<u8> {
+    format!("vault:idxmiss:{}", hex(partition)).into_bytes()
+}
+
 /// `vault:e:<P>:<key hash>:<p>`.
 pub fn entry(partition: &[u8; 32], kind: u8, key: &[u8], parity: u8) -> Vec<u8> {
     format!(

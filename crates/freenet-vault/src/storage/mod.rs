@@ -147,6 +147,12 @@ impl<'a, H: Host> Store<'a, H> {
         let (index, on_disk, mode, exists, verified) = match (d1, d2) {
             (Some(Ok(i1)), _) => {
                 let b1 = first.expect("decoded");
+                // The first copy reads: a miss marker from an earlier call is
+                // stale (the miss was transient).
+                let miss = names::index_miss(&partition);
+                if host.get_secret(&miss).is_some() {
+                    host.remove_secret(&miss);
+                }
                 // The second copy is brought in line with the first (the
                 // first is the commit point, so it wins) before anything else.
                 let in_line =
@@ -163,8 +169,24 @@ impl<'a, H: Host> Store<'a, H> {
                     (i2, first, Mode::ReadOnly, true, true)
                 }
             }
-            // Absent first, valid second: ambiguous, so read-only.
-            (None, Some(Ok(i2))) => (i2, None, Mode::ReadOnly, true, true),
+            // Absent first, valid second: ambiguous (a lost secret or a
+            // transient miss), so read-only on the first sighting. Seen
+            // absent again on a later call it is taken as lost, and the first
+            // copy is rewritten from the second, which is verified.
+            (None, Some(Ok(i2))) => {
+                let b2 = second.expect("decoded");
+                let miss = names::index_miss(&partition);
+                if host.get_secret(&miss).is_none() {
+                    // Best effort: with no marker the next call is read-only too.
+                    let _ = host.set_secret(&miss, b"1");
+                    (i2, None, Mode::ReadOnly, true, true)
+                } else if write_verified(host, &n1, &b2) {
+                    host.remove_secret(&miss);
+                    (i2, Some(b2), Mode::Clean, true, true)
+                } else {
+                    (i2, None, Mode::ReadOnly, true, true)
+                }
+            }
             (None, None) => {
                 let listed = host
                     .get_secret(names::PARTS)
