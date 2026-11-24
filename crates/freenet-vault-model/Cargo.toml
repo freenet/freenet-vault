@@ -8,5 +8,5 @@ repository.workspace = true
 publish.workspace = true
 
 # No dependencies on purpose: this crate is an independent reading of the
-# handover protocol document (revision 8) and shares no code with the library.
+# handover protocol document (revision 9) and shares no code with the library.
 [dependencies]

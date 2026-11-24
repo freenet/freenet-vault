@@ -710,18 +710,87 @@ fn a_newer_record_clears_arming_and_confirmations() {
     assert_eq!(b.state(), PState::none());
 }
 
-/// Revision 8 as written: a NONE predecessor whose stored withdrawal is
-/// above the querier's version cannot store the querier's record (3:
-/// RecordNotNewer), so it never answers 0x0B, and a fresh install while
-/// stopped never passes the creation guard. Pins the finding.
+/// Revision 9 (F10): a NONE predecessor whose floor is already at or above
+/// the querier's version answers a creation probe "stopped" (0x03) when the
+/// floor comes from a withdrawal, else 0x07; it stores nothing.
 #[test]
-fn probe_below_a_stored_withdrawal_is_never_confirmed() {
+fn probe_below_the_floor_answers_stopped_or_another_writer() {
     let mut b = t(10);
     b.succ(Succ {
         current: None,
         withdrawal: Some(Rec::withdrawal(25)),
     });
-    assert_eq!(cstatus(&b.hop(20, query(20, 0))), CStatus::StorageFailure);
+    assert_eq!(cstatus(&b.hop(20, query(20, 0))), CStatus::Stopped);
+    let mut b = t(10);
+    b.succ(Succ {
+        current: Some(Rec::build(30)),
+        withdrawal: None,
+    });
+    assert_eq!(cstatus(&b.hop(20, query(20, 0))), CStatus::AnotherWriter);
+    assert_eq!(b.store.succ().current, Some(Rec::build(30)));
+}
+
+/// Revision 9 (F10): a build that holds a withdrawal above its current
+/// record never arms.
+#[test]
+fn a_stopped_build_refuses_arming() {
+    let mut b = t(20);
+    b.succ(Succ {
+        current: None,
+        withdrawal: Some(Rec::withdrawal(25)),
+    });
+    arm(&mut b);
+    assert_eq!(b.state(), PState::none());
+}
+
+/// Revision 9 (F7): a RETIRED predecessor answers a creation probe 0x0C
+/// only when its retired_to is at or below the querier; a creation treats
+/// 0x0C as state (clears its arming).
+#[test]
+fn retired_answers_0x0c_only_at_or_below_the_querier() {
+    let mut b = t(10);
+    b.set(
+        PState::Retired {
+            to: Rec::build(20),
+            m: 7,
+            taken_over: None,
+        },
+        &[],
+    );
+    assert_eq!(cstatus(&b.hop(20, query(20, 0))), CStatus::RetiredNotAhead);
+    assert_eq!(cstatus(&b.hop(30, query(30, 0))), CStatus::RetiredNotAhead);
+    let mut b = t(10);
+    b.set(
+        PState::Retired {
+            to: Rec::build(30),
+            m: 7,
+            taken_over: None,
+        },
+        &[],
+    );
+    assert_eq!(cstatus(&b.hop(20, query(20, 0))), CStatus::AnotherWriter);
+    let mut c = t(30);
+    arm(&mut c);
+    c.hop(10, answer(10, 30, 0, CStatus::RetiredNotAhead));
+    assert_eq!(c.state(), PState::none(), "a creation treats 0x0C as state");
+}
+
+/// Revision 9 (F7): retiring unlists the partition before Retired is sent.
+#[test]
+fn retire_unlists_before_sending_retired() {
+    let es = [key(0, 5)];
+    let (mut s, m) = sealed_sender(30, &es);
+    s.store.secrets.insert(SName::Parts, SVal::Parts);
+    let out = s.call(Input::Hop {
+        from: 30,
+        frame: cack(30, m, CStatus::Accepted),
+    });
+    assert!(matches!(s.state(), PState::Retired { .. }));
+    assert!(!s.store.secrets.contains_key(&SName::Parts));
+    assert!(out
+        .hops
+        .iter()
+        .any(|(t, f)| *t == 30 && matches!(f, Frame::Retired { .. })));
 }
 
 // ------------------------------------------------------ host faults (4.0) and index loss (4.5)
@@ -768,10 +837,70 @@ fn undecryptable_index_while_listed_is_index_loss() {
         r => panic!("{r:?}"),
     }
     assert_eq!(generate(&mut b), OpRes::Refused(12));
-    // ResetPartition writes a fresh WRITER index
-    b.call(Input::Op(Op::Reset));
-    assert_eq!(b.state(), PState::Writer(WFields::default()));
+    // revision 9: Reindex removes the undecryptable index, writes a
+    // REPAIRING index from the copy on disk, and refuses changes until the
+    // creation guard passes
+    b.call(Input::Op(Op::Reindex {
+        slots: vec![(0, 5)],
+    }));
+    assert!(matches!(b.state(), PState::Repairing { .. }));
     assert!(!b.store.index_lost());
+    match b.call(Input::Op(Op::PublicKey { slot: 0 })).reply {
+        Reply::Op(r) => assert_eq!(r, OpRes::Key(5)),
+        r => panic!("{r:?}"),
+    }
+    assert_eq!(generate(&mut b), OpRes::Refused(12));
+    // the repair probes its one predecessor (10); 0x0B makes it WRITER
+    let out = b.call(Input::Poke {
+        flags: 0,
+        rec: None,
+    });
+    assert!(out
+        .hops
+        .iter()
+        .any(|(t, f)| *t == 10 && matches!(f, Frame::Query { m: 0, .. })));
+    b.hop(10, answer(10, 20, 0, CStatus::NoState));
+    assert_eq!(b.state(), PState::Writer(WFields::default()));
+}
+
+/// Revision 9 (4.6): a REPAIRING build probes one predecessor at a time,
+/// lowest first, ignores an answer from any other, and a record above its
+/// own version stops the repair (creation bar).
+#[test]
+fn repair_probes_lowest_first_and_stops_on_a_newer_record() {
+    let mut b = t(40);
+    b.set(
+        PState::Repairing {
+            confirmed: Default::default(),
+        },
+        &[key(0, 5)],
+    );
+    let out = b.call(Input::Poke {
+        flags: 0,
+        rec: None,
+    });
+    let to: Vec<Ver> = out.hops.iter().map(|(t, _)| *t).collect();
+    assert_eq!(to, vec![10]);
+    b.hop(20, answer(20, 40, 0, CStatus::NoState));
+    assert_eq!(
+        b.state(),
+        PState::Repairing {
+            confirmed: Default::default()
+        },
+        "an answer from a predecessor not probed is ignored"
+    );
+    let out = b.call(Input::Hop {
+        from: 10,
+        frame: answer(10, 40, 0, CStatus::RetiredNotAhead),
+    });
+    assert!(out.hops.iter().any(|(t, _)| *t == 20), "next probe sent");
+    b.call(Input::Poke {
+        flags: 0,
+        rec: Some(Rec::build(50)),
+    });
+    b.hop(20, answer(20, 40, 0, CStatus::NoState));
+    b.hop(30, answer(30, 40, 0, CStatus::NoState));
+    assert!(matches!(b.state(), PState::Repairing { .. }));
 }
 
 #[test]

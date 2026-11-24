@@ -69,6 +69,9 @@ pub enum Mutant {
     RepairOneUnconfirmed,
     /// Leave REPAIRING while the creation bar applies.
     RepairIgnoresBar,
+    /// Ignore the creation bar both when leaving REPAIRING and at Reindex
+    /// (the document checks it at both).
+    RepairIgnoresBarEverywhere,
     /// Probe predecessors in any order (all at once), not lowest first.
     RepairAnyOrder,
     /// A RETIRED predecessor answers 0x0C whatever its retired_to.
@@ -97,9 +100,10 @@ pub enum Mutant {
 }
 
 impl Mutant {
-    pub const ALL: [Mutant; 13] = [
+    pub const ALL: [Mutant; 14] = [
         Mutant::RepairOneUnconfirmed,
         Mutant::RepairIgnoresBar,
+        Mutant::RepairIgnoresBarEverywhere,
         Mutant::RepairAnyOrder,
         Mutant::Accept0x0CAbove,
         Mutant::CreationAccepts0x0C,
@@ -555,6 +559,7 @@ impl<'a> Cx<'a> {
         }
         self.hit("4.2/gc-processed");
         if self.p.mutant == Some(Mutant::GcDropBeforeAbsent) {
+            self.hit("mutant/gc-list-rewritten-before-removals");
             // mutant: the list is rewritten first, then the removals
             let idx = self.idx();
             let mut remaining = BTreeSet::new();
@@ -784,6 +789,11 @@ impl<'a> Cx<'a> {
         expected: Option<u32>,
     ) -> Result<Option<(bool, Entry)>, Unrecovered> {
         let gc = if self.p.mutant == Some(Mutant::DirectReadIgnoresGc) {
+            if let Some(SVal::Gc(g)) = self.host.read(&SName::Gc) {
+                if g.contains(&SName::E(id, false)) || g.contains(&SName::E(id, true)) {
+                    self.hit("mutant/direct-read-ignored-gc-listing");
+                }
+            }
             BTreeSet::new()
         } else {
             match self.host.read(&SName::Gc) {
@@ -897,8 +907,12 @@ impl<'a> Cx<'a> {
             return Ok(OpRes::Refused(7));
         }
         if self.creation_bar() {
-            self.hit("4.6/reindex-refused-creation-bar");
-            return Ok(OpRes::Refused(8));
+            if self.p.mutant == Some(Mutant::RepairIgnoresBarEverywhere) {
+                self.hit("mutant/reindex-ignored-creation-bar");
+            } else {
+                self.hit("4.6/reindex-refused-creation-bar");
+                return Ok(OpRes::Refused(8));
+            }
         }
         let mut found: BTreeMap<Ident, (bool, Entry)> = BTreeMap::new();
         let mut unrecovered = vec![];
@@ -1076,14 +1090,21 @@ impl<'a> Cx<'a> {
     }
 
     /// Whether the guard lets the REPAIRING build become WRITER.
-    fn repair_may_finish(&self, confirmed: &BTreeSet<Ver>) -> bool {
+    fn repair_may_finish(&mut self, confirmed: &BTreeSet<Ver>) -> bool {
         let left = self.repair_unconfirmed(confirmed).len();
         let all = match self.p.mutant {
             Some(Mutant::RepairOneUnconfirmed) => left <= 1,
             _ => left == 0,
         };
-        let bar = self.creation_bar() && self.p.mutant != Some(Mutant::RepairIgnoresBar);
-        all && !bar
+        let real_bar = self.creation_bar();
+        let bar = real_bar
+            && self.p.mutant != Some(Mutant::RepairIgnoresBar)
+            && self.p.mutant != Some(Mutant::RepairIgnoresBarEverywhere);
+        let ok = all && !bar;
+        if ok && (left > 0 || real_bar) {
+            self.hit("mutant/repair-left-against-the-guard");
+        }
+        ok
     }
 
     /// A poke to a REPAIRING build: send the next probe (lowest
@@ -1102,6 +1123,9 @@ impl<'a> Cx<'a> {
             self.hit("4.6/repair-blocked-by-creation-bar");
         }
         let targets: Vec<Ver> = if self.p.mutant == Some(Mutant::RepairAnyOrder) {
+            if un.len() > 1 {
+                self.hit("mutant/repair-probed-more-than-lowest");
+            }
             un
         } else {
             un.into_iter().take(1).collect()
@@ -1141,6 +1165,9 @@ impl<'a> Cx<'a> {
         };
         let un = self.repair_unconfirmed(confirmed);
         let expected = if self.p.mutant == Some(Mutant::RepairAnyOrder) {
+            if un.first() != Some(&p) && un.contains(&p) {
+                self.hit("mutant/repair-confirmed-out-of-order");
+            }
             un.contains(&p)
         } else {
             un.first() == Some(&p)
@@ -1338,6 +1365,9 @@ impl<'a> Cx<'a> {
                     {
                         self.hit("3/arm-refused-stopped");
                     } else {
+                        if self.succ().stopped() {
+                            self.hit("mutant/armed-while-stopped");
+                        }
                         // 5.3 step 1: the arming record with an empty
                         // confirmed set.
                         let mut n = idx.clone();
@@ -2292,7 +2322,11 @@ impl<'a> Cx<'a> {
         // revision 9, F7: unlist and read back; Retired (or "retired") only
         // once the list no longer names the partition
         match self.p.mutant {
-            Some(Mutant::NeverUnlist) | Some(Mutant::RelistRetired) => {}
+            Some(Mutant::NeverUnlist) | Some(Mutant::RelistRetired) => {
+                if self.parts_listed() {
+                    self.hit("mutant/retired-left-listed");
+                }
+            }
             Some(Mutant::RetiredBeforeUnlist) => {
                 self.hit("mutant/retired-sent-before-unlist");
             }
@@ -2562,6 +2596,9 @@ impl<'a> Cx<'a> {
                     {
                         self.hit("3/create-refused-stopped");
                     } else {
+                        if self.succ().stopped() {
+                            self.hit("mutant/created-while-stopped");
+                        }
                         if !self.ensure_parts()? {
                             return Ok(OpRes::Refused(12));
                         }

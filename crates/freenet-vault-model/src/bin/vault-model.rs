@@ -236,6 +236,14 @@ fn main() {
 /// Labels of stated residuals and of model-scope artefacts: a mutant caught
 /// only by these is not caught.
 const NOT_BLOCKING: &[&str] = &[
+    // findings of this run, reported on their own rows
+    "I3-orphan-direct-read",
+    "I3-orphan-reindexed",
+    "I2-orphan-reindexed",
+    "I3-retired-malformed-index",
+    "I2-retired-malformed-index",
+    "I3-listed-none-index",
+    "I2-listed-none-index",
     "I2-two-index-lost",
     "I2-direct-read-gc-lost",
     "I2-reindex-unrecoverable",
@@ -266,19 +274,47 @@ fn run_mutants(cfg: &Cfg, start: u64, seeds: u64, shrink_n: usize) {
     for m in Mutant::ALL {
         let mut c = cfg.clone();
         c.params.mutant = Some(m);
+        // a candidate: a blocking violation where the unmutated model has
+        // none or a different one. It counts only if its shrunk trace does
+        // not fail the same way under the unmutated model (otherwise the
+        // mutant only moved the run onto a finding the document already
+        // has).
         let mut caught: BTreeMap<&'static str, (u64, String)> = BTreeMap::new();
+        let mut rejected = 0u64;
+        let mut verified = 0u64;
         for (i, seed) in (start..start + seeds).enumerate() {
             let o = run(&c, &gen_scenario(seed, &c));
-            if let Some(v) = o.violation {
-                if base[i] != Some(v.inv) && !NOT_BLOCKING.contains(&v.inv) {
-                    let e = caught.entry(v.inv).or_insert((0, format!("seed {seed}")));
+            let Some(v) = o.violation else { continue };
+            if base[i] == Some(v.inv) || NOT_BLOCKING.contains(&v.inv) {
+                continue;
+            }
+            if caught.contains_key(v.inv) || verified >= 6 {
+                if let Some(e) = caught.get_mut(v.inv) {
                     e.0 += 1;
                 }
+                continue;
+            }
+            verified += 1;
+            let small = shrink(&c, &gen_scenario(seed, &c), v.inv);
+            let b = run(cfg, &small).violation.map(|x| x.inv);
+            let diverged = run(&c, &small)
+                .cov
+                .counts
+                .keys()
+                .any(|k| k.starts_with("mutant/"));
+            if b == Some(v.inv) || !diverged {
+                rejected += 1;
+                continue;
+            }
+            caught.insert(v.inv, (1, format!("seed {seed}")));
+            if shrink_n > 0 && caught.len() == 1 {
+                print_trace(&c, &small, seed);
             }
         }
         for (j, (k, sc)) in ds.iter().enumerate() {
             let o = run(&c, sc);
-            if let Some(v) = o.violation {
+            let diverged = o.cov.counts.keys().any(|k| k.starts_with("mutant/"));
+            if let Some(v) = o.violation.filter(|_| diverged) {
                 if dbase[j] != Some(v.inv) && !NOT_BLOCKING.contains(&v.inv) {
                     let e = caught.entry(v.inv).or_insert((0, format!("directed {k}")));
                     e.0 += 1;
@@ -287,22 +323,16 @@ fn run_mutants(cfg: &Cfg, start: u64, seeds: u64, shrink_n: usize) {
         }
         if caught.is_empty() {
             survivors += 1;
-            println!("mutant {m:?}: SURVIVED");
+            println!("mutant {m:?}: SURVIVED ({rejected} candidates rejected: their shrunk traces fail the unmutated model too)");
         } else {
             let s: Vec<String> = caught
                 .iter()
                 .map(|(k, (n, first))| format!("{k} x{n} (first {first})"))
                 .collect();
-            println!("mutant {m:?}: caught by {}", s.join(", "));
-            if shrink_n > 0 {
-                let (inv, (_, first)) = caught.iter().next().unwrap();
-                if let Some(seed) = first.strip_prefix("seed ") {
-                    let seed: u64 = seed.parse().unwrap();
-                    let sc = gen_scenario(seed, &c);
-                    let small = shrink(&c, &sc, inv);
-                    print_trace(&c, &small, seed);
-                }
-            }
+            println!(
+                "mutant {m:?}: caught by {} ({rejected} candidates rejected)",
+                s.join(", ")
+            );
         }
     }
     println!("mutants surviving: {survivors}");

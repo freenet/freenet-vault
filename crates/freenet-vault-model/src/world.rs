@@ -372,6 +372,11 @@ pub struct World {
     reindexed_from: BTreeMap<Ver, PState>,
     /// Builds a courier ever chose as the session target.
     routed: BTreeSet<Ver>,
+    /// Ground truth for finding F13 (revision 9): entry copies that were on
+    /// disk after a call while neither the readable index nor vault:gc
+    /// named them (left by a failed or interrupted write), as (build,
+    /// identity, content).
+    orphans: BTreeSet<(Ver, Ident, u32)>,
     /// Per predecessor, the queriers it answered 0x0B (decision 1).
     nostate_to: BTreeMap<Ver, BTreeSet<Ver>>,
 }
@@ -414,6 +419,7 @@ impl World {
             last_good: BTreeMap::new(),
             reindexed_from: BTreeMap::new(),
             routed: BTreeSet::new(),
+            orphans: BTreeSet::new(),
             nostate_to: BTreeMap::new(),
             cfg,
         }
@@ -551,6 +557,18 @@ impl World {
         if let Some(i) = self.stores[b].idx() {
             if !self.stores[b].index_lost() {
                 self.last_good.insert(ver(b), i.state.clone());
+                let gc = match self.stores[b].secrets.get(&SName::Gc) {
+                    Some(SVal::Gc(g)) => g.clone(),
+                    _ => BTreeSet::new(),
+                };
+                for (n, val) in &self.stores[b].secrets {
+                    if let (SName::E(id, par), SVal::E(en)) = (n, val) {
+                        let named = i.entries.get(id).map(|x| x.parity) == Some(*par);
+                        if !named && !gc.contains(n) {
+                            self.orphans.insert((ver(b), *id, en.content));
+                        }
+                    }
+                }
             }
         }
         let fired: Vec<WriteFault> = self.faults.fired[fired_before..].to_vec();
@@ -839,7 +857,7 @@ impl World {
 
     /// Candidates for a Step: FIFO-eligible hops (assumption D: no
     /// reordering between the same pair), idle sessions, limbo hops.
-    fn candidates(&self) -> Vec<(u8, usize, usize)> {
+    pub fn candidates(&self) -> Vec<(u8, usize, usize)> {
         if self.core() {
             return self.core_candidates();
         }
@@ -1711,6 +1729,13 @@ impl World {
                     .as_ref()
                     .is_some_and(|st| matches!(st.state, PState::Repairing { .. }));
                 let successor = st.as_ref().is_some_and(|st| st.succ.successor().is_some());
+                if lost {
+                    // 4.5: consented Export of the room keys while the
+                    // index is lost, whether or not 4.6 ships
+                    for (slot, _) in &ui_slots {
+                        sess.ops.push_back(Op::Export { slot: *slot });
+                    }
+                }
                 if lost && !successor {
                     sess.ops.push_back(Op::Reindex {
                         slots: ui_slots.clone(),
@@ -1783,12 +1808,14 @@ impl World {
             self.cov.hit(&format!("4.6/ui-reindex-result/{r:?}"));
         }
         match (&op, &r) {
-            (Op::PublicKey { slot }, OpRes::Key(k)) | (Op::Batch { slot, .. }, OpRes::Key(k)) => {
+            (Op::PublicKey { slot }, OpRes::Key(k))
+            | (Op::Batch { slot, .. }, OpRes::Key(k))
+            | (Op::Export { slot }, OpRes::Key(k)) => {
                 let id = (KIND_KEY, *slot);
                 if !self.restored && !self.tainted.contains(&id) {
                     let p = self.oracle.get(&id).cloned().unwrap_or_default();
                     if !p.allows(&Some(key_entry(*slot, *k))) {
-                        let label = self.i3_label(b, sid);
+                        let label = self.i3_label(b, sid, Some((id, *k)));
                         self.fail(
                             label,
                             format!(
@@ -1804,7 +1831,7 @@ impl World {
                 if !self.restored && !self.tainted.contains(&id) {
                     let p = self.oracle.get(&id).cloned().unwrap_or_default();
                     if !p.allows(&None) {
-                        let label = self.i3_label(b, sid);
+                        let label = self.i3_label(b, sid, None);
                         self.fail(
                             label,
                             format!(
@@ -1967,10 +1994,31 @@ impl World {
 
     /// Label for a stale read by build `b` (15.4 I3, revision 9: direct
     /// and REPAIRING reads are included; the labels only separate them).
-    fn i3_label(&self, b: usize, sid: Option<usize>) -> &'static str {
+    fn i3_label(&self, b: usize, sid: Option<usize>, served: Option<(Ident, u32)>) -> &'static str {
         let v = ver(b);
         let st = self.stores[b].idx_or_none().state;
-        if sid.is_none() && !self.routed.contains(&v) {
+        let orphan = served.is_some_and(|(id, k)| self.orphans.contains(&(v, id, k)));
+        let retired_malformed = self.stores[b].index_lost()
+            && !matches!(self.stores[b].secrets.get(&SName::Parts), Some(SVal::Parts))
+            && matches!(self.last_good.get(&v), Some(PState::Retired { .. }));
+        if orphan && self.stores[b].index_lost() {
+            // finding F13: the copy of a failed write, served by direct read
+            "I3-orphan-direct-read"
+        } else if orphan {
+            // finding F13: the copy of a failed write, indexed by Reindex
+            "I3-orphan-reindexed"
+        } else if self.stores[b].index_lost()
+            && matches!(self.last_good.get(&v), Some(st) if st.is_none())
+        {
+            // reading of 4.2 (list_none_indexes): a listed NONE index that
+            // is lost reports state 7 and an old-lineage courier selects it
+            "I3-listed-none-index"
+        } else if retired_malformed {
+            // finding F14: a RETIRED build, unlisted, whose index is
+            // malformed (not undecryptable): still index-lost (4.5
+            // condition 2), so an old-lineage courier selects it
+            "I3-retired-malformed-index"
+        } else if sid.is_none() && !self.routed.contains(&v) {
             // a cached caller addressing a build no courier ever chose
             // (the model's cached caller may pick any build)
             "I3-cached-never-routed"
@@ -1995,6 +2043,16 @@ impl World {
             }
             return "I8";
         }
+        if self.stores[b].index_lost()
+            && !matches!(self.stores[b].secrets.get(&SName::Parts), Some(SVal::Parts))
+            && matches!(self.last_good.get(&v), Some(PState::Retired { .. }))
+        {
+            return "I2-retired-malformed-index";
+        }
+        if self.stores[b].index_lost() && matches!(self.last_good.get(&v), Some(st) if st.is_none())
+        {
+            return "I2-listed-none-index";
+        }
         if self.stores[b].index_lost() {
             let gc_ok = matches!(
                 self.stores[b].secrets.get(&SName::Gc),
@@ -2014,6 +2072,15 @@ impl World {
             });
             if stated {
                 return "I2-reindex-unrecoverable";
+            }
+            if self
+                .orphans
+                .iter()
+                .any(|(ov, oid, _)| *ov == v && *oid == id)
+            {
+                // finding F13 in the repair path: Reindex picked the copy
+                // of a failed write, or dropped the slot because of it
+                return "I2-orphan-reindexed";
             }
             if self.reindex_crashed.contains(&v) {
                 return "I2-repair-interrupted";

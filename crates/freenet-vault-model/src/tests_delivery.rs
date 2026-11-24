@@ -9,14 +9,14 @@ use crate::world::{Cfg, Delivery};
 fn queued_mode_reproduces_f3() {
     let mut cfg = Cfg::gate();
     cfg.delivery = Delivery::Queued;
-    let o = run(&cfg, &gen_scenario(288, &cfg));
+    let o = run(&cfg, &gen_scenario(410, &cfg));
     assert_eq!(o.violation.map(|v| v.inv), Some("I4"));
 }
 
 #[test]
 fn core_mode_has_no_f3_on_the_queued_mode_seeds() {
     let cfg = Cfg::gate();
-    for seed in [288, 410, 564, 615, 795, 863, 1364, 1618] {
+    for seed in [410, 709, 795, 1618, 1757, 1794, 1797, 2208] {
         let o = run(&cfg, &gen_scenario(seed, &cfg));
         let inv = o.violation.map(|v| v.inv);
         assert!(
@@ -52,6 +52,12 @@ fn directed_scenarios_hit_their_rows() {
     assert!(!ds.is_empty());
     for (k, sc) in ds {
         let o = run(&cfg, &sc);
+        if let Some(inv) = k.strip_prefix("finding/") {
+            // a finding against revision 9: the scenario must still fail
+            // with its own label
+            assert_eq!(o.violation.map(|v| v.inv), Some(inv), "{k}");
+            continue;
+        }
         assert!(
             o.cov.get(k) > 0,
             "directed scenario for {k} no longer hits it"
@@ -59,17 +65,19 @@ fn directed_scenarios_hit_their_rows() {
     }
 }
 
-/// Finding (revision 8): a fresh install while stopped never creates; no
-/// invariant covers it (I7 is not checked while the newest record is a
-/// withdrawal), so it is pinned here.
+/// Revision 9 (F10): a fresh install while stopped is paused (the courier
+/// never arms), and the vault is created after a fix-forward record.
 #[test]
-fn fresh_install_while_stopped_never_creates() {
+fn fresh_install_while_stopped_is_paused_then_created_after_fix_forward() {
     let cfg = Cfg::gate();
     let o = run(&cfg, &crate::directed::fresh_install_while_stopped(&cfg));
     assert!(o.violation.is_none(), "{:?}", o.violation);
     assert_eq!(o.cov.get("5.1/created"), 0);
-    assert!(o.cov.get("13.1/armed-while-stopped") > 0);
-    assert!(o.cov.get("finding/creation-probe-blocked-by-withdrawal") > 0);
+    assert_eq!(o.cov.get("13.1/armed"), 0);
+    assert!(o.cov.get("5.2/paused-no-arm") > 0);
+    let o = run(&cfg, &crate::directed::stopped_then_fix_forward(&cfg));
+    assert!(o.violation.is_none(), "{:?}", o.violation);
+    assert!(o.cov.get("5.1/created") > 0);
 }
 
 /// Decision 1 condition: a crash between the older build storing the

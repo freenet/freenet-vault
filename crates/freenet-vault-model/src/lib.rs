@@ -1,7 +1,7 @@
 //! Abstract simulation model of the freenet-vault handover protocol.
 //!
 //! Step 1 of the acceptance gate in the handover protocol document
-//! (revision 8, section 15): an executable model written from the document
+//! (revision 9, section 15): an executable model written from the document
 //! alone, independently of the library's handover code. Each build is a pure
 //! state machine over an explicit durable store; a seeded scheduler drives
 //! clients, wake-ups, the publisher and the operator through the fault model
