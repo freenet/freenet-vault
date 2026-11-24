@@ -55,7 +55,13 @@ impl Store {
     /// lost index (4.5) holds state: the build may hold keys.
     pub fn has_state(&self) -> bool {
         if self.index_lost() {
-            return true;
+            // ground truth for the checker: the build listed the partition
+            // or holds entry copies (a damaged index of a build that only
+            // held an arming record holds no keys)
+            return matches!(
+                self.secrets.get(&SName::Parts),
+                Some(SVal::Parts) | Some(SVal::Garbled) | Some(SVal::Undecryptable)
+            ) || self.secrets.keys().any(|n| matches!(n, SName::E(..)));
         }
         match self.idx() {
             None => false,

@@ -1602,7 +1602,11 @@ impl World {
                         self.cov.hit("finding/I3-read-in-repair-window");
                     } else if !p.allows(&Some(key_entry(*slot, *k))) {
                         self.fail(
-                            "I3",
+                            if self.stores[b].index_lost() {
+                                "I3-direct-read"
+                            } else {
+                                "I3"
+                            },
                             format!(
                                 "build {} answered slot {slot} with key {k}; possible {p:?}",
                                 ver(b)
@@ -1742,7 +1746,7 @@ impl World {
         }
         // I5: creation only with no state anywhere
         let reset = notes.iter().any(|n| matches!(n, Note::Reset));
-        if reset {
+        if reset && !self.stores[b].index_lost() && matches!(after.state, PState::Writer(_)) {
             // 4.5: resetting a damaged build while another build is WRITER
             // or SEALED makes a second writer.
             self.cov.hit("4.5/reset-applied");
@@ -1944,6 +1948,8 @@ impl World {
                     }
                     let inv = if id.0 == KIND_UNKNOWN {
                         "I8"
+                    } else if self.stores[b].index_lost() {
+                        "I2-direct-read"
                     } else if self.repair_interrupted.contains(id) {
                         "I2-repair-interrupted"
                     } else {

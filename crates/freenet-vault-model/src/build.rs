@@ -585,9 +585,10 @@ impl<'a> Cx<'a> {
                 }
                 let mut n = Index::none();
                 n.state = PState::Writer(WFields::default());
+                // pushed before the write, so a crash right after it is seen
+                self.notes.push(Note::Reset);
                 if self.commit(&n)? {
                     self.hit("4.5/reset");
-                    self.notes.push(Note::Reset);
                     Ok(OpRes::Ok)
                 } else {
                     Ok(OpRes::Refused(12))
