@@ -7,7 +7,6 @@ pub const TAG_MANIFEST: &[u8] = b"freenet-vault/manifest/v1";
 pub const TAG_CHUNK: &[u8] = b"freenet-vault/chunk/v1";
 pub const TAG_KEY: &[u8] = b"freenet-vault/key/v1";
 pub const TAG_PARTITION: &[u8] = b"freenet-vault/partition/v1";
-pub const TAG_RESET: &[u8] = b"freenet-vault/reset/v1";
 
 fn tagged(tag: &[u8], parts: &[&[u8]]) -> [u8; 32] {
     let mut h = blake3::Hasher::new();
@@ -32,12 +31,6 @@ pub fn key_hash(kind: u8, key: &[u8]) -> [u8; 32] {
 /// `BLAKE3("freenet-vault/partition/v1" || DOMAIN_AUTHOR_VK || DOMAIN_APP_ID)`.
 pub fn partition_id(domain_author_vk: &[u8; 32], domain_app_id: &[u8]) -> [u8; 32] {
     tagged(TAG_PARTITION, &[domain_author_vk, domain_app_id])
-}
-
-/// `BLAKE3("freenet-vault/reset/v1" || partition)`: the `confirm` field of
-/// ResetPartition (protocol 12.5).
-pub fn reset_confirm(partition: &[u8; 32]) -> [u8; 32] {
-    tagged(TAG_RESET, &[partition])
 }
 
 /// `BLAKE3("freenet-vault/manifest/v1" || sorted digests)`. The caller sorts.

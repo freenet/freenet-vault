@@ -48,7 +48,7 @@ pub mod types {
     pub const EXPORT: u8 = 0x86;
     // 0x87 is reserved: RetireTo was removed in revision 7. A page sending it
     // gets Refused(10), like any other unknown frame.
-    pub const RESET_PARTITION: u8 = 0x88;
+    // 0x88 is reserved (Reindex, v1.1; ResetPartition was removed in revision 10).
 
     pub const KEY_RESULT: u8 = 0xA0;
     pub const OK: u8 = 0xA1;

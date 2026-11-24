@@ -187,35 +187,6 @@ impl<'a, H: Host> Store<'a, H> {
         }
     }
 
-    /// [`fault`](Self::fault), plus one more unknown state for a request that
-    /// names `slot`: no index and no `vault:parts` listing, but a decodable
-    /// entry for that slot is on disk. The index and the listing may both be
-    /// corrupt (an undecryptable blob reads as absent, core #6323), so the
-    /// partition is not taken to be new: the slot can be read by direct read,
-    /// and nothing may be created over it.
-    pub fn fault_for_slot(
-        host: &H,
-        partition: &[u8; 32],
-        slot: Option<&[u8]>,
-    ) -> Option<StoredIndexMalformed> {
-        if let Some(f) = Self::fault(host, partition) {
-            return Some(f);
-        }
-        let slot = slot?;
-        // Presence is separate from choosing a value: any copy that decodes
-        // makes the slot present, even when the copies disagree or carry flags
-        // this build will not serve.
-        if host.get_secret(&names::index(partition)).is_none()
-            && !matches!(
-                direct_lookup(host, partition, KIND_KEY, slot),
-                Direct::Absent
-            )
-        {
-            return Some(StoredIndexMalformed(IndexFault::LostWhileListed));
-        }
-        None
-    }
-
     /// A read-only store for a partition whose index state is unknown: reads
     /// find an entry by its two parity copies, and nothing is ever written.
     /// The routing state is taken to be WRITER (this build has no other
@@ -680,74 +651,6 @@ pub fn rescue_export_seed<H: Host>(
         Direct::One(e) if !e.has_unknown_flags() => <[u8; 32]>::try_from(e.content.as_slice()).ok(),
         _ => None,
     }
-}
-
-/// ResetPartition (protocol 4.5): writes a fresh, empty, checksummed WRITER
-/// index over a lost one and keeps `vault:parts` listing the partition. Old
-/// entry copies stay on disk; the gc lists are emptied so that nothing named
-/// in them (possibly a live copy, since no index says which) is removed.
-/// The caller has checked that the index is lost.
-pub fn reset_partition<H: Host>(host: &mut H, partition: &[u8; 32]) -> Result<(), StorageFailure> {
-    // Under the host's rule for undecryptable blobs a `set_secret` over one is
-    // refused while `remove_secret` is allowed, so each secret that is rewritten
-    // here is removed first (`replace_secret` for the lists, an explicit
-    // removal for the index).
-    //
-    // 1. The gc lists go first, and both must take: once the empty index is
-    //    published, gc would remove every name still listed, and a listed name
-    //    may be the only copy of a key. A crash or a failure after this point
-    //    leaves empty lists, which is harmless.
-    let empty = encode_names(&[])?;
-    for name in [names::gc(partition), names::gc2(partition)] {
-        let _ = host.remove_secret(&name);
-        if !host.set_secret(&name, &empty) {
-            return Err(StorageFailure);
-        }
-    }
-    // 2. `vault:parts` lists the partition before the index is replaced, so a
-    //    crash between the removal and the write of the index leaves the index
-    //    absent while listed (read-only, Reset can run again), never "new". A
-    //    list that parses is kept. One that READS is overwritten in place
-    //    (never removed first: a crash between the removal and the write would
-    //    leave no list, and with the index absent the partition would look
-    //    new). Only a list that reads as absent (possibly undecryptable, where
-    //    a write is refused) is removed first, and only while the damaged
-    //    index still reads, so a crash leaves a damaged index, not a fresh
-    //    partition. This build has one partition, so the list is replaced by it.
-    let parts = host.get_secret(names::PARTS);
-    let parts_ok = parts
-        .as_ref()
-        .is_some_and(|l| l.len() % 32 == 0 && l.chunks(32).any(|c| c == partition));
-    if !parts_ok {
-        let mut list = match &parts {
-            Some(l) if l.len() % 32 == 0 => l.clone(),
-            _ => Vec::new(),
-        };
-        list.extend_from_slice(partition);
-        if parts.is_none() {
-            if host.get_secret(&names::index(partition)).is_none() {
-                // Neither reads: removing the list would make the partition
-                // look new.
-                return Err(StorageFailure);
-            }
-            let _ = host.remove_secret(names::PARTS);
-        }
-        if !host.set_secret(names::PARTS, &list) {
-            return Err(StorageFailure);
-        }
-    }
-    // 3. The index: remove the damaged one, then write the fresh one.
-    let mut fresh = Index::none();
-    fresh.state = index::State::Writer;
-    let bytes = fresh.encode();
-    let name = names::index(partition);
-    let _ = host.remove_secret(&name);
-    if !host.set_secret(&name, &bytes)
-        && host.get_secret(&name).as_deref() != Some(bytes.as_slice())
-    {
-        return Err(StorageFailure);
-    }
-    Ok(())
 }
 
 /// `vault:parts`: the partition ids this build holds state for.

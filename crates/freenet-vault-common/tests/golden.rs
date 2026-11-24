@@ -395,22 +395,3 @@ fn entry_vectors_for_both_kinds_flags_and_extensions() {
     assert_eq!(reserved.encode().unwrap(), want);
     assert_eq!(Entry::decode(&want).unwrap(), reserved);
 }
-
-/// ResetPartition 0x88 (protocol 12.5): RequestHeader, then `confirm 32`.
-#[test]
-fn reset_partition_vector_and_confirm_hash() {
-    check(
-        page_req(Operation::ResetPartition {
-            confirm: [0x33; 32],
-        }),
-        frame(0x88, &cat(&[&PAGE, &[0x33; 32], &NO_EXT])),
-    );
-    // confirm = BLAKE3("freenet-vault/reset/v1" || partition), recomputed with
-    // b3sum over the ASCII tag followed by 32 bytes of 0x07.
-    let want: [u8; 32] = [
-        0x49, 0xa8, 0x82, 0x52, 0x0b, 0x68, 0xbb, 0x17, 0x68, 0x53, 0x47, 0x62, 0x7e, 0x39, 0x54,
-        0x26, 0x6d, 0x42, 0xd3, 0xd8, 0xf7, 0xf9, 0x16, 0x4c, 0xa5, 0xaa, 0xb5, 0x7f, 0xf5, 0x1d,
-        0xbc, 0x3d,
-    ];
-    assert_eq!(freenet_vault_common::hash::reset_confirm(&[0x07; 32]), want);
-}

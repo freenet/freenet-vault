@@ -131,12 +131,6 @@ pub enum Operation {
     Export {
         slot: Vec<u8>,
     },
-    /// `confirm 32 = BLAKE3("freenet-vault/reset/v1" || partition)` (protocol
-    /// 4.5): domain pages only, behind the consent prompt, only while the
-    /// index is lost.
-    ResetPartition {
-        confirm: [u8; 32],
-    },
 }
 
 impl Operation {
@@ -149,7 +143,6 @@ impl Operation {
             Self::List { .. } => types::LIST,
             Self::Batch { .. } => types::BATCH,
             Self::Export { .. } => types::EXPORT,
-            Self::ResetPartition { .. } => types::RESET_PARTITION,
         }
     }
 
@@ -162,7 +155,7 @@ impl Operation {
             | Self::PublicKey { slot }
             | Self::Batch { slot, .. }
             | Self::Export { slot } => Some(slot),
-            Self::List { .. } | Self::ResetPartition { .. } => None,
+            Self::List { .. } => None,
         }
     }
 }
@@ -177,7 +170,7 @@ pub struct Request {
 
 /// Is this frame type an operation request this crate decodes?
 pub fn is_operation(frame_type: u8) -> bool {
-    (types::GENERATE..=types::EXPORT).contains(&frame_type) || frame_type == types::RESET_PARTITION
+    (types::GENERATE..=types::EXPORT).contains(&frame_type)
 }
 
 impl Request {
@@ -253,9 +246,6 @@ impl Request {
             types::EXPORT => Operation::Export {
                 slot: read_slot(&mut r)?,
             },
-            types::RESET_PARTITION => Operation::ResetPartition {
-                confirm: r.array("confirm")?,
-            },
             _ => return Err(Malformed("not an operation")),
         };
         let ext = r.ext()?;
@@ -288,9 +278,6 @@ impl Request {
             | Operation::PublicKey { slot }
             | Operation::Export { slot } => {
                 write_slot(&mut w, slot);
-            }
-            Operation::ResetPartition { confirm } => {
-                w.bytes(confirm);
             }
             Operation::List { after, max } => {
                 w.require(after.len() <= MAX_LIST_AFTER, "after_len")

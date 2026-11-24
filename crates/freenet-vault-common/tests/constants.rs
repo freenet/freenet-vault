@@ -81,7 +81,6 @@ fn frozen_constants_by_value() {
         (types::LIST, 0x84),
         (types::BATCH, 0x85),
         (types::EXPORT, 0x86),
-        (types::RESET_PARTITION, 0x88),
         (types::KEY_RESULT, 0xA0),
         (types::OK, 0xA1),
         (types::LIST_RESULT, 0xA2),

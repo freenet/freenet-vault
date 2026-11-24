@@ -8,7 +8,7 @@ use crate::crypto;
 use crate::domain::Domain;
 use crate::host::Host;
 use crate::storage::index::State;
-use crate::storage::{rescue_export_seed, reset_partition, PutError, Quota, Read, Store};
+use crate::storage::{rescue_export_seed, PutError, Quota, Read, Store};
 use crate::succ::{accept_record, Succ};
 use freenet_vault_common::bounds::FORBIDDEN_SIGNING_PREFIX;
 use freenet_vault_common::codec::Malformed;
@@ -157,7 +157,7 @@ pub fn handle_delegate<H: Host>(
         Err(reason) => return refusal(rid, reason),
     };
     // Export is never offered to a delegate, whatever the domain lists.
-    if !domain.delegate_frames.contains(&t) || t == types::EXPORT || t == types::RESET_PARTITION {
+    if !domain.delegate_frames.contains(&t) || t == types::EXPORT {
         return refusal(rid, refused::OPERATION_NOT_ALLOWED);
     }
     operation(domain, host, &c, req)
@@ -481,7 +481,7 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
         Operation::Generate { .. } | Operation::Import { .. } | Operation::Delete { .. }
     );
     let succ = Succ::load(domain, host).ok();
-    let fault = Store::fault_for_slot(&*host, &domain.partition(), req.op.slot());
+    let fault = Store::fault(&*host, &domain.partition());
     let mut store = match fault {
         None => match Store::open(host, domain.partition()) {
             Ok(s) => s,
@@ -491,10 +491,7 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
         Some(_) => match (&req.op, caller) {
             // A page may rescue a key with Export, behind the consent prompt.
             (Operation::Export { slot }, Caller::Page { id }) => {
-                return ask(domain, host, id, rid, slot, false)
-            }
-            (Operation::ResetPartition { confirm }, Caller::Page { id }) => {
-                return reset_request(domain, host, id, rid, confirm)
+                return ask(domain, host, id, rid, slot)
             }
             // Signing does not stop: the entry is found by its two parity
             // copies.
@@ -504,10 +501,6 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
             _ => return refusal(rid, refused::STORAGE_FAILURE),
         },
     };
-    if let Operation::ResetPartition { .. } = req.op {
-        // The index reads fine: nothing to reset (protocol 4.5).
-        return refusal(rid, refused::OPERATION_NOT_ALLOWED);
-    }
     let (sealed, changes_busy, creating) = match route(domain, &store, &succ, is_change, rid) {
         Route::Answer(s) => return status(s),
         Route::Create => (false, false, true),
@@ -667,7 +660,6 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
                 .collect();
             reply(OpResult::Batch(results).encode(rid), rid)
         }
-        Operation::ResetPartition { .. } => refusal(rid, refused::OPERATION_NOT_ALLOWED),
         Operation::Export { slot } => {
             let Caller::Page { id } = caller else {
                 return refusal(rid, refused::OPERATION_NOT_ALLOWED);
@@ -675,21 +667,19 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
             if let Err(o) = usable_seed(domain, &mut store, &slot, sealed, true, rid) {
                 return o;
             }
-            ask(domain, store.host(), id, rid, &slot, false)
+            ask(domain, store.host(), id, rid, &slot)
         }
     }
 }
 
-/// Stores the pending request and asks the user. The prompt does not depend on
-/// the index, so it works while the store is read-only. `reset` asks to repair
-/// the partition (ResetPartition) instead of to export `slot`.
+/// Stores the pending Export and asks the user. The prompt does not depend on
+/// the index, so it works while the store is read-only.
 fn ask<H: Host>(
     domain: &Domain,
     host: &mut H,
     origin: &[u8; 32],
     rid: u64,
     slot: &[u8],
-    reset: bool,
 ) -> Outcome {
     let mut idb = [0u8; 4];
     let mut prompt_id = 0u32;
@@ -708,39 +698,14 @@ fn ask<H: Host>(
         origin: *origin,
         request_id: rid,
         slot: slot.to_vec(),
-        reset,
     };
     if !host.write_context(&pending.encode()) {
         return refusal(rid, refused::STORAGE_FAILURE);
     }
-    let text = if reset {
-        consent::RESET_PROMPT.to_string()
-    } else {
-        (domain.export_prompt)(slot)
-    };
-    Outcome::Prompt { prompt_id, text }
-}
-
-/// ResetPartition, first half (protocol 4.5): a domain page, while the index
-/// is lost, with the right `confirm`. The node then asks the user.
-fn reset_request<H: Host>(
-    domain: &Domain,
-    host: &mut H,
-    origin: &[u8; 32],
-    rid: u64,
-    confirm: &[u8; 32],
-) -> Outcome {
-    // A newer build is known: this one must not become a writer again.
-    if Succ::load(domain, host)
-        .ok()
-        .is_some_and(|s| s.successor().is_some())
-    {
-        return refusal(rid, refused::OPERATION_NOT_ALLOWED);
+    Outcome::Prompt {
+        prompt_id,
+        text: (domain.export_prompt)(slot),
     }
-    if *confirm != freenet_vault_common::hash::reset_confirm(&domain.partition()) {
-        return refusal(rid, refused::MALFORMED);
-    }
-    ask(domain, host, origin, rid, &[], true)
 }
 
 fn list<H: Host>(
@@ -817,28 +782,8 @@ pub fn export_answer<H: Host>(
     if response != consent::ALLOW || !domain.is_own_page(origin) {
         return Some(refusal(rid, refused::CONSENT_DENIED));
     }
-    if pending.reset {
-        // Everything is checked again when the user answers: the index must
-        // still be lost, and no newer build may have become known meanwhile.
-        // (That no other build is WRITER or SEALED is the courier's check, from
-        // the statuses it reads; the library cannot see other builds.)
-        let p = domain.partition();
-        if Succ::load(domain, host)
-            .ok()
-            .is_some_and(|s| s.successor().is_some())
-        {
-            return Some(refusal(rid, refused::OPERATION_NOT_ALLOWED));
-        }
-        return Some(match Store::fault(&*host, &p) {
-            Some(_) => match reset_partition(host, &p) {
-                Ok(()) => reply(OpResult::Ok.encode(rid), rid),
-                Err(_) => refusal(rid, refused::STORAGE_FAILURE),
-            },
-            None => refusal(rid, refused::OPERATION_NOT_ALLOWED),
-        });
-    }
     let succ = Succ::load(domain, host).ok();
-    let unknown = Store::fault_for_slot(&*host, &domain.partition(), Some(&pending.slot));
+    let unknown = Store::fault(&*host, &domain.partition());
     let opened = match unknown {
         None => Store::open(host, domain.partition()).ok(),
         Some(_) => None,
