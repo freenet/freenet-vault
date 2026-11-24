@@ -142,12 +142,16 @@ Storage and formats:
   listed). gc list copies are written one after the other and the write stops
   at the first failure, so a torn write damages at most one copy.
   Round-5 findings against this model: moot (they need a present secret to read
-  as absent in a completed call): blind arming over a transient miss, `vault:parts`
+  as absent in a completed call): blind arming over a transient miss (also the
+  skeptical lens's S1: index and `vault:parts` both missing in a completed call
+  means they are really absent, so the partition really is new), `vault:parts`
   rewritten after a miss, direct-read mode meeting a stale or uncommitted copy
   because the other copy read as absent, the empty-index exception and the
   3-pass forgetting in gc, both gc lists unreadable. Fixed: Reset clears both gc
   lists first and requires them to take; the failed-write latch is per call;
-  both gc copies unparseable no longer blocks writes; a malformed `vault:parts`
+  both gc copies unparseable no longer blocks writes (the lists are rebuilt by the
+  next write, and ResetPartition also rewrites both, so no state stays read-only
+  without bit 6); a malformed `vault:parts`
   with no index can be reset; a Reset is refused when a newer build is known;
   both parity names are always listed for gc so a stale copy left at the other
   parity is collected. Stated residuals: direct-read mode has no content
