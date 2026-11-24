@@ -1873,7 +1873,9 @@ impl<'a> Cx<'a> {
                 }
             }
             PState::Repairing { .. } => {
-                unreachable!("REPAIRING calls are dispatched to repairing()")
+                // only in a call poisoned by a read fault (the first index
+                // read misread as NONE); the host discards its outputs
+                Ok(ignored())
             }
             PState::Receiving { .. } => {
                 self.hit(&format!("7.6/RECEIVING(higher)/{fname}"));

@@ -377,6 +377,8 @@ pub struct World {
     /// named them (left by a failed or interrupted write), as (build,
     /// identity, content).
     orphans: BTreeSet<(Ver, Ident, u32)>,
+    /// Entry names dropped from vault:gc while their copy was on disk.
+    gc_dropped: BTreeSet<(Ver, SName)>,
     /// Per predecessor, the queriers it answered 0x0B (decision 1).
     nostate_to: BTreeMap<Ver, BTreeSet<Ver>>,
 }
@@ -420,6 +422,7 @@ impl World {
             reindexed_from: BTreeMap::new(),
             routed: BTreeSet::new(),
             orphans: BTreeSet::new(),
+            gc_dropped: BTreeSet::new(),
             nostate_to: BTreeMap::new(),
             cfg,
         }
@@ -490,6 +493,10 @@ impl World {
         let before = self.stores[b].idx_or_none();
         let before_lost = self.stores[b].index_lost();
         let before_succ = self.stores[b].succ();
+        let gc_before = match self.stores[b].secrets.get(&SName::Gc) {
+            Some(SVal::Gc(g)) => g.clone(),
+            _ => BTreeSet::new(),
+        };
         // A Query (creation probe, m zero; or an awaiting successor's
         // Query, m non-zero) reaching a NONE predecessor.
         let query_to_none = match &input {
@@ -568,7 +575,13 @@ impl World {
                 for (n, val) in &self.stores[b].secrets {
                     if let (SName::E(id, par), SVal::E(en)) = (n, val) {
                         let named = i.entries.get(id).map(|x| x.parity) == Some(*par);
-                        if !named && !gc.contains(n) {
+                        // a name that left vault:gc in this call while its
+                        // copy is still on disk was dropped from the list,
+                        // not left by a failed write
+                        if !named && !gc.contains(n) && gc_before.contains(n) {
+                            self.gc_dropped.insert((ver(b), *n));
+                        }
+                        if !named && !gc.contains(n) && !self.gc_dropped.contains(&(ver(b), *n)) {
                             self.orphans.insert((ver(b), *id, en.content));
                         }
                     }
