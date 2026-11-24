@@ -69,6 +69,8 @@ pub mod problems {
     pub const STAGING_FULL: u8 = 1 << 3;
     pub const COPYING_PAUSED: u8 = 1 << 4;
     pub const RECEIVER_HIGHER_BUILD: u8 = 1 << 5;
+    /// The index is absent while listed, or malformed: read-only (protocol 4.5).
+    pub const INDEX_LOST: u8 = 1 << 6;
 }
 
 /// Poke flag bits. Only bit 1 is acted on by this implementation; bits 2 and 3

@@ -47,9 +47,28 @@ use index::{Index, IndexEntry};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StorageFailure;
 
-/// The stored index does not parse. Never read as "no partition".
+/// Why the index state is unknown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StoredIndexMalformed;
+pub enum IndexFault {
+    /// The index is present but torn, malformed or failing its checksum.
+    Damaged,
+    /// The index is absent while `vault:parts` lists the partition.
+    LostWhileListed,
+    /// `vault:parts` is present but malformed.
+    PartsUnreadable,
+}
+
+/// The index state is unknown: never read as "no partition". The partition is
+/// read-only for the call (protocol 4.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StoredIndexMalformed(pub IndexFault);
+
+impl StoredIndexMalformed {
+    /// HandoverStatus `problems` bit 6 is set for these (protocol 4.5).
+    pub fn index_lost(&self) -> bool {
+        matches!(self.0, IndexFault::Damaged | IndexFault::LostWhileListed)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PutError {
@@ -121,6 +140,9 @@ pub struct Store<'a, H: Host> {
     /// An index was read (or committed) in this call.
     exists: bool,
     mode: Mode,
+    /// No index could be read: entries are located by reading both parity
+    /// copies directly (protocol 4.5). Read-only.
+    blind: bool,
     /// An index passed its checksum in this call. Without that there is no
     /// positive evidence of what the partition holds, so nothing is removed.
     verified: bool,
@@ -139,13 +161,16 @@ impl<'a, H: Host> Store<'a, H> {
                 let _ = ensure_part_listed(host, &partition);
                 (ix, first, true, true)
             }
-            Some(Err(_)) => return Err(StoredIndexMalformed),
+            Some(Err(_)) => return Err(StoredIndexMalformed(IndexFault::Damaged)),
             None => {
                 // Absent. A new partition only when `vault:parts` reads and
                 // does not name it.
                 match host.get_secret(names::PARTS) {
-                    Some(l) if l.len() % 32 != 0 || l.chunks(32).any(|c| c == partition) => {
-                        return Err(StoredIndexMalformed)
+                    Some(l) if l.len() % 32 != 0 => {
+                        return Err(StoredIndexMalformed(IndexFault::PartsUnreadable))
+                    }
+                    Some(l) if l.chunks(32).any(|c| c == partition) => {
+                        return Err(StoredIndexMalformed(IndexFault::LostWhileListed))
                     }
                     _ => (Index::none(), None, false, false),
                 }
@@ -158,8 +183,58 @@ impl<'a, H: Host> Store<'a, H> {
             on_disk,
             exists,
             mode: Mode::Clean,
+            blind: false,
             verified,
         })
+    }
+
+    /// Classifies the index state without keeping a borrow of the host:
+    /// `None` when [`open`](Self::open) would succeed.
+    pub fn fault(host: &H, partition: &[u8; 32]) -> Option<StoredIndexMalformed> {
+        match host
+            .get_secret(&names::index(partition))
+            .as_deref()
+            .map(Index::decode)
+        {
+            Some(Ok(_)) => None,
+            Some(Err(_)) => Some(StoredIndexMalformed(IndexFault::Damaged)),
+            None => match host.get_secret(names::PARTS) {
+                Some(l) if l.len() % 32 != 0 => {
+                    Some(StoredIndexMalformed(IndexFault::PartsUnreadable))
+                }
+                Some(l) if l.chunks(32).any(|c| c == partition) => {
+                    Some(StoredIndexMalformed(IndexFault::LostWhileListed))
+                }
+                _ => None,
+            },
+        }
+    }
+
+    /// A read-only store for a partition whose index state is unknown: reads
+    /// find an entry by its two parity copies, and nothing is ever written.
+    /// The routing state is taken to be WRITER (this build has no other
+    /// reachable state while it holds keys).
+    pub fn open_blind(host: &'a mut H, partition: [u8; 32]) -> Self {
+        let mut index = Index::none();
+        index.state = index::State::Writer;
+        Self {
+            host,
+            partition,
+            index,
+            on_disk: None,
+            exists: false,
+            mode: Mode::ReadOnly,
+            blind: true,
+            verified: false,
+        }
+    }
+
+    pub fn is_blind(&self) -> bool {
+        self.blind
+    }
+
+    pub fn is_read_only(&self) -> bool {
+        self.mode != Mode::Clean
     }
 
     pub fn mode(&self) -> Mode {
@@ -438,6 +513,13 @@ impl<'a, H: Host> Store<'a, H> {
     /// representation; bytes that do not are dropped from the index and
     /// counted. While sealed nothing is rewritten or removed.
     pub fn read(&mut self, kind: u8, key: &[u8], sealed: bool) -> Read {
+        if self.blind {
+            return match direct_entry(self.host, &self.partition, kind, key) {
+                Some(e) if e.is_flagged_corrupt() => Read::Corrupt(Some(e)),
+                Some(e) => Read::Ok(e),
+                None => Read::Missing,
+            };
+        }
         // A read-only store changes nothing, like a sealed one.
         let sealed = sealed || self.mode == Mode::ReadOnly;
         let Some(i) = self.index.find(kind, key) else {
@@ -576,32 +658,58 @@ pub fn encode_gc_for_test(names: &[Vec<u8>]) -> Vec<u8> {
     encode_names(&list).expect("short list")
 }
 
-/// Export while the index state is unknown: reads both parity copies of the
-/// slot directly and returns a seed only when exactly one of them decodes as a
-/// key entry for that slot with a 32-byte seed.
+/// Finds the entry `(kind, key)` with no index: reads both parity copies and
+/// uses the entry only when exactly one distinct value decodes as a valid
+/// entry for that slot (two identical copies are one value). None when neither
+/// decodes or the two differ (an interrupted replace).
+fn direct_entry<H: Host>(host: &H, partition: &[u8; 32], kind: u8, key: &[u8]) -> Option<Entry> {
+    let mut found: Vec<Entry> = Vec::new();
+    for parity in 0..2u8 {
+        let Some(bytes) = host.get_secret(&names::entry(partition, kind, key, parity)) else {
+            continue;
+        };
+        if let Ok(e) = Entry::decode(&bytes) {
+            if e.kind == kind && e.key == key && !found.contains(&e) {
+                found.push(e);
+            }
+        }
+    }
+    match found.len() {
+        1 => found.pop(),
+        _ => None,
+    }
+}
+
+/// Export while the index state is unknown: the seed of the slot's entry found
+/// by [`direct_entry`] (a flagged-corrupt entry is exportable, protocol 4.3).
 pub fn rescue_export_seed<H: Host>(
     host: &H,
     partition: &[u8; 32],
     slot: &[u8],
 ) -> Option<[u8; 32]> {
-    let mut found: Vec<[u8; 32]> = Vec::new();
-    for parity in 0..2u8 {
-        let name = names::entry(partition, KIND_KEY, slot, parity);
-        let Some(bytes) = host.get_secret(&name) else {
-            continue;
-        };
-        if let Ok(e) = Entry::decode(&bytes) {
-            if e.kind == KIND_KEY && e.key == slot {
-                if let Ok(seed) = <[u8; 32]>::try_from(e.content.as_slice()) {
-                    found.push(seed);
-                }
-            }
-        }
+    let e = direct_entry(host, partition, KIND_KEY, slot)?;
+    <[u8; 32]>::try_from(e.content.as_slice()).ok()
+}
+
+/// ResetPartition (protocol 4.5): writes a fresh, empty, checksummed WRITER
+/// index over a lost one and keeps `vault:parts` listing the partition. Old
+/// entry copies stay on disk; the gc lists are emptied so that nothing named
+/// in them (possibly a live copy, since no index says which) is removed.
+/// The caller has checked that the index is lost.
+pub fn reset_partition<H: Host>(host: &mut H, partition: &[u8; 32]) -> Result<(), StorageFailure> {
+    let mut fresh = Index::none();
+    fresh.state = index::State::Writer;
+    let bytes = fresh.encode();
+    let name = names::index(partition);
+    if !host.set_secret(&name, &bytes)
+        && host.get_secret(&name).as_deref() != Some(bytes.as_slice())
+    {
+        return Err(StorageFailure);
     }
-    match found.as_slice() {
-        [one] => Some(*one),
-        _ => None,
-    }
+    let empty = encode_names(&[])?;
+    let _ = host.set_secret(&names::gc(partition), &empty);
+    let _ = host.set_secret(&names::gc2(partition), &empty);
+    ensure_part_listed(host, partition)
 }
 
 /// `vault:parts`: the partition ids this build holds state for.

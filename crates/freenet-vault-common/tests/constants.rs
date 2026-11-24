@@ -49,6 +49,7 @@ fn frozen_constants_by_value() {
     assert_eq!(problems::STAGING_FULL, 0x08);
     assert_eq!(problems::COPYING_PAUSED, 0x10);
     assert_eq!(problems::RECEIVER_HIGHER_BUILD, 0x20);
+    assert_eq!(problems::INDEX_LOST, 0x40);
     // Poke flags: bits 0, 1 and 4.
     assert_eq!(poke_flags::PAUSE_COPYING, 0x01);
     assert_eq!(poke_flags::ARM, 0x02);
@@ -80,6 +81,7 @@ fn frozen_constants_by_value() {
         (types::LIST, 0x84),
         (types::BATCH, 0x85),
         (types::EXPORT, 0x86),
+        (types::RESET_PARTITION, 0x88),
         (types::KEY_RESULT, 0xA0),
         (types::OK, 0xA1),
         (types::LIST_RESULT, 0xA2),

@@ -949,7 +949,11 @@ fn rescue_export_needs_exactly_one_decodable_copy() {
     put(&mut h, &key_entry(1, 9)).unwrap();
     let slot = [1u8; 32];
     assert_eq!(rescue_export_seed(&h, &P, &slot), Some([9; 32]));
-    // Two decodable copies: refused.
+    // Two identical copies are one value.
+    let same = h.secrets[&entry_name(1, 0)].clone();
+    h.secrets.insert(entry_name(1, 1), same);
+    assert_eq!(rescue_export_seed(&h, &P, &slot), Some([9; 32]));
+    // Two that differ: refused.
     let other = key_entry(1, 8).encode().unwrap();
     h.secrets.insert(entry_name(1, 1), other);
     assert_eq!(rescue_export_seed(&h, &P, &slot), None);

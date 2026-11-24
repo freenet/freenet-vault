@@ -8,7 +8,9 @@ use crate::crypto;
 use crate::domain::Domain;
 use crate::host::Host;
 use crate::storage::index::State;
-use crate::storage::{rescue_export_seed, PutError, Quota, Read, Store};
+use crate::storage::{
+    rescue_export_seed, reset_partition, PutError, Quota, Read, Store, StoredIndexMalformed,
+};
 use crate::succ::{accept_record, Succ};
 use freenet_vault_common::bounds::FORBIDDEN_SIGNING_PREFIX;
 use freenet_vault_common::codec::Malformed;
@@ -157,7 +159,7 @@ pub fn handle_delegate<H: Host>(
         Err(reason) => return refusal(rid, reason),
     };
     // Export is never offered to a delegate, whatever the domain lists.
-    if !domain.delegate_frames.contains(&t) || t == types::EXPORT {
+    if !domain.delegate_frames.contains(&t) || t == types::EXPORT || t == types::RESET_PARTITION {
         return refusal(rid, refused::OPERATION_NOT_ALLOWED);
     }
     operation(domain, host, &c, req)
@@ -421,6 +423,11 @@ fn gate_caller<H: Host>(
             if let Some(s) = answer {
                 return Some(status(s));
             }
+            // Read-only: the raise cannot be written, so the caller is served
+            // on the record it offers (protocol 4.5: signing does not stop).
+            if store.is_read_only() {
+                return None;
+            }
             if changes_busy {
                 return Some(status(Status::Busy {
                     request_id: rid,
@@ -458,15 +465,33 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
         Operation::Generate { .. } | Operation::Import { .. } | Operation::Delete { .. }
     );
     let succ = Succ::load(domain, host).ok();
-    let Ok(mut store) = Store::open(host, domain.partition()) else {
-        // The index state is unknown: read-only. A page may still rescue a
-        // key with Export, behind the consent prompt (the answer reads the
-        // entry copies directly).
-        if let (Operation::Export { slot }, Caller::Page { id }) = (&req.op, caller) {
-            return export_prompt(domain, host, id, rid, slot);
-        }
-        return refusal(rid, refused::STORAGE_FAILURE);
+    let fault = Store::fault(&*host, &domain.partition());
+    let mut store = match fault {
+        None => match Store::open(host, domain.partition()) {
+            Ok(s) => s,
+            Err(_) => return refusal(rid, refused::STORAGE_FAILURE),
+        },
+        // The index state is unknown: read-only (protocol 4.5).
+        Some(fault) => match (&req.op, caller) {
+            // A page may rescue a key with Export, behind the consent prompt.
+            (Operation::Export { slot }, Caller::Page { id }) => {
+                return ask(domain, host, id, rid, slot, false)
+            }
+            (Operation::ResetPartition { confirm }, Caller::Page { id }) => {
+                return reset_request(domain, host, id, rid, confirm, fault)
+            }
+            // Signing does not stop: the entry is found by its two parity
+            // copies.
+            (Operation::PublicKey { .. } | Operation::Batch { .. }, _) => {
+                Store::open_blind(host, domain.partition())
+            }
+            _ => return refusal(rid, refused::STORAGE_FAILURE),
+        },
     };
+    if let Operation::ResetPartition { .. } = req.op {
+        // The index reads fine: nothing to reset (protocol 4.5).
+        return refusal(rid, refused::OPERATION_NOT_ALLOWED);
+    }
     let (sealed, changes_busy, creating) = match route(domain, &store, &succ, is_change, rid) {
         Route::Answer(s) => return status(s),
         Route::Create => (false, false, true),
@@ -626,6 +651,7 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
                 .collect();
             reply(OpResult::Batch(results).encode(rid), rid)
         }
+        Operation::ResetPartition { .. } => refusal(rid, refused::OPERATION_NOT_ALLOWED),
         Operation::Export { slot } => {
             let Caller::Page { id } = caller else {
                 return refusal(rid, refused::OPERATION_NOT_ALLOWED);
@@ -633,19 +659,21 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
             if let Err(o) = usable_seed(domain, &mut store, &slot, sealed, true, rid) {
                 return o;
             }
-            export_prompt(domain, store.host(), id, rid, &slot)
+            ask(domain, store.host(), id, rid, &slot, false)
         }
     }
 }
 
-/// Stores the pending Export and asks the user. The prompt does not depend on
-/// the index, so it works while the store is read-only.
-fn export_prompt<H: Host>(
+/// Stores the pending request and asks the user. The prompt does not depend on
+/// the index, so it works while the store is read-only. `reset` asks to repair
+/// the partition (ResetPartition) instead of to export `slot`.
+fn ask<H: Host>(
     domain: &Domain,
     host: &mut H,
     origin: &[u8; 32],
     rid: u64,
     slot: &[u8],
+    reset: bool,
 ) -> Outcome {
     let mut idb = [0u8; 4];
     let mut prompt_id = 0u32;
@@ -664,14 +692,36 @@ fn export_prompt<H: Host>(
         origin: *origin,
         request_id: rid,
         slot: slot.to_vec(),
+        reset,
     };
     if !host.write_context(&pending.encode()) {
         return refusal(rid, refused::STORAGE_FAILURE);
     }
-    Outcome::Prompt {
-        prompt_id,
-        text: (domain.export_prompt)(slot),
+    let text = if reset {
+        consent::RESET_PROMPT.to_string()
+    } else {
+        (domain.export_prompt)(slot)
+    };
+    Outcome::Prompt { prompt_id, text }
+}
+
+/// ResetPartition, first half (protocol 4.5): a domain page, while the index
+/// is lost, with the right `confirm`. The node then asks the user.
+fn reset_request<H: Host>(
+    domain: &Domain,
+    host: &mut H,
+    origin: &[u8; 32],
+    rid: u64,
+    confirm: &[u8; 32],
+    fault: StoredIndexMalformed,
+) -> Outcome {
+    if !fault.index_lost() {
+        return refusal(rid, refused::OPERATION_NOT_ALLOWED);
     }
+    if *confirm != freenet_vault_common::hash::reset_confirm(&domain.partition()) {
+        return refusal(rid, refused::MALFORMED);
+    }
+    ask(domain, host, origin, rid, &[], true)
 }
 
 fn list<H: Host>(
@@ -748,6 +798,17 @@ pub fn export_answer<H: Host>(
     if response != consent::ALLOW || !domain.is_own_page(origin) {
         return Some(refusal(rid, refused::CONSENT_DENIED));
     }
+    if pending.reset {
+        // The index must still be lost when the user answers.
+        let p = domain.partition();
+        return Some(match Store::fault(&*host, &p) {
+            Some(f) if f.index_lost() => match reset_partition(host, &p) {
+                Ok(()) => reply(OpResult::Ok.encode(rid), rid),
+                Err(_) => refusal(rid, refused::STORAGE_FAILURE),
+            },
+            _ => refusal(rid, refused::OPERATION_NOT_ALLOWED),
+        });
+    }
     let succ = Succ::load(domain, host).ok();
     let Ok(mut store) = Store::open(host, domain.partition()) else {
         // Unknown index state: read-only. Rescue the key from the entry
@@ -783,6 +844,16 @@ fn partition_state_of(store_state: State, armed: bool, awaiting: bool) -> u8 {
         State::Sealed => partition_state::SEALED,
         State::Receiving => partition_state::RECEIVING,
         State::Retired => partition_state::RETIRED,
+    }
+}
+
+/// `problems` bits for an unknown index state: storage failure, and bit 6 when
+/// the index is lost (protocol 4.5).
+fn fault_bits<H: Host>(host: &H, partition: &[u8; 32]) -> u8 {
+    match Store::fault(host, partition) {
+        Some(f) if f.index_lost() => problems::STORAGE_FAILURE | problems::INDEX_LOST,
+        Some(_) => problems::STORAGE_FAILURE,
+        None => 0,
     }
 }
 
@@ -852,13 +923,14 @@ fn poke<H: Host>(domain: &Domain, host: &mut H, own_page: bool, body: &[u8]) -> 
             if let Some(fresh) = p.record.as_ref().and_then(|r| repair_succ(domain, host, r)) {
                 fresh
             } else {
+                let bits = fault_bits(&*host, &domain.partition());
                 let store = Store::open(host, domain.partition()).ok();
                 return handover_status(
                     domain,
                     None,
                     store.as_ref(),
                     step_result::NOTHING,
-                    0,
+                    bits,
                     own_page,
                 );
             }
@@ -874,6 +946,7 @@ fn poke<H: Host>(domain: &Domain, host: &mut H, own_page: bool, body: &[u8]) -> 
         }
     }
     let Ok(mut store) = Store::open(host, domain.partition()) else {
+        extra |= fault_bits(&*host, &domain.partition());
         return handover_status::<H>(domain, Some(&succ), None, step, extra, own_page);
     };
     // Any newer record clears creation arming.
@@ -986,7 +1059,10 @@ fn submit_record<H: Host>(
                 }
                 Some(st)
             }
-            Err(_) => None,
+            Err(_) => {
+                extra |= fault_bits(&*host, &domain.partition());
+                None
+            }
         };
         return with_rid(handover_status(
             domain,

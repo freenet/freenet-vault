@@ -94,7 +94,21 @@ Storage and formats:
   call. **Export stays possible behind consent** while the index state is
   unknown: the answer reads both parity copies of the slot directly and returns
   a seed only when exactly one decodes as a key entry for that slot. HandoverStatus
-  reports `problems` bit 0 (storage failure). Residuals, all by design for v1:
+  reports `problems` bit 0 (storage failure). Signing does not stop in read-only
+  mode (protocol 4.5): PublicKey and Batch (page or delegate) find a slot's
+  entry by reading its two parity copies; one distinct decodable value is
+  used (two identical copies are one value), none or two differing answer
+  storage failure for that slot only. The routing state is taken to be WRITER
+  and a delegate is served on the record it offers (no mark raise is
+  written). List, Generate, Import and Delete answer storage failure.
+  HandoverStatus problems bit 6 (`INDEX_LOST`) is set when the index is damaged
+  or absent while listed (not for a malformed `vault:parts`).
+  **ResetPartition (0x88)** (`confirm = BLAKE3("freenet-vault/reset/v1" ||
+  partition)`): domain pages only, behind the consent prompt, only while bit 6
+  is set; it writes a fresh empty WRITER index, empties both gc lists (a listed
+  name may be the only copy of a key) and keeps `vault:parts` listing the
+  partition. Old entry copies stay on disk until a later Import of the same
+  slot overwrites them. Residuals, all by design for v1:
   losing or tearing the index leaves the partition read-only with its keys
   exportable by consent and no automatic repair; the host cannot tell an absent
   secret from a failed read, so a call where the index AND `vault:parts` both

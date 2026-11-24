@@ -1414,6 +1414,7 @@ fn persisted_state_decoders_never_panic() {
         origin: [3; 32],
         request_id: 9,
         slot: vec![1; 32],
+        reset: false,
     }
     .encode();
     assert_eq!(Pending::decode(&pending).unwrap().prompt_id, 7);
@@ -1785,7 +1786,6 @@ fn assert_read_only_through_process(torn: bool) {
     let m = h.mutations;
     for o in [
         Operation::Generate { slot: None },
-        Operation::PublicKey { slot: slot.clone() },
         Operation::Delete { slot: slot.clone() },
         Operation::List {
             after: vec![],
@@ -1858,8 +1858,18 @@ fn export_in_read_only_mode_needs_consent_and_exactly_one_decodable_copy() {
             single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()),
             Reply::Op(23, OpResult::Export { seed })
         );
-        // Two decode: refused.
-        h.secrets.insert(copy1, good);
+        // Two identical copies are one value: allowed.
+        h.secrets.insert(copy1.clone(), good.clone());
+        let id = export_prompt(&mut h, &slot, 25);
+        assert_eq!(
+            single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()),
+            Reply::Op(25, OpResult::Export { seed })
+        );
+        // Two that differ (an interrupted replace): refused.
+        let other = Entry::new(KIND_KEY, slot.clone(), vec![0x77; 32])
+            .encode()
+            .unwrap();
+        h.secrets.insert(copy1, other);
         let id = export_prompt(&mut h, &slot, 24);
         assert_eq!(
             single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()),
@@ -1913,4 +1923,319 @@ fn after_an_uncertain_commit_the_next_call_is_read_only_until_the_index_reads() 
         page(&mut h, op(3, Operation::PublicKey { slot })),
         refused(3, refused::STORAGE_FAILURE)
     );
+}
+
+// ---- addendum: signing in read-only mode, ResetPartition ------------------
+
+fn sign_batch(h: &mut MemHost, rid: u64, slot: &[u8], pk: [u8; 32]) -> Reply {
+    page(
+        h,
+        op(
+            rid,
+            Operation::Batch {
+                slot: slot.to_vec(),
+                expected_public_key: pk,
+                items: vec![BatchItem::Sign(b"hello".to_vec())],
+            },
+        ),
+    )
+}
+
+fn generate_slot(h: &mut MemHost, rid: u64, slot: u8) -> ([u8; 32], [u8; 32]) {
+    match page(
+        h,
+        op(
+            rid,
+            Operation::Generate {
+                slot: Some(vec![slot; 32]),
+            },
+        ),
+    ) {
+        Reply::Op(_, OpResult::Key { public_key, .. }) => (public_key, seed_of(h, &[slot; 32])),
+        other => panic!("{other:?}"),
+    }
+}
+
+fn is_sig(r: &Reply) -> bool {
+    matches!(r, Reply::Op(_, OpResult::Batch(v)) if v.len() == 1 && v[0].bytes.len() == 64)
+}
+
+/// PublicKey, Batch from a page and Batch from a delegate with a proof all
+/// keep working while the index is unknown, for every copy situation; a slot
+/// whose copies do not give exactly one value answers storage failure while
+/// the other slot keeps working.
+#[test]
+fn signing_works_in_read_only_mode_for_every_copy_situation() {
+    for torn in [false, true] {
+        let mut h = MemHost::new();
+        let (slot1, _) = writer_with_key(&mut h);
+        let pk1 = crypto::public_key(&seed_of(&h, &slot1));
+        let (pk2, _) = generate_slot(&mut h, 5, 0x22);
+        let p = domain().partition();
+        let c = chat(5);
+        // The chat delegate's mark, written while the store is healthy.
+        assert!(is_key_result(&from_delegate(
+            &mut h,
+            c.key,
+            pk_req(&c, &slot1)
+        )));
+        let idx = names::index(&p);
+        if torn {
+            let b = h.secrets[&idx].clone();
+            h.secrets.insert(idx.clone(), b[..b.len() - 4].to_vec());
+        } else {
+            h.secrets.remove(&idx);
+        }
+        let name = |slot: &[u8], parity| names::entry(&p, KIND_KEY, slot, parity);
+        let s2 = [0x22u8; 32];
+        // One decodable copy (the normal state).
+        for (slot, pk) in [(slot1.as_slice(), pk1), (s2.as_slice(), pk2)] {
+            assert_eq!(
+                page(
+                    &mut h,
+                    op(
+                        7,
+                        Operation::PublicKey {
+                            slot: slot.to_vec()
+                        }
+                    )
+                ),
+                Reply::Op(
+                    7,
+                    OpResult::Key {
+                        slot: slot.to_vec(),
+                        public_key: pk
+                    }
+                ),
+                "torn={torn}"
+            );
+            assert!(is_sig(&sign_batch(&mut h, 8, slot, pk)), "torn={torn}");
+        }
+        // A delegate with its proof signs too (no mark raise is attempted).
+        let c6 = chat(6);
+        let batch = req(
+            c6.header.clone(),
+            Operation::Batch {
+                slot: slot1.clone(),
+                expected_public_key: pk1,
+                items: vec![BatchItem::Sign(b"hi".to_vec())],
+            },
+        );
+        assert!(is_sig(&from_delegate(&mut h, c6.key, batch)), "torn={torn}");
+        // Two identical copies: one value, still works.
+        let good = h.secrets[&name(&slot1, 0)].clone();
+        h.secrets.insert(name(&slot1, 1), good.clone());
+        assert!(is_sig(&sign_batch(&mut h, 9, &slot1, pk1)), "torn={torn}");
+        // Two that differ: that slot answers storage failure, the other works.
+        let other = Entry::new(KIND_KEY, slot1.clone(), vec![0x77; 32])
+            .encode()
+            .unwrap();
+        h.secrets.insert(name(&slot1, 1), other);
+        assert_eq!(
+            sign_batch(&mut h, 10, &slot1, pk1),
+            refused(10, refused::STORAGE_FAILURE),
+            "torn={torn}"
+        );
+        assert_eq!(
+            page(
+                &mut h,
+                op(
+                    11,
+                    Operation::PublicKey {
+                        slot: slot1.clone()
+                    }
+                )
+            ),
+            refused(11, refused::STORAGE_FAILURE)
+        );
+        assert!(is_sig(&sign_batch(&mut h, 12, &s2, pk2)), "torn={torn}");
+        // Zero decodable copies: storage failure too.
+        h.secrets.insert(name(&slot1, 0), vec![0xFF; 3]);
+        h.secrets.insert(name(&slot1, 1), vec![0xFF; 3]);
+        assert_eq!(
+            sign_batch(&mut h, 13, &slot1, pk1),
+            refused(13, refused::STORAGE_FAILURE),
+            "torn={torn}"
+        );
+        assert!(is_sig(&sign_batch(&mut h, 14, &s2, pk2)), "torn={torn}");
+    }
+}
+
+fn reset_op(rid: u64) -> Vec<u8> {
+    op(
+        rid,
+        Operation::ResetPartition {
+            confirm: hash::reset_confirm(&domain().partition()),
+        },
+    )
+}
+
+fn problems_of(h: &mut MemHost) -> u8 {
+    handover(page(h, poke(0, None))).problems
+}
+
+/// The whole v1 recovery flow: damage the index, see bit 6, Export every slot
+/// with consent, ResetPartition with consent, re-Import, verify.
+#[test]
+fn the_full_recovery_flow_through_process() {
+    for torn in [false, true] {
+        let mut h = MemHost::new();
+        let (slot1, _) = writer_with_key(&mut h);
+        let (pk2, seed2) = generate_slot(&mut h, 5, 0x22);
+        let s2 = vec![0x22u8; 32];
+        let seed1 = seed_of(&h, &slot1);
+        let pk1 = crypto::public_key(&seed1);
+        let idx = names::index(&domain().partition());
+        assert_eq!(problems_of(&mut h) & problems::INDEX_LOST, 0);
+        if torn {
+            let b = h.secrets[&idx].clone();
+            h.secrets.insert(idx.clone(), b[..b.len() - 4].to_vec());
+        } else {
+            h.secrets.remove(&idx);
+        }
+        let bits = problems_of(&mut h);
+        assert_ne!(bits & problems::INDEX_LOST, 0, "torn={torn}");
+        assert_ne!(bits & problems::STORAGE_FAILURE, 0);
+        // Export every slot, with consent.
+        let mut exported = vec![];
+        for (slot, pk) in [(slot1.clone(), pk1), (s2.clone(), pk2)] {
+            let id = export_prompt(&mut h, &slot, 31);
+            match single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()) {
+                Reply::Op(31, OpResult::Export { seed }) => {
+                    assert_eq!(crypto::public_key(&seed), pk);
+                    exported.push((slot, seed));
+                }
+                other => panic!("{other:?}"),
+            }
+        }
+        assert_eq!(exported[0].1, seed1);
+        assert_eq!(exported[1].1, seed2);
+        // ResetPartition, with consent.
+        let out = from_page_as(&mut h, page_id(), reset_op(40));
+        let id = match out.as_slice() {
+            [OutboundDelegateMsg::RequestUserInput(r)] => r.request_id,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()),
+            Reply::Op(40, OpResult::Ok),
+            "torn={torn}"
+        );
+        assert_eq!(problems_of(&mut h) & problems::INDEX_LOST, 0);
+        assert!(h.secrets[names::PARTS]
+            .chunks(32)
+            .any(|c| c == domain().partition()));
+        // The vault is writable again; re-import and verify.
+        for (slot, seed) in &exported {
+            let r = page(
+                &mut h,
+                op(
+                    50,
+                    Operation::Import {
+                        slot: slot.clone(),
+                        seed: *seed,
+                        replace: false,
+                    },
+                ),
+            );
+            assert!(is_key_result(&r), "torn={torn}: {r:?}");
+        }
+        for (slot, pk) in [(slot1.clone(), pk1), (s2.clone(), pk2)] {
+            assert_eq!(
+                page(&mut h, op(51, Operation::PublicKey { slot: slot.clone() })),
+                Reply::Op(
+                    51,
+                    OpResult::Key {
+                        slot,
+                        public_key: pk
+                    }
+                )
+            );
+        }
+    }
+}
+
+/// ResetPartition is refused from a delegate, without consent, with a wrong
+/// confirm, from a page that is not the domain's, and while the index reads.
+#[test]
+fn reset_partition_is_refused_unless_every_condition_holds() {
+    let p = domain().partition();
+    // Healthy: refused (bit 6 not set), no prompt, nothing written.
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let before = h.secrets.clone();
+    assert_eq!(
+        page(&mut h, reset_op(60)),
+        refused(60, refused::OPERATION_NOT_ALLOWED)
+    );
+    assert_eq!(h.secrets, before);
+    // Damage it.
+    h.secrets.remove(&names::index(&p));
+    let damaged = h.secrets.clone();
+    // A delegate: refused.
+    let c = chat(5);
+    assert_eq!(
+        from_delegate(
+            &mut h,
+            c.key,
+            req(
+                c.header.clone(),
+                Operation::ResetPartition {
+                    confirm: hash::reset_confirm(&p)
+                }
+            )
+        ),
+        refused(77, refused::OPERATION_NOT_ALLOWED)
+    );
+    // A page that is not the domain's: refused.
+    let out = from_page_as(&mut h, [9; 32], reset_op(61));
+    assert_eq!(
+        single_app_reply(out),
+        refused(61, refused::CALLER_NOT_AUTHORIZED)
+    );
+    // A wrong confirm: malformed, no prompt.
+    let bad = op(62, Operation::ResetPartition { confirm: [0; 32] });
+    assert_eq!(page(&mut h, bad), refused(62, refused::MALFORMED));
+    // Denied at the prompt: nothing written.
+    let out = from_page_as(&mut h, page_id(), reset_op(63));
+    let id = match out.as_slice() {
+        [OutboundDelegateMsg::RequestUserInput(r)] => r.request_id,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(
+        single_app_reply(answer(&mut h, page_id(), id, b"Deny").unwrap()),
+        refused(63, refused::CONSENT_DENIED)
+    );
+    // An answer from another origin is not accepted.
+    let out = from_page_as(&mut h, page_id(), reset_op(64));
+    let id = match out.as_slice() {
+        [OutboundDelegateMsg::RequestUserInput(r)] => r.request_id,
+        other => panic!("{other:?}"),
+    };
+    assert!(answer(&mut h, [9; 32], id, b"Allow").is_err());
+    assert_eq!(
+        h.secrets.keys().collect::<Vec<_>>(),
+        damaged.keys().collect::<Vec<_>>()
+    );
+    assert!(!h.secrets.contains_key(&names::index(&p)));
+    let _ = slot;
+}
+
+/// A malformed `vault:parts` is not "index lost": bit 6 stays clear and
+/// ResetPartition is refused (it could not keep the listing).
+#[test]
+fn a_malformed_parts_list_does_not_allow_reset() {
+    let mut h = MemHost::new();
+    let _ = writer_with_key(&mut h);
+    h.secrets.remove(&names::index(&domain().partition()));
+    h.secrets.insert(names::PARTS.to_vec(), vec![1; 33]);
+    let bits = problems_of(&mut h);
+    assert_eq!(bits & problems::INDEX_LOST, 0);
+    assert_ne!(bits & problems::STORAGE_FAILURE, 0);
+    let before = h.secrets.clone();
+    assert_eq!(
+        page(&mut h, reset_op(70)),
+        refused(70, refused::OPERATION_NOT_ALLOWED)
+    );
+    assert_eq!(h.secrets, before);
 }

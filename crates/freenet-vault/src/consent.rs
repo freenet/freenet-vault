@@ -8,12 +8,16 @@
 //! origin; an answer matching neither is refused.
 //!
 //! Context layout (build-private):
-//! `"FVPC" 4 ; prompt_id 4 ; origin 32 ; request_id 8 ; slot_len 1 ; slot`.
+//! `"FVPC" 4 ; prompt_id 4 ; origin 32 ; request_id 8 ; slot_len 1 ; slot ;
+//! reset 1`.
 
 use freenet_vault_common::codec::{Reader, Writer};
 
 pub const ALLOW: &[u8] = b"Allow";
 pub const DENY: &[u8] = b"Deny";
+
+/// The prompt for ResetPartition (protocol 4.5).
+pub const RESET_PROMPT: &str = "Repair the key vault? Its index is damaged. The vault will start a fresh index; keys you do not re-import afterwards can no longer be used.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pending {
@@ -21,6 +25,8 @@ pub struct Pending {
     pub origin: [u8; 32],
     pub request_id: u64,
     pub slot: Vec<u8>,
+    /// ResetPartition (true) or Export (false).
+    pub reset: bool,
 }
 
 impl Pending {
@@ -31,7 +37,8 @@ impl Pending {
             .bytes(&self.origin)
             .u64(self.request_id)
             .len_u8(self.slot.len(), "slot_len")
-            .bytes(&self.slot);
+            .bytes(&self.slot)
+            .u8(self.reset as u8);
         w.into_vec()
     }
 
@@ -45,12 +52,14 @@ impl Pending {
         let request_id = r.u64("request_id").ok()?;
         let len = r.u8("slot_len").ok()? as usize;
         let slot = r.take(len, "slot").ok()?.to_vec();
+        let reset = r.bool("reset").ok()?;
         r.finish().ok()?;
         Some(Self {
             prompt_id,
             origin,
             request_id,
             slot,
+            reset,
         })
     }
 }
