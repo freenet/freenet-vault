@@ -342,8 +342,9 @@ fn gc_keeps_names_whose_removal_failed_and_retries() {
 fn an_interrupted_entry_write_is_reachable_by_gc() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
-    // Die right after the new copy lands: both gc list copies (2) + entry (1).
-    h.crash_after(3);
+    // Die right after the new copy lands: both gc list copies (2), the removal
+    // of the absent candidate name (1), the entry (1).
+    h.crash_after(4);
     let _ = put(&mut h, &key_entry(1, 8));
     assert!(h.secrets.contains_key(&entry_name(1, 1)));
     let mut h = h.restart();

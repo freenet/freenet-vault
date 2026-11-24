@@ -181,6 +181,36 @@ Storage and formats:
   could not be removed is served by direct read if the index is later lost; names
   whose removal keeps failing accumulate to 4096, after which writes that need a
   gc entry fail.
+- **Round 6 (before the freeze).** (1) An entry with an unknown `eflags` bit is
+  kept byte for byte and never served (Unusable); a direct read skips it. (2) A
+  Batch item result is 64 or 32 bytes when OK and empty otherwise, enforced in
+  both the encoder and the decoder; the A3 golden vector uses a legal payload.
+  No valid result reaches the 65,536-byte reply bound, so its decoder-edge test
+  uses an Export result with a long extension. (3) Poke bit 4 is reserved
+  (revision 8 keeps a partial copy); its name is gone. (4) `Host::writes_refused`
+  makes every `Store` opened after a failed write report read-only, so an
+  authorised delegate is still served on the read-only path. (5) A malformed
+  `vault:parts` with a verified index stays writable and is never overwritten
+  except by Reset's repair; the spec's 4.5 trigger list should say "malformed
+  `vault:parts` with the index absent". (6) A corrupt mark imposes no floor above
+  `min_version` (spec 9); a mark whose secret is gone is written again by the
+  first valid request above `min_version`, and a request at the minimum writes
+  nothing. (7) With no index and no `vault:parts` listing, a request naming a slot
+  whose entry is on disk takes the read-only path: PublicKey, Batch and Export read
+  it directly, and Import, Generate of that slot and Delete are refused, so
+  nothing is created over it. ARM itself cannot probe (it names no slot).
+  (8) Under the agreed core #6323 rule a `set_secret` over an undecryptable blob
+  is refused and `remove_secret` is always allowed; `MemHost` models it. Every
+  rewrite of a secret that may be undecryptable removes it first
+  (`replace_secret`: gc lists, `vault:parts`, entry candidates, `vault:succ`); Reset
+  removes the gc lists, a damaged `vault:parts` and the index before writing them,
+  and lists the partition before the index is replaced so a crash between the
+  two leaves the index absent while listed, never new. (9) Reset re-checks the
+  index loss and "no known newer build" at the consent ANSWER; the prompt says
+  it also clears the pending cleanup list and every caller version mark. That no
+  other lineage build is WRITER or SEALED is the courier's check (the library
+  cannot see other builds). Spec 4.3: an absent entry the index names answers
+  Missing and is not dropped, which the code already does.
 - **A secret that is gone is Missing, never corrupt.** When the index
   names an entry but `get_secret` returns nothing (a wipe or restore of that
   secret), the vault changes and

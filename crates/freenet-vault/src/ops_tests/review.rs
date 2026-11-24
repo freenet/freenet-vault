@@ -2579,3 +2579,116 @@ fn double_corruption_serves_the_slot_by_direct_read_and_never_creates_over_it() 
     assert_eq!(h.secrets, before, "storage changed");
     assert!(!h.poisoned());
 }
+
+/// The core #6323 rule: a write over an undecryptable blob is refused, removing
+/// it is allowed. MemHost models it, so a Reset over an undecryptable index,
+/// parts list and gc lists must remove before it writes, and then works.
+#[test]
+fn reset_removes_undecryptable_blobs_before_writing() {
+    use crate::host::Host as _;
+    let p = domain().partition();
+    // The host model itself.
+    let mut m = MemHost::new();
+    m.secrets.insert(b"x".to_vec(), vec![1]);
+    m.undecryptable.insert(b"x".to_vec());
+    assert!(
+        !m.set_secret(b"x", &[2]),
+        "a write over an undecryptable blob"
+    );
+    assert!(!m.remove_secret(b"y"));
+    let _ = m.remove_secret(b"x");
+    assert!(m.set_secret(b"x", &[2]));
+    assert_eq!(m.get_secret(b"x"), Some(vec![2]));
+
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let seed = seed_of(&h, &slot);
+    for n in [
+        names::index(&p),
+        names::PARTS.to_vec(),
+        names::gc(&p),
+        names::gc2(&p),
+    ] {
+        h.undecryptable.insert(n);
+    }
+    // Index and parts both unreadable: the slot is served by direct read and
+    // not created over; Reset is still not offered (nothing says the index is
+    // lost), so first make `vault:parts` readable and naming the partition.
+    h.undecryptable.remove(names::PARTS);
+    h.secrets.insert(names::PARTS.to_vec(), p.to_vec());
+    assert_ne!(problems_of(&mut h) & problems::INDEX_LOST, 0);
+    // Prompt, then consent.
+    let out = from_page_as(&mut h, page_id(), reset_op(90));
+    let (id, text) = match out.as_slice() {
+        [OutboundDelegateMsg::RequestUserInput(r)] => (r.request_id, format!("{:?}", r.message)),
+        other => panic!("{other:?}"),
+    };
+    // The prompt is the Reset text, which says what else is cleared.
+    let want = NotificationMessage::try_from(&serde_json::Value::String(
+        crate::consent::RESET_PROMPT.to_string(),
+    ))
+    .unwrap();
+    assert_eq!(text, format!("{want:?}"));
+    assert!(crate::consent::RESET_PROMPT.contains("caller version mark"));
+    assert!(crate::consent::RESET_PROMPT.contains("pending cleanup"));
+    assert_eq!(
+        single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()),
+        Reply::Op(90, OpResult::Ok)
+    );
+    assert_eq!(problems_of(&mut h) & problems::INDEX_LOST, 0);
+    assert!(is_key_result(&import_replace(&mut h, 91, &slot, seed)));
+}
+
+/// A Reset whose parts list is also undecryptable (nothing readable to say the
+/// partition is listed) removes and rewrites it too.
+#[test]
+fn reset_repairs_an_undecryptable_parts_list() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    // Index damaged (torn) so Reset is offered; parts and gc lists undecryptable.
+    let b = h.secrets[&names::index(&p)].clone();
+    h.secrets
+        .insert(names::index(&p), b[..b.len() - 4].to_vec());
+    h.undecryptable.insert(names::PARTS.to_vec());
+    h.undecryptable.insert(names::gc(&p));
+    h.undecryptable.insert(names::gc2(&p));
+    let out = from_page_as(&mut h, page_id(), reset_op(92));
+    let id = match out.as_slice() {
+        [OutboundDelegateMsg::RequestUserInput(r)] => r.request_id,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(
+        single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()),
+        Reply::Op(92, OpResult::Ok)
+    );
+    assert_eq!(h.secrets[names::PARTS], p.to_vec());
+    assert_eq!(problems_of(&mut h) & problems::INDEX_LOST, 0);
+    assert!(is_key_result(&import_replace(
+        &mut h, 93, &slot, [0xB2; 32]
+    )));
+}
+
+/// Everything is checked again at the consent answer: a newer build that
+/// became known between the prompt and the answer stops the Reset.
+#[test]
+fn reset_is_rechecked_at_the_answer() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let _ = writer_with_key(&mut h);
+    h.secrets.remove(&names::index(&p));
+    let out = from_page_as(&mut h, page_id(), reset_op(94));
+    let id = match out.as_slice() {
+        [OutboundDelegateMsg::RequestUserInput(r)] => r.request_id,
+        other => panic!("{other:?}"),
+    };
+    // A newer record becomes known (a poke from the page) before the answer.
+    // The prompt's pending request lives in the delegate context, which a
+    // poke leaves alone.
+    let _ = page(&mut h, poke(0, Some(domain_record(2, [0x22; 32]))));
+    assert_eq!(
+        single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()),
+        refused(94, refused::OPERATION_NOT_ALLOWED)
+    );
+    assert!(!h.secrets.contains_key(&names::index(&p)));
+}

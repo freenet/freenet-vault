@@ -17,7 +17,7 @@ pub const ALLOW: &[u8] = b"Allow";
 pub const DENY: &[u8] = b"Deny";
 
 /// The prompt for ResetPartition (protocol 4.5).
-pub const RESET_PROMPT: &str = "Repair the key vault? Its index is damaged. The vault will start a fresh index; keys you do not re-import afterwards can no longer be used.";
+pub const RESET_PROMPT: &str = "Repair the key vault? Its index is damaged. The vault will start a fresh index, and this also clears its pending cleanup list and every stored caller version mark. Keys you do not re-import afterwards can no longer be used.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pending {

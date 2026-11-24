@@ -326,7 +326,7 @@ impl<'a, H: Host> Store<'a, H> {
     fn write_gc(&mut self, list: &[Vec<u8>]) -> Result<(), StorageFailure> {
         let bytes = encode_names(list)?;
         for name in [names::gc(&self.partition), names::gc2(&self.partition)] {
-            if !self.host.set_secret(&name, &bytes) {
+            if !crate::host::replace_secret(self.host, &name, &bytes) {
                 return Err(StorageFailure);
             }
         }
@@ -405,7 +405,7 @@ impl<'a, H: Host> Store<'a, H> {
         // a Reset.
         let listed = vec![self.entry_name(kind, key, 0), self.entry_name(kind, key, 1)];
         self.add_gc(&listed)?;
-        if !self.host.set_secret(&new_name, bytes) {
+        if !crate::host::replace_secret(self.host, &new_name, bytes) {
             // Nothing references it. If it landed anyway gc removes it; the
             // name stays listed until its secret reads as absent.
             self.process_gc();
@@ -661,42 +661,55 @@ pub fn rescue_export_seed<H: Host>(
 /// in them (possibly a live copy, since no index says which) is removed.
 /// The caller has checked that the index is lost.
 pub fn reset_partition<H: Host>(host: &mut H, partition: &[u8; 32]) -> Result<(), StorageFailure> {
-    // The gc lists go first, and both must take: once the empty index is
-    // published, gc would remove every name still listed, and a listed name
-    // may be the only copy of a key. A crash or a failure after this point
-    // leaves empty lists, which is harmless.
+    // Under the host's rule for undecryptable blobs a `set_secret` over one is
+    // refused while `remove_secret` is allowed, so each secret that is rewritten
+    // here is removed first (`replace_secret` for the lists, an explicit
+    // removal for the index).
+    //
+    // 1. The gc lists go first, and both must take: once the empty index is
+    //    published, gc would remove every name still listed, and a listed name
+    //    may be the only copy of a key. A crash or a failure after this point
+    //    leaves empty lists, which is harmless.
     let empty = encode_names(&[])?;
     for name in [names::gc(partition), names::gc2(partition)] {
+        let _ = host.remove_secret(&name);
         if !host.set_secret(&name, &empty) {
             return Err(StorageFailure);
         }
     }
+    // 2. `vault:parts` lists the partition before the index is replaced, so a
+    //    crash between the removal and the write of the index leaves the index
+    //    absent while listed (read-only, Reset can run again), never "new". A
+    //    list that parses is kept; one that is malformed or reads as absent
+    //    (maybe undecryptable) is replaced by this partition alone (this build
+    //    has one partition).
+    let parts = host.get_secret(names::PARTS);
+    let parts_ok = parts
+        .as_ref()
+        .is_some_and(|l| l.len() % 32 == 0 && l.chunks(32).any(|c| c == partition));
+    if !parts_ok {
+        let mut list = match parts {
+            Some(l) if l.len() % 32 == 0 => l,
+            _ => Vec::new(),
+        };
+        list.extend_from_slice(partition);
+        let _ = host.remove_secret(names::PARTS);
+        if !host.set_secret(names::PARTS, &list) {
+            return Err(StorageFailure);
+        }
+    }
+    // 3. The index: remove the damaged one, then write the fresh one.
     let mut fresh = Index::none();
     fresh.state = index::State::Writer;
     let bytes = fresh.encode();
     let name = names::index(partition);
+    let _ = host.remove_secret(&name);
     if !host.set_secret(&name, &bytes)
         && host.get_secret(&name).as_deref() != Some(bytes.as_slice())
     {
         return Err(StorageFailure);
     }
-    match ensure_part_listed(host, partition) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            // A malformed list is replaced by this partition alone (this build
-            // has one partition): leaving it would keep the partition read-only
-            // for ever.
-            if host
-                .get_secret(names::PARTS)
-                .is_some_and(|l| l.len() % 32 != 0)
-                && host.set_secret(names::PARTS, partition)
-            {
-                Ok(())
-            } else {
-                Err(e)
-            }
-        }
-    }
+    Ok(())
 }
 
 /// `vault:parts`: the partition ids this build holds state for.
@@ -716,7 +729,7 @@ pub fn ensure_part_listed<H: Host>(
     }
     let mut list = existing;
     list.extend_from_slice(partition);
-    if host.set_secret(names::PARTS, &list)
+    if crate::host::replace_secret(host, names::PARTS, &list)
         || host.get_secret(names::PARTS).as_deref() == Some(list.as_slice())
     {
         Ok(())

@@ -30,6 +30,20 @@ pub trait Host {
     }
 }
 
+/// Writes `value` under `name`, first removing a secret that reads as absent.
+/// Under the host's rule for undecryptable blobs (freenet-core #6323) a
+/// `set_secret` over a blob that cannot be decrypted is refused while
+/// `remove_secret` is always allowed, and such a blob reads as absent. So a
+/// secret that reads as absent is removed before it is written; for one that
+/// really is absent the removal changes nothing. Never used for the index of an
+/// existing partition (a verified index decrypts).
+pub fn replace_secret<H: Host>(host: &mut H, name: &[u8], value: &[u8]) -> bool {
+    if host.get_secret(name).is_none() {
+        let _ = host.remove_secret(name);
+    }
+    host.set_secret(name, value)
+}
+
 /// Wraps the host for one call: after a `set_secret` that reports failure the
 /// call is read-only (every later `set_secret` and `remove_secret` is refused),
 /// because that write may or may not have landed and nothing later in the call

@@ -142,7 +142,9 @@ impl Host for MemHost {
     }
 
     fn set_secret(&mut self, key: &[u8], value: &[u8]) -> bool {
-        if self.crashed() || self.poisoned.get() {
+        // The agreed core rule (#6323): a write over a blob that cannot be
+        // decrypted is refused; removing it is always allowed.
+        if self.crashed() || self.poisoned.get() || self.undecryptable.contains(key) {
             self.mutations += 1;
             return false;
         }
@@ -179,7 +181,8 @@ impl Host for MemHost {
             return false;
         }
         // freenet-stdlib: true if the secret was removed, false if it was not
-        // there.
+        // there. Removing an undecryptable blob is allowed and clears it.
+        self.undecryptable.remove(key);
         let was = self.secrets.remove(key).is_some();
         was && !self.remove_lands_but_fails.contains(key)
     }

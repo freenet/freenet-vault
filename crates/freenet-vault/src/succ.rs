@@ -169,7 +169,7 @@ pub fn accept_record<H: Host>(
         next.current = Some(*bytes);
     }
     let enc = next.encode();
-    if host.set_secret(names::SUCC, &enc)
+    if crate::host::replace_secret(host, names::SUCC, &enc)
         || host.get_secret(names::SUCC).as_deref() == Some(enc.as_slice())
     {
         *succ = next;

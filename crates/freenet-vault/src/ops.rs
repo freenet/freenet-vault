@@ -818,8 +818,17 @@ pub fn export_answer<H: Host>(
         return Some(refusal(rid, refused::CONSENT_DENIED));
     }
     if pending.reset {
-        // The index must still be lost when the user answers.
+        // Everything is checked again when the user answers: the index must
+        // still be lost, and no newer build may have become known meanwhile.
+        // (That no other build is WRITER or SEALED is the courier's check, from
+        // the statuses it reads; the library cannot see other builds.)
         let p = domain.partition();
+        if Succ::load(domain, host)
+            .ok()
+            .is_some_and(|s| s.successor().is_some())
+        {
+            return Some(refusal(rid, refused::OPERATION_NOT_ALLOWED));
+        }
         return Some(match Store::fault(&*host, &p) {
             Some(_) => match reset_partition(host, &p) {
                 Ok(()) => reply(OpResult::Ok.encode(rid), rid),
