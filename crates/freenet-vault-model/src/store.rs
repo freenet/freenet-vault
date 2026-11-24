@@ -44,6 +44,22 @@ impl Store {
             matches!(idx, Some(v) if !matches!(v, SVal::Idx(_) | SVal::Undecryptable));
         idx_malformed || (idx_absent && (listed || parts_malformed))
     }
+    /// Finding F17 (revision 9): the direct-read rule would use a single
+    /// copy whose name vault:gc lists (an entry dropped at take-over or by
+    /// staging reconciliation lists one name only).
+    pub fn direct_uses_gc_listed_copy(&self, id: Ident) -> bool {
+        let gc = match self.secrets.get(&SName::Gc) {
+            Some(SVal::Gc(g)) => g.clone(),
+            _ => return false,
+        };
+        let present: Vec<SName> = [SName::E(id, false), SName::E(id, true)]
+            .into_iter()
+            .filter(|n| matches!(self.secrets.get(n), Some(SVal::E(e)) if e.ident() == id))
+            .collect();
+        matches!(present.as_slice(), [n] if gc.contains(n))
+            && !(gc.contains(&SName::E(id, false)) && gc.contains(&SName::E(id, true)))
+    }
+
     /// The 4.5 direct-read rule as the checker's ground truth (revision 9):
     /// a slot whose two names vault:gc lists is deleted; one decoding copy
     /// is used; of two different copies, the one vault:gc does not list.

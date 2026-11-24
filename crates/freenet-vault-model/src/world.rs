@@ -530,7 +530,11 @@ impl World {
                         (unrecovered.clone(), listed.clone(), *listing_incomplete),
                     );
                     if let Some(st) = self.last_good.get(&ver(b)) {
-                        self.reindexed_from.insert(ver(b), st.clone());
+                        // keep the state the build had before its first
+                        // Reindex, not an earlier REPAIRING index
+                        if !matches!(st, PState::Repairing { .. }) {
+                            self.reindexed_from.insert(ver(b), st.clone());
+                        }
                     }
                 }
                 Note::RepairDone => {
@@ -1815,7 +1819,7 @@ impl World {
                 if !self.restored && !self.tainted.contains(&id) {
                     let p = self.oracle.get(&id).cloned().unwrap_or_default();
                     if !p.allows(&Some(key_entry(*slot, *k))) {
-                        let label = self.i3_label(b, sid, Some((id, *k)));
+                        let label = self.i3_label(b, sid, id, Some(*k));
                         self.fail(
                             label,
                             format!(
@@ -1831,7 +1835,7 @@ impl World {
                 if !self.restored && !self.tainted.contains(&id) {
                     let p = self.oracle.get(&id).cloned().unwrap_or_default();
                     if !p.allows(&None) {
-                        let label = self.i3_label(b, sid, None);
+                        let label = self.i3_label(b, sid, id, None);
                         self.fail(
                             label,
                             format!(
@@ -1994,14 +1998,51 @@ impl World {
 
     /// Label for a stale read by build `b` (15.4 I3, revision 9: direct
     /// and REPAIRING reads are included; the labels only separate them).
-    fn i3_label(&self, b: usize, sid: Option<usize>, served: Option<(Ident, u32)>) -> &'static str {
+    /// Finding F15 (revision 9): vault:gc lists both names of a slot whose
+    /// last acknowledged change is not a deletion (a Delete whose first
+    /// write landed and whose index write failed or never happened).
+    fn incomplete_delete(&self, b: usize, id: Ident) -> bool {
+        let acked = self.oracle.get(&id).is_some_and(|p| p.acked.is_some());
+        acked
+            && matches!(self.stores[b].secrets.get(&SName::Gc),
+                Some(SVal::Gc(g)) if g.contains(&SName::E(id, false)) && g.contains(&SName::E(id, true)))
+    }
+
+    /// Finding F16 (revision 9): build `b` is a damaged partial receiver
+    /// (its last readable index was RECEIVING, or it was when Reindex ran).
+    fn damaged_partial_receiver(&self, b: usize) -> bool {
+        let v = ver(b);
+        matches!(self.last_good.get(&v), Some(PState::Receiving { .. }))
+            || matches!(self.reindexed_from.get(&v), Some(PState::Receiving { .. }))
+    }
+
+    fn i3_label(
+        &self,
+        b: usize,
+        sid: Option<usize>,
+        slot: Ident,
+        served: Option<u32>,
+    ) -> &'static str {
         let v = ver(b);
         let st = self.stores[b].idx_or_none().state;
-        let orphan = served.is_some_and(|(id, k)| self.orphans.contains(&(v, id, k)));
+        let orphan =
+            served.is_some_and(|k| self.orphans.iter().any(|(_, i, c)| *i == slot && *c == k));
         let retired_malformed = self.stores[b].index_lost()
             && !matches!(self.stores[b].secrets.get(&SName::Parts), Some(SVal::Parts))
             && matches!(self.last_good.get(&v), Some(PState::Retired { .. }));
-        if orphan && self.stores[b].index_lost() {
+        let damaged = self.stores[b].index_lost()
+            || matches!(st, PState::Repairing { .. })
+            || self.repaired.contains(&v);
+        if served.is_none() && self.stores[b].index_lost() && self.incomplete_delete(b, slot) {
+            "I3-incomplete-delete"
+        } else if served.is_some()
+            && self.stores[b].index_lost()
+            && self.stores[b].direct_uses_gc_listed_copy(slot)
+        {
+            "I3-gc-listed-copy-served"
+        } else if damaged && self.damaged_partial_receiver(b) {
+            "I3-damaged-partial-receiver"
+        } else if orphan && self.stores[b].index_lost() {
             // finding F13: the copy of a failed write, served by direct read
             "I3-orphan-direct-read"
         } else if orphan {
@@ -2049,9 +2090,53 @@ impl World {
         {
             return "I2-retired-malformed-index";
         }
+        let damaged = self.stores[b].index_lost()
+            || matches!(st, PState::Repairing { .. })
+            || self.repaired.contains(&v);
+        if self.incomplete_delete(b, id)
+            || (damaged
+                && matches!(self.reindex_info.get(&v), Some((u, _, _))
+                    if u.iter().any(|(s, r)| *s == id.1 && *r == Unrecovered::Deleted)))
+        {
+            return "I2-incomplete-delete";
+        }
+        if damaged && self.damaged_partial_receiver(b) {
+            return "I2-damaged-partial-receiver";
+        }
+        if self.stores[b].index_lost() && self.stores[b].direct_uses_gc_listed_copy(id) {
+            return "I2-gc-listed-copy-served";
+        }
+        if let Ok(Some(held)) = self.held_value(b, id) {
+            if self
+                .orphans
+                .iter()
+                .any(|(_, oid, c)| *oid == id && *c == held.content)
+            {
+                // finding F13: the copy of a failed write is what the
+                // selected build serves (direct read, or indexed by Reindex
+                // and handed on)
+                return if self.stores[b].index_lost() {
+                    "I2-orphan-direct-read"
+                } else {
+                    "I2-orphan-reindexed"
+                };
+            }
+        }
         if self.stores[b].index_lost() && matches!(self.last_good.get(&v), Some(st) if st.is_none())
         {
             return "I2-listed-none-index";
+        }
+        if self.stores[b].index_lost()
+            && self.stores[b].direct_value(id).is_err()
+            && self
+                .orphans
+                .iter()
+                .any(|(ov, oid, _)| *ov == v && *oid == id)
+        {
+            // 4.5: "two different unlisted copies, an interrupted replace"
+            // answers storage failure for that slot (Reindex resolves it by
+            // the expected key)
+            return "I2-interrupted-replace";
         }
         if self.stores[b].index_lost() {
             let gc_ok = matches!(
