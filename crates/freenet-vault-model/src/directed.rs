@@ -601,10 +601,11 @@ pub fn retired_still_listed_window(cfg: &Cfg, malformed: bool) -> Option<Scenari
         fetch: Fetch::Newest,
         ops: vec![],
     });
-    if !r.steps_until(|r| matches!(r.state(10), PState::Sealed { .. })) {
+    if !r.steps_until(|r| matches!(r.state(40), PState::Writer(_))) {
         return None;
     }
-    // 10's next write is its RETIRED index (on "accepted")
+    // 40 has taken over; 10's next write is its RETIRED index (on
+    // "accepted")
     r.act(Action::ArmWriteFault {
         after: 0,
         fault: WriteFault::CrashAfter,
@@ -627,6 +628,35 @@ pub fn retired_still_listed_window(cfg: &Cfg, malformed: bool) -> Option<Scenari
         ops: vec![Op::PublicKey { slot: 0 }],
     });
     r.drain();
+    Some(r.done())
+}
+
+/// Revision 10 observation G4 (one fault): 40 has taken over from 10 and
+/// is awaiting 10's retirement; 10 is SEALED and still listed when its
+/// index becomes undecryptable. 10 is then in read-only mode and answers
+/// no Query (4.5), so 40 stays awaiting for good: reads work, every change
+/// answers Busy.
+pub fn awaiting_predecessor_index_lost(cfg: &Cfg, malformed: bool) -> Option<Scenario> {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10), Rec::build(40)]);
+    r.act(Action::Publish);
+    r.load(vec![Op::Generate { slot: 0, seed: 500 }]);
+    r.act(Action::Publish);
+    r.act(Action::Load {
+        client: 0,
+        fetch: Fetch::Newest,
+        ops: vec![],
+    });
+    if !r.steps_until(|r| matches!(r.state(40), PState::Writer(_))) {
+        return None;
+    }
+    r.act(Action::GarbleIndex {
+        b: 0,
+        undecryptable: !malformed,
+    });
+    r.drain();
+    for _ in 0..4 {
+        r.load(vec![Op::Generate { slot: 1, seed: 9 }]);
+    }
     Some(r.done())
 }
 
@@ -942,7 +972,12 @@ pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
             ));
         }
         if let Some(sc) = retired_still_listed_window(cfg, malformed) {
-            v.push(("7.4/retired", sc));
+            v.push(("liveness/awaiting-forever-predecessor-index-lost", sc));
+        }
+    }
+    for malformed in [false, true] {
+        if let Some(sc) = awaiting_predecessor_index_lost(cfg, malformed) {
+            v.push(("liveness/awaiting-forever-predecessor-index-lost", sc));
         }
     }
     if let Some(sc) = damaged_partial_receiver_behind_retired(cfg) {

@@ -28,6 +28,7 @@ fn main() {
     let mut shrink_n = 1usize;
     let mut find: Option<String> = None;
     let mut directed_trace = false;
+    let mut full_trace = false;
     let mut mutants = false;
     let mut i = 1;
     while i < args.len() {
@@ -45,6 +46,7 @@ fn main() {
                 i += 1;
             }
             "--directed-trace" => directed_trace = true,
+            "--full-trace" => full_trace = true,
             "--find" => {
                 find = Some(args[i + 1].clone());
                 i += 1;
@@ -81,6 +83,17 @@ fn main() {
         i += 1;
     }
 
+    if let (Some(seed), true) = (trace, full_trace) {
+        // the whole schedule, traced, whether or not it fails
+        let mut c = cfg.clone();
+        c.trace = true;
+        let o = run(&c, &gen_scenario(seed, &c));
+        println!("seed {seed}: {:?}", o.violation);
+        for l in o.trace {
+            println!("{l}");
+        }
+        return;
+    }
     if let Some(seed) = trace {
         let sc = gen_scenario(seed, &cfg);
         let o = run(&cfg, &sc);

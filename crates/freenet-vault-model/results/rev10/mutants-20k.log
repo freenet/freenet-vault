@@ -1,0 +1,6 @@
+mutation check: 20000 seeds from 0 plus 146 directed scenarios, delivery Core
+mutant RetiredBeforeUnlist: SURVIVED (0 candidates rejected: their shrunk traces fail the unmutated model too)
+mutant NeverUnlist: SURVIVED (0 candidates rejected: their shrunk traces fail the unmutated model too)
+mutant RelistRetired: SURVIVED (0 candidates rejected: their shrunk traces fail the unmutated model too)
+mutant PartsBeforeIndex: SURVIVED (0 candidates rejected: their shrunk traces fail the unmutated model too)
+mutant DirectReadIgnoresGc: caught by I3-direct-read x9 (first directed 4.2/entry-write/fault-at-step-3) (0 candidates rejected)

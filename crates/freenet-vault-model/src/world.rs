@@ -2443,6 +2443,23 @@ impl World {
             }
         }
         self.cfg.adversarial = adversarial;
+        // revision 10 observation G4: a successor still awaiting the
+        // retirement of a predecessor whose index is lost (the predecessor
+        // answers no Query, 4.5), so its changes stay Busy
+        for b in 0..NBUILDS {
+            if let PState::Writer(w) = self.stores[b].idx_or_none().state {
+                if let (true, Some((p, _))) = (w.awaiting, w.taken_over) {
+                    if self.stores[bi(p)].index_lost() && !self.stores[b].index_lost() {
+                        self.cov
+                            .hit("liveness/awaiting-forever-predecessor-index-lost");
+                        if !self.restored {
+                            self.cov
+                                .hit("liveness/awaiting-forever-predecessor-index-lost/no-restore");
+                        }
+                    }
+                }
+            }
+        }
         let w = self.accepting_writers();
         // "by the first step that lets the two interact": while the domain
         // is stopped nothing copies, so two writers need not meet.
