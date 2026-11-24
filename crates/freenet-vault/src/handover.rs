@@ -386,15 +386,39 @@ impl<'a, H: Host> Cx<'a, H> {
                 hit!("5.1/arming-cleared-by-record");
                 self.commit(&idx);
             }
+            // 15.5 mutant "unseal on a higher record": a sealed build that
+            // stores a higher successor record unseals by itself, instead
+            // of sending Abort and unsealing only on the answer (7.5).
+            if trace::mutant(Mutant::UnsealOnHigherRecord) && idx.state == State::Sealed {
+                if let (Some(t), Some(m)) = (idx.peer_record, idx.ho.m) {
+                    if self
+                        .succ()
+                        .successor()
+                        .is_some_and(|c| version(&c) > version(&t))
+                    {
+                        hit!("mutant/unsealed-on-higher-record");
+                        let mut n = idx.clone();
+                        n.state = State::Writer;
+                        trace::note(Note::UnsealIntent {
+                            target: version(&t),
+                            m,
+                        });
+                        if self.commit(&n) {
+                            trace::note(Note::Unsealed {
+                                target: version(&t),
+                                m,
+                                cause: cstatus::ABORTED,
+                            });
+                        }
+                    }
+                }
+            }
         }
         (a.step_result, stored)
     }
 
     fn abort_trigger(&self, target: &Rec) -> bool {
         let s = self.succ();
-        if trace::mutant(Mutant::UnsealOnHigherRecord) {
-            return false;
-        }
         s.stopped() || s.successor().is_some_and(|c| version(&c) > version(target))
     }
 

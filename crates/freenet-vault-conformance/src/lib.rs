@@ -646,6 +646,69 @@ impl Tables {
                     state.code()
                 ));
             }
+            // the other 12.4 fields, against the same index and records
+            let peer = match &state {
+                PState::Sealed { target, .. } => Some(*target),
+                PState::Retired { to, .. } => Some(*to),
+                _ => None,
+            };
+            let m = match &state {
+                PState::Sealed { m, .. } | PState::Retired { m, .. } => Some(*m),
+                _ => None,
+            };
+            let to = state.taken_over();
+            let from = match &state {
+                PState::Receiving { from, .. } => *from,
+                _ => 0,
+            };
+            let mut bad = vec![];
+            if h.peer_record != peer.map(codec::rec_bytes).unwrap_or([0; 100]) {
+                bad.push("peer_record");
+            }
+            if h.manifest_digest != m.map(|m| self.m32_of(m)).unwrap_or([0; 32]) {
+                bad.push("manifest_digest");
+            }
+            if (h.taken_over_from, h.taken_over_manifest)
+                != to.map(|(v, m)| (v, self.m32_of(m))).unwrap_or((0, [0; 32]))
+            {
+                bad.push("taken_over");
+            }
+            if h.receiving_from != from {
+                bad.push("receiving_from");
+            }
+            let succ = store.succ();
+            let floor = [
+                Some(own),
+                succ.current.map(|r| r.v),
+                succ.withdrawal.map(|r| r.v),
+            ]
+            .into_iter()
+            .flatten()
+            .max()
+            .unwrap_or(own);
+            let malformed = store.succ_malformed();
+            if !malformed && h.floor_version != floor {
+                bad.push("floor_version");
+            }
+            let rs = if malformed {
+                record_state::STORED_MALFORMED
+            } else if succ.stopped() {
+                record_state::STOPPED
+            } else if succ.successor().is_some() {
+                record_state::SUCCESSOR
+            } else {
+                record_state::NONE
+            };
+            if h.record_state != rs {
+                bad.push("record_state");
+            }
+            if !bad.is_empty() {
+                self.finding(format!(
+                    "build {own}: HandoverStatus {} disagree with the store ({})",
+                    bad.join(", "),
+                    state.code()
+                ));
+            }
         }
         let (record_result, sent) = match h.step_result {
             step_result::MESSAGES_SENT => (0, true),

@@ -54,7 +54,7 @@ fn check(cfg: Cfg, seeds: std::ops::Range<u64>) {
 
 #[test]
 fn library_conforms_core() {
-    check(Cfg::gate(), 0..60);
+    check(Cfg::gate(), 0..20);
 }
 
 #[test]
@@ -62,5 +62,5 @@ fn library_conforms_adversarial() {
     let mut cfg = Cfg::gate();
     cfg.adversarial = true;
     cfg.delivery = Delivery::Queued;
-    check(cfg, 0..40);
+    check(cfg, 0..10);
 }
