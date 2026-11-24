@@ -1,0 +1,265 @@
+schedules: 2000 (seeds 0..2000) plus 7 coverage seeds and 3 directed scenarios, delivery Core, adversarial false, stale pointer false, global FIFO true, parts after index false (protocol revision 8)
+violation I1-reset: 52 schedules, first seeds [2, 36, 58, 165, 180, 216, 291, 383]
+violation I1-restore-unreported: 1 schedules, first seeds [28]
+violation I2-repair-interrupted: 2 schedules, first seeds [1037, 1237]
+violation I2-two-index-lost: 5 schedules, first seeds [173, 445, 477, 1101, 1597]
+violation I5-after-restore: 2 schedules, first seeds [1814, 1894]
+violation I7: 35 schedules, first seeds [32, 63, 76, 124, 137, 146, 220, 226]
+  shape      1 (first seed     58) I1-reset: build # was reset to WRITER while build # is SEALED
+  shape     51 (first seed      2) I1-reset: build # was reset to WRITER while build # is WRITER
+  shape      1 (first seed     28) I1-restore-unreported: after restores two builds accept changes and neither reports it
+  shape      2 (first seed   1037) I2-repair-interrupted: writer # holds None for (#, #)
+  shape      5 (first seed    173) I2-two-index-lost: acknowledged keys exist but #.# chooses no writer
+  shape      1 (first seed   1894) I5-after-restore: build # created the partition while build # holds state (RECEIVING)
+  shape      1 (first seed   1814) I5-after-restore: build # created the partition while build # holds state (WRITER)
+  shape      1 (first seed    124) I7: after quiescence build # is NONE not WRITER; states ["#:NONE", "#:RETIRED", "#:SEALED", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed     32) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:NONE", "#:WRITER", "#:NONE", "#:NONE"]
+  shape      4 (first seed     76) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:NONE", "#:WRITER", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed    137) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RECEIVING", "#:WRITER", "#:NONE", "#:NONE", "#:NONE"]
+  shape      3 (first seed    483) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:NONE", "#:WRITER", "#:NONE", "#:NONE"]
+  shape      1 (first seed    865) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:RETIRED", "#:WRITER", "#:NONE", "#:NONE"]
+  shape      3 (first seed    146) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:RETIRED", "#:WRITER", "#:NONE", "#:NONE", "#:NONE"]
+  shape      3 (first seed   1347) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:SEALED", "#:NONE", "#:NONE", "#:NONE", "#:NONE"]
+  shape      9 (first seed     63) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:WRITER", "#:NONE", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed    740) I7: after quiescence build # is NONE not WRITER; states ["#:RETIRED", "#:WRITER", "#:RECEIVING", "#:NONE", "#:NONE", "#:NONE"]
+  shape      1 (first seed    375) I7: after quiescence build # is NONE not WRITER; states ["#:SEALED", "#:NONE", "#:NONE", "#:NONE", "#:NONE", "#:NONE"]
+  shape      5 (first seed    220) I7: after quiescence build # is NONE not WRITER; states ["#:WRITER", "#:NONE", "#:NONE", "#:NONE", "#:NONE", "#:NONE"]
+  shape      2 (first seed    788) I7: after quiescence build # is NONE not WRITER; states ["#:WRITER", "#:RECEIVING", "#:NONE", "#:NONE", "#:NONE", "#:NONE"]
+sealed build sent a corrupt entry: 0 times
+coverage: 235 counters, 0 required missing
+  13.1/arm-already-armed = 3813
+  13.1/armed = 3011
+  13.1/armed-while-stopped = 358
+  3/creation-bar-refused-arm = 1712
+  3/creation-bar-refused-create = 28
+  3/not-newer = 150536
+  3/record-malformed-call = 25803
+  3/record-malformed-refuses-handover = 15786
+  3/record-stored = 15285
+  3/record-write-failed-but-landed = 262
+  3/record-write-failed-read-back = 1039
+  3/retry = 178313
+  3/withdrawal-stored = 3288
+  4.0/call-poisoned = 2497
+  4.0/write-refused-after-failed-read = 360
+  4.1/parts-written = 4989
+  4.2/commit-failed-but-landed = 197
+  4.2/commit-failed-read-back = 950
+  4.2/gc-kept-named = 14343
+  4.2/gc-processed = 14765
+  4.3/corrupt-rewritten-flagged = 1
+  4.3/corrupt-unparseable-removed = 70
+  4.5/courier-selects-damaged-build = 582
+  4.5/index-lost-call = 24942
+  4.5/key-held-by-repair-flow = 704
+  4.5/lost/change-refused = 488
+  4.5/lost/export = 869
+  4.5/lost/hop-not-answered = 17106
+  4.5/lost/poke-reports-state-7 = 3727
+  4.5/lost/read = 181
+  4.5/repair-flow-interrupted-after-reset = 5
+  4.5/repair-import-gave-up = 3
+  4.5/repair-import-retried = 11
+  4.5/repair-key-not-recovered = 42
+  4.5/repair-reset-done = 174
+  4.5/reset = 174
+  4.5/reset-applied = 174
+  4.5/reset-refused-index-not-lost = 219
+  4.5/write-refused-after-failed-write = 672
+  5.1/NONE/change = 10555
+  5.1/NONE/mark = 1661
+  5.1/NONE/read = 3032
+  5.1/RECEIVING/change = 105
+  5.1/RECEIVING/mark = 27
+  5.1/RECEIVING/read = 31
+  5.1/RETIRED/change = 5320
+  5.1/RETIRED/mark = 835
+  5.1/RETIRED/read = 2176
+  5.1/SEALED/change = 153
+  5.1/SEALED/mark = 21
+  5.1/SEALED/read = 65
+  5.1/WRITER(awaiting)/change = 50
+  5.1/WRITER(awaiting)/mark = 9
+  5.1/WRITER(awaiting)/read = 18
+  5.1/WRITER/change = 15471
+  5.1/WRITER/mark = 2421
+  5.1/WRITER/read = 7060
+  5.1/arming-cleared-by-record = 898
+  5.1/created = 1777
+  5.2/unavailable = 7800
+  5.3/armed-all-confirmed = 7031
+  5.3/arming-cleared-by-state-answer = 58
+  5.3/confirmed = 3032
+  5.3/create-refused-unconfirmed = 572
+  5.3/created-after-every-predecessor-confirmed = 505
+  5.3/created-while-stopped = 132
+  5.3/nostate-answer-lost = 68
+  5.3/probe-answer-other/StorageFailure = 20506
+  5.3/probe-answered-state = 60
+  5.3/probe-crash-after-record-stored = 2
+  5.3/probe-received = 24186
+  5.3/probe-sent = 40577
+  5.3/probe-to-index-lost-build = 27
+  5.3/two-builds-armed-at-once = 17383
+  6/ack-from-successor = 22554
+  6/ignored = 180
+  6/ignored/answer-from-predecessor = 119
+  6/poke = 337192
+  6/predecessor-role = 24568
+  6/query-answer/armed = 23678
+  6/query-answer/awaiting = 351
+  6/query-answer/awaiting-cleared/NoState = 9
+  6/query-answer/awaiting-cleared/Noted = 203
+  6/query-answer/awaiting/AnotherWriter = 130
+  6/receiver-role = 24035
+  6/wakeup = 181335
+  7.2/outcome-identical = 807
+  7.2/outcome-policy-dropped = 428
+  7.2/outcome-staging-full = 2
+  7.2/outcome-storage-failure = 288
+  7.2/outcome-stored = 5132
+  7.3/ack-ignored-no-target = 8
+  7.3/ack/AnotherWriter = 3552
+  7.3/ack/HigherBuild = 1
+  7.3/ack/Malformed = 89
+  7.3/ack/Processed = 4188
+  7.3/ack/Stopped = 1
+  7.3/seal-now-staging-full = 1
+  7.4/awaiting-cleared-by-retired = 2453
+  7.4/missing = 8
+  7.4/retired = 2670
+  7.4/sealed = 12237
+  7.4/took-over = 2680
+  7.4/unlisted-dropped = 11
+  7.5/completeack-ignored-not-sealed = 2387
+  7.5/completeack/Aborted = 33
+  7.5/completeack/Accepted = 2568
+  7.5/completeack/AlreadyWriter = 89
+  7.5/completeack/AnotherWriter = 9370
+  7.5/completeack/DifferentManifest = 125
+  7.5/completeack/HigherBuild = 44
+  7.5/completeack/Malformed = 53
+  7.5/completeack/Missing = 18
+  7.5/completeack/Stopped = 1
+  7.5/completeack/StorageFailure = 27
+  7.5/pause-cleared-by-poke = 2704
+  7.5/pause-set = 727
+  7.5/step-abort = 891
+  7.5/step-resend-complete = 2341
+  7.5/unsealed = 9525
+  7.6/NONE/Abort = 10
+  7.6/NONE/Chunk = 2769
+  7.6/NONE/Complete = 320
+  7.6/NONE/Retired = 5
+  7.6/RECEIVING(P)/Abort = 27
+  7.6/RECEIVING(P)/Chunk = 1866
+  7.6/RECEIVING(P)/Complete = 2463
+  7.6/RECEIVING(P)/Retired = 2
+  7.6/RECEIVING(higher)/Chunk = 1
+  7.6/RECEIVING(higher)/Complete = 47
+  7.6/RECEIVING(lower)/Chunk = 2
+  7.6/RECEIVING(lower)/Complete = 1
+  7.6/malformed/Abort = 2
+  7.6/malformed/Chunk = 99
+  7.6/malformed/Complete = 55
+  7.6/malformed/Retired = 1
+  7.6/other-writer-or-not-from-P/Abort = 1
+  7.6/other-writer-or-not-from-P/Chunk = 3011
+  7.6/other-writer-or-not-from-P/Complete = 10058
+  7.6/other-writer-or-not-from-P/Retired = 1
+  7.6/stopped/Abort = 2
+  7.6/stopped/Chunk = 2
+  7.6/stopped/Complete = 1
+  7.6/taken-over-from-P/Abort = 143
+  7.6/taken-over-from-P/Chunk = 545
+  7.6/taken-over-from-P/Complete = 83
+  7.6/taken-over-from-P/Retired = 2518
+  7.6/taken-over-from-P/Retired-other-m-ignored = 27
+  7.6q/NONE-record-below-withdrawal-floor = 20563
+  7.6q/NONE-record-stored = 3571
+  7.6q/NONE-storage-failure = 20566
+  7.6q/NONE/probe = 24126
+  7.6q/NONE/query = 15
+  7.6q/RETIRED-to-querier-same-m = 198
+  7.6q/SEALED-toward-querier-same-m = 39
+  7.6q/anything-else = 190
+  7.6q/anything-else/RETIRED-elsewhere-or-other-m = 14
+  7.6q/index-lost = 1298
+  7.7/step-copy = 12870
+  7.7/step-query = 2102
+  8/quota-refused = 417
+  9/mark-raised = 1923
+  I5/creation = 1781
+  I7/checked = 1075
+  client/cached-caller = 15551
+  client/old-lineage = 10320
+  core/claim-runs-unit-first = 1284
+  core/forwarded-to-loop = 28100
+  core/handed-off-unit = 34841
+  core/hop-dropped-nested-unit = 1
+  core/hop-dropped-target-mid-round-trip = 101
+  core/hop-runs-target-unit-first = 110
+  core/lane-call = 327977
+  core/reply-dropped-no-iterations-left = 698
+  fault/crash-after-write = 464
+  fault/crash-before-write = 466
+  fault/crash-between-calls = 3579
+  fault/durable-but-error = 449
+  fault/garble-equivalent-to-wipe-or-restore = 390
+  fault/garble-secret = 1298
+  fault/garbled-hop = 482
+  fault/hop-cap = 86
+  fault/hop-lost = 549
+  fault/landed-but-error = 496
+  fault/malformed/entry = 49
+  fault/malformed/gc = 43
+  fault/malformed/index = 113
+  fault/malformed/parts = 61
+  fault/malformed/progress = 2
+  fault/malformed/rx = 19
+  fault/malformed/succ = 356
+  fault/pointer-unreachable = 3839
+  fault/quota = 1207
+  fault/read-poisoned = 2497
+  fault/reply-lost = 360
+  fault/restore-secret = 328
+  fault/restore-whole = 1593
+  fault/storage-failure = 494
+  fault/storage-failure-seen = 2959
+  fault/undecryptable/entry = 55
+  fault/undecryptable/gc = 29
+  fault/undecryptable/index = 128
+  fault/undecryptable/parts = 49
+  fault/undecryptable/rx = 16
+  fault/undecryptable/succ = 378
+  fault/unregister = 3168
+  fault/wipe = 1356
+  finding/I3-state-in-repair-window = 48
+  finding/creation-probe-blocked-by-withdrawal = 20562
+  ops/delete = 1240
+  ops/key-written = 6185
+  ops/unknown-kind-written = 947
+  ops/unknown-op-refused = 2287
+  oracle/acked-change = 9025
+  publish/rollback = 838
+  publish/withdrawal = 1554
+  restore/acknowledged-value-destroyed = 856
+  runtime/hop-to-unregistered = 868
+  sent/Ack/AnotherWriter = 3556
+  sent/Ack/HigherBuild = 1
+  sent/Ack/Malformed = 99
+  sent/Ack/Processed = 4456
+  sent/Ack/Stopped = 2
+  sent/CompleteAck/Aborted = 40
+  sent/CompleteAck/Accepted = 2680
+  sent/CompleteAck/AlreadyWriter = 101
+  sent/CompleteAck/AnotherWriter = 10248
+  sent/CompleteAck/DifferentManifest = 125
+  sent/CompleteAck/HigherBuild = 47
+  sent/CompleteAck/Malformed = 58
+  sent/CompleteAck/Missing = 25
+  sent/CompleteAck/NoState = 3571
+  sent/CompleteAck/Noted = 2713
+  sent/CompleteAck/Stopped = 1
+  sent/CompleteAck/StorageFailure = 20615
+exit 1
