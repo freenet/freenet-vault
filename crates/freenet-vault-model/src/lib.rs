@@ -19,3 +19,5 @@ pub mod world;
 
 #[cfg(test)]
 mod tests_76;
+#[cfg(test)]
+mod tests_delivery;

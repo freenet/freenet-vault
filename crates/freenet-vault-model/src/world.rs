@@ -43,9 +43,29 @@ pub const CLIENTS: [&[Ver]; 4] = [
     &[10, 20, 30, 40],
 ];
 
+/// How hops are delivered.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Delivery {
+    /// What freenet-core does (main after #6340, `contract.rs`
+    /// `handle_delegate_with_contract_requests`): a hop is executed
+    /// synchronously inside the caller's run or dropped, never queued; the one
+    /// reply is delivered later in the same run or lost; runs of one delegate
+    /// never interleave; a client request's first call may run on the
+    /// delegate lane between two calls of a loop run of another delegate.
+    /// Gating.
+    #[default]
+    Core,
+    /// Every hop of every run sits in a queue and any eligible hop of any
+    /// run may be delivered next, interleaved with everything else. A
+    /// superset of core's schedules; with `adversarial` it also violates
+    /// assumption D. Not gating.
+    Queued,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Cfg {
     pub params: Params,
+    pub delivery: Delivery,
     /// Adversarial delivery mode: hops delayed past their run, duplicated
     /// and reordered (violates assumption D; not gating).
     pub adversarial: bool,
@@ -68,6 +88,7 @@ impl Cfg {
     pub fn gate() -> Cfg {
         Cfg {
             params: Params::default(),
+            delivery: Delivery::Core,
             adversarial: false,
             stale_pointer: false,
             d_global_fifo: true,
@@ -182,6 +203,45 @@ struct Run {
     iters: usize,
 }
 
+/// Core delivery: one delegate run (`handle_delegate_with_contract_requests`).
+#[derive(Clone, Debug)]
+struct CRun {
+    id: usize,
+    b: usize,
+    kind: RunKind,
+    /// Hops the last call of this run emitted, executed one per step, in
+    /// order, before the next call into the run's delegate.
+    hops: VecDeque<(Ver, Frame)>,
+    /// Hop replies queued for calls of their own (`next_call`), oldest first.
+    replies: VecDeque<(Ver, Frame)>,
+    /// Calls into the run's delegate so far (MAX_CONTRACT_REQUEST_ITERATIONS).
+    iters: usize,
+    /// Hops attempted (MAX_UNPROMPTED_HOPS_PER_RUN, unprompted runs only).
+    attempted: usize,
+    /// A hop whose target's pending unit is running nested on top of this
+    /// run; delivered when that unit finishes. The target stays claimed.
+    resume: Option<(Ver, Frame)>,
+}
+
+/// Core delivery: work waiting for the serial contract loop.
+#[derive(Clone, Debug)]
+enum LoopItem {
+    /// A wake-up or lifecycle run.
+    Wakeup(usize),
+    /// A client request the lane forwarded because its delegate was busy.
+    Req {
+        rid: usize,
+        sid: usize,
+        b: usize,
+        input: Input,
+    },
+    /// A client operation the lane forwarded.
+    Op { rid: usize, b: usize, op: Op },
+}
+
+/// Core: `MAX_PENDING_UNITS`.
+const MAX_PENDING_UNITS: usize = 16;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Phase {
     Poke(usize),
@@ -241,6 +301,12 @@ pub struct World {
     sessions: BTreeMap<usize, Session>,
     next_session: usize,
     limbo: Vec<Hop>,
+    /// Core delivery: the loop's run stack (top runs; below it, a run whose
+    /// hop target's pending unit is running nested), the loop's queue, and
+    /// the lane's handed-off continuations (at most one per delegate).
+    stack: Vec<CRun>,
+    lq: VecDeque<LoopItem>,
+    units: BTreeMap<usize, CRun>,
     faults: FaultPlan,
     events: Vec<Event>,
     pub cov: Cov,
@@ -272,6 +338,9 @@ impl World {
             sessions: BTreeMap::new(),
             next_session: 0,
             limbo: vec![],
+            stack: vec![],
+            lq: VecDeque::new(),
+            units: BTreeMap::new(),
             faults: FaultPlan::default(),
             events: vec![],
             cov: Cov::default(),
@@ -399,13 +468,20 @@ impl World {
         self.runs.clear();
         self.sessions.clear();
         self.limbo.clear();
+        self.stack.clear();
+        self.lq.clear();
+        self.units.clear();
         for v in self.vols.iter_mut() {
             *v = Volatile::default();
         }
         // lifecycle NodeStarted: a step for each registered build with work
         for b in 0..NBUILDS {
             if self.registered[b] {
-                self.start_unprompted(b, Input::Wakeup);
+                if self.core() {
+                    self.lq.push_back(LoopItem::Wakeup(b));
+                } else {
+                    self.start_unprompted(b, Input::Wakeup);
+                }
             }
         }
     }
@@ -583,6 +659,9 @@ impl World {
     /// Candidates for a Step: FIFO-eligible hops (assumption D: no
     /// reordering between the same pair), idle sessions, limbo hops.
     fn candidates(&self) -> Vec<(u8, usize, usize)> {
+        if self.core() {
+            return self.core_candidates();
+        }
         let mut c = vec![];
         // oldest pending hop per ordered pair, over every run
         let mut oldest: BTreeMap<(Ver, Ver), u64> = BTreeMap::new();
@@ -620,6 +699,289 @@ impl World {
         c
     }
 
+    // ---------------------------------------------------------- core delivery
+
+    fn core(&self) -> bool {
+        self.cfg.delivery == Delivery::Core
+    }
+
+    /// Whether the delegate lane may run build `b` now (`DelegateGate`): no
+    /// loop run of it or claim on it, no pending unit, no forwarded request
+    /// of it still with the loop (one user on a node that is not hosted).
+    fn lane_free(&self, b: usize) -> bool {
+        !self
+            .stack
+            .iter()
+            .any(|r| r.b == b || r.resume.as_ref().is_some_and(|(t, _)| bi(*t) == b))
+            && !self.units.contains_key(&b)
+            && !self.lq.iter().any(|i| match i {
+                LoopItem::Req { b: x, .. } | LoopItem::Op { b: x, .. } => *x == b,
+                LoopItem::Wakeup(_) => false,
+            })
+            && self.units.len() < MAX_PENDING_UNITS
+    }
+
+    fn finish_request(&mut self, rid: usize) {
+        for s in self.sessions.values_mut() {
+            if s.run == Some(rid) {
+                s.run = None;
+            }
+        }
+    }
+
+    /// A client request from session `sid` to build `b`: the lane runs its
+    /// first call now if `b` is free, else the loop gets it.
+    fn client_request(&mut self, sid: usize, b: usize, input: Input) {
+        let rid = self.next_run;
+        self.next_run += 1;
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.run = Some(rid);
+        }
+        if self.lane_free(b) {
+            self.cov.hit("core/lane-call");
+            self.first_call(rid, b, RunKind::Client(sid), input, true);
+        } else {
+            self.cov.hit("core/forwarded-to-loop");
+            self.lq.push_back(LoopItem::Req { rid, sid, b, input });
+        }
+    }
+
+    /// A client operation (no hops): the lane runs it if `b` is free, else
+    /// the loop does later and the session waits for it.
+    fn client_op(&mut self, sid: Option<usize>, b: usize, op: Op) {
+        if self.lane_free(b) {
+            self.do_op(b, op);
+            return;
+        }
+        self.cov.hit("core/forwarded-to-loop");
+        let rid = self.next_run;
+        self.next_run += 1;
+        if let Some(s) = sid.and_then(|sid| self.sessions.get_mut(&sid)) {
+            s.run = Some(rid);
+        }
+        self.lq.push_back(LoopItem::Op { rid, b, op });
+    }
+
+    /// The first call of a run. Its hops make it a run: a pending unit if
+    /// the lane made the call, the loop's active run otherwise.
+    fn first_call(&mut self, rid: usize, b: usize, kind: RunKind, input: Input, lane: bool) {
+        let is_poke = matches!(input, Input::Poke { .. });
+        let Some(out) = self.call(b, input) else {
+            return;
+        };
+        if let RunKind::Client(sid) = kind {
+            if is_poke {
+                let st = match out.reply {
+                    Reply::Status(st) => Some(st),
+                    _ => None,
+                };
+                if let Some(sess) = self.sessions.get_mut(&sid) {
+                    sess.statuses.insert(ver(b), st);
+                }
+            }
+        }
+        if out.hops.is_empty() {
+            self.finish_request(rid);
+            return;
+        }
+        let run = CRun {
+            id: rid,
+            b,
+            kind,
+            hops: out.hops.into(),
+            replies: VecDeque::new(),
+            iters: 1,
+            attempted: 0,
+            resume: None,
+        };
+        if lane {
+            self.cov.hit("core/handed-off-unit");
+            self.units.insert(b, run);
+        } else {
+            self.stack.push(run);
+        }
+    }
+
+    /// Start loop item `i` (or, if its delegate has a pending unit, that
+    /// unit first: `claim_delegate` runs it before anything else).
+    fn core_start_item(&mut self, i: usize) {
+        let b = match &self.lq[i] {
+            LoopItem::Wakeup(b) | LoopItem::Req { b, .. } | LoopItem::Op { b, .. } => *b,
+        };
+        if let Some(u) = self.units.remove(&b) {
+            self.cov.hit("core/claim-runs-unit-first");
+            self.stack.push(u);
+            return;
+        }
+        let item = self.lq.remove(i).unwrap();
+        match item {
+            LoopItem::Wakeup(b) => {
+                if self.registered[b] {
+                    let rid = self.next_run;
+                    self.next_run += 1;
+                    self.first_call(rid, b, RunKind::Unprompted, Input::Wakeup, false);
+                }
+            }
+            LoopItem::Req { rid, sid, b, input } => {
+                self.first_call(rid, b, RunKind::Client(sid), input, false);
+            }
+            LoopItem::Op { rid, b, op } => {
+                self.do_op(b, op);
+                self.finish_request(rid);
+            }
+        }
+    }
+
+    /// One call of the loop's active run: the next hop, or the next reply.
+    fn core_advance(&mut self, fate: Fate) {
+        let Some(top) = self.stack.len().checked_sub(1) else {
+            return;
+        };
+        let cap_iters = self.cfg.client_iter_cap;
+        let cap_hops = self.cfg.wakeup_hop_cap;
+        let nested = top > 0;
+        let (from, b) = (ver(self.stack[top].b), self.stack[top].b);
+
+        // a hop held while its target's unit ran nested
+        let next_hop = match self.stack[top].resume.take() {
+            Some(h) => Some((h, true)),
+            None => self.stack[top].hops.pop_front().map(|h| (h, false)),
+        };
+        if let Some(((to, frame), was_held)) = next_hop {
+            let t = bi(to);
+            if !was_held {
+                if t == b {
+                    self.cov.hit("core/self-hop-refused");
+                    return;
+                }
+                if matches!(self.stack[top].kind, RunKind::Unprompted)
+                    && self.stack[top].attempted >= cap_hops
+                {
+                    self.cov.hit("fault/hop-cap");
+                    return;
+                }
+                self.stack[top].attempted += 1;
+                if self.stack.iter().any(|r| r.b == t) {
+                    self.cov.hit("core/hop-dropped-target-mid-round-trip");
+                    return;
+                }
+                if !self.registered[t] {
+                    self.cov.hit("runtime/hop-to-unregistered");
+                    return;
+                }
+                if self.units.contains_key(&t) {
+                    if nested {
+                        self.cov.hit("core/hop-dropped-nested-unit");
+                        return;
+                    }
+                    self.cov.hit("core/hop-runs-target-unit-first");
+                    let u = self.units.remove(&t).unwrap();
+                    self.stack[top].resume = Some((to, frame));
+                    self.stack.push(u);
+                    return;
+                }
+            } else if !self.registered[t] {
+                self.cov.hit("runtime/hop-to-unregistered");
+                return;
+            }
+            let mut frame = frame;
+            match fate {
+                Fate::Drop => {
+                    self.cov.hit("fault/hop-lost");
+                    self.log(|| format!("  drop {from}->{to} {}", frame.short()));
+                    return;
+                }
+                Fate::Garble => {
+                    self.cov.hit("fault/garbled-hop");
+                    frame.garble();
+                }
+                _ => {}
+            }
+            let Some(out) = self.call(t, Input::Hop { from, frame }) else {
+                return;
+            };
+            if !out.hops.is_empty() {
+                // a target may send one reply to its caller and nothing else
+                self.cov.hit("core/target-send-dropped");
+            }
+            if let Reply::Frame(f) = out.reply {
+                let run = &mut self.stack[top];
+                let left = cap_iters.saturating_sub(run.iters);
+                if run.replies.len() >= left {
+                    self.cov.hit("core/reply-dropped-no-iterations-left");
+                } else {
+                    run.replies.push_back((to, f));
+                }
+            }
+            return;
+        }
+
+        if let Some((rfrom, f)) = self.stack[top].replies.pop_front() {
+            let run = &mut self.stack[top];
+            run.iters += 1;
+            if run.iters > cap_iters {
+                self.cov.hit("core/iteration-cap");
+                run.replies.clear();
+                return;
+            }
+            let mut f = f;
+            match fate {
+                Fate::Drop => {
+                    self.cov.hit("fault/reply-lost");
+                    self.log(|| format!("  drop reply {rfrom}->{from} {}", f.short()));
+                    return;
+                }
+                Fate::Garble => {
+                    self.cov.hit("fault/garbled-hop");
+                    f.garble();
+                }
+                _ => {}
+            }
+            let Some(out) = self.call(
+                b,
+                Input::Hop {
+                    from: rfrom,
+                    frame: f,
+                },
+            ) else {
+                return;
+            };
+            let run = &mut self.stack[top];
+            if let Reply::Frame(f) = out.reply {
+                // a message back to the replying delegate is a new hop
+                run.hops.push_back((rfrom, f));
+            }
+            run.hops.extend(out.hops);
+            return;
+        }
+
+        // nothing left: the run is done
+        let run = self.stack.pop().unwrap();
+        self.finish_request(run.id);
+    }
+
+    /// Core step candidates: advance the active run, else start a loop
+    /// item or a pending unit; idle sessions make their next request.
+    fn core_candidates(&self) -> Vec<(u8, usize, usize)> {
+        let mut c = vec![];
+        if !self.stack.is_empty() {
+            c.push((3, 0, 0));
+        } else {
+            for i in 0..self.lq.len() {
+                c.push((4, i, 0));
+            }
+            for b in self.units.keys() {
+                c.push((5, *b, 0));
+            }
+        }
+        for (sid, s) in &self.sessions {
+            if s.run.is_none() {
+                c.push((1, *sid, 0));
+            }
+        }
+        c
+    }
+
     // ---------------------------------------------------------- actions
 
     pub fn apply(&mut self, a: &Action) {
@@ -650,6 +1012,12 @@ impl World {
                             self.deliver(Some(a), hop, fate);
                         }
                         1 => self.session_next(a),
+                        3 => self.core_advance(fate),
+                        4 => self.core_start_item(a),
+                        5 => {
+                            let u = self.units.remove(&a).unwrap();
+                            self.stack.push(u);
+                        }
                         _ => {
                             let hop = self.limbo.remove(b);
                             self.deliver(None, hop, Fate::Deliver);
@@ -661,7 +1029,11 @@ impl World {
             Action::Wakeup { b } => {
                 let b = b as usize % NBUILDS;
                 if self.registered[b] {
-                    self.start_unprompted(b, Input::Wakeup);
+                    if self.core() {
+                        self.lq.push_back(LoopItem::Wakeup(b));
+                    } else {
+                        self.start_unprompted(b, Input::Wakeup);
+                    }
                 }
             }
             Action::Crash => {
@@ -756,7 +1128,11 @@ impl World {
                     self.cov.hit("client/cached-caller");
                     let b = bi(v);
                     if self.registered[b] {
-                        self.do_op(b, op);
+                        if self.core() {
+                            self.client_op(None, b, op);
+                        } else {
+                            self.do_op(b, op);
+                        }
                     }
                 }
             }
@@ -856,6 +1232,10 @@ impl World {
                 if s.discard.contains(&v) {
                     flags |= build::POKE_DISCARD;
                 }
+                if self.core() {
+                    let rec = s.fetched;
+                    return self.client_request(sid, b, Input::Poke { flags, rec });
+                }
                 let r = self.new_run(RunKind::Client(sid));
                 self.sessions.get_mut(&sid).unwrap().run = Some(r);
                 let out = self.call(
@@ -890,7 +1270,11 @@ impl World {
                 self.sessions.insert(sid, sess);
                 let b = bi(t);
                 self.cached_target = Some(t);
-                self.do_op(b, op);
+                if self.core() {
+                    self.client_op(Some(sid), b, op);
+                } else {
+                    self.do_op(b, op);
+                }
             }
             Phase::Done => {
                 self.sessions.remove(&sid);
@@ -969,6 +1353,13 @@ impl World {
             Route::Create(v) => {
                 sess.target = Some(v);
                 sess.phase = Phase::Ops;
+                if self.core() {
+                    let input = Input::Poke {
+                        flags: build::POKE_ARM,
+                        rec: Some(Rec::build(v)),
+                    };
+                    return self.client_request(sid, bi(v), input);
+                }
                 let r = self.new_run(RunKind::Client(sid));
                 self.sessions.get_mut(&sid).unwrap().run = Some(r);
                 let out = self.call(

@@ -1,14 +1,14 @@
 //! Run seeded schedules of the handover model and report invariant
 //! violations (with shrunk traces) and coverage.
 //!
-//! vault-model [--seeds N] [--start S] [--adversarial] [--stale-pointer]
+//! vault-model [--seeds N] [--start S] [--queued] [--adversarial] [--stale-pointer]
 //!             [--accept-query-answer] [--trace SEED] [--quiet]
 
 use std::collections::BTreeMap;
 
 use freenet_vault_model::cov::Cov;
 use freenet_vault_model::gen::{gen_scenario, run, shrink};
-use freenet_vault_model::world::Cfg;
+use freenet_vault_model::world::{Cfg, Delivery};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -36,7 +36,11 @@ fn main() {
                 shrink_n = args[i + 1].parse().unwrap();
                 i += 1;
             }
-            "--adversarial" => cfg.adversarial = true,
+            "--adversarial" => {
+                cfg.adversarial = true;
+                cfg.delivery = Delivery::Queued;
+            }
+            "--queued" => cfg.delivery = Delivery::Queued,
             "--stale-pointer" => cfg.stale_pointer = true,
             "--run-local-fifo" => cfg.d_global_fifo = false,
             "--no-garble" => cfg.garble_hops = false,
@@ -72,8 +76,9 @@ fn main() {
         }
     }
     println!(
-        "schedules: {seeds} (seeds {start}..{}), adversarial {}, stale pointer {}, global FIFO {}, accept-query-answer {}",
+        "schedules: {seeds} (seeds {start}..{}), delivery {:?}, adversarial {}, stale pointer {}, global FIFO {}, accept-query-answer {}",
         start + seeds,
+        cfg.delivery,
         cfg.adversarial,
         cfg.stale_pointer,
         cfg.d_global_fifo,
