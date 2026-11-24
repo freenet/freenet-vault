@@ -465,31 +465,34 @@ fn min_version_floors_a_fresh_vault_and_one_that_lost_its_mark() {
 }
 
 /// A mark whose secret is gone (a wipe of that secret) is served at the
-/// compiled-in floor and is never overwritten on that evidence; it binds again
-/// if the secret returns.
+/// compiled-in floor. A request at the minimum has nothing to establish and
+/// writes nothing; the first valid request above it writes the mark again.
 #[test]
-fn an_unreadable_mark_is_not_overwritten() {
+fn a_gone_mark_is_raised_by_the_next_request_above_the_minimum() {
     let dom = leaked_domain(vec![chat_caller(5)], 2);
     let mut h = MemHost::new();
     let (slot, _) = writer_with_key(&mut h);
     let go = |h: &mut MemHost, v: u32| send_in(&dom, h, chat(v).key, pk_req(&chat(v), &slot));
     assert!(is_key_result(&go(&mut h, 8).unwrap()));
     let name = entry_name_of(&h, KIND_CALLER_MARK, &mark_key());
-    let bytes = h.secrets.remove(&name).unwrap();
+    h.secrets.remove(&name);
     let before = h.secrets.clone();
     assert!(
         is_key_result(&go(&mut h, 5).unwrap()),
         "served at the floor"
     );
-    assert!(is_key_result(&go(&mut h, 9).unwrap()));
-    assert_eq!(h.secrets, before, "nothing was written or removed");
-    h.secrets.insert(name, bytes);
-    // The mark (8) survived.
     assert_eq!(
-        go(&mut h, 5),
+        h.secrets, before,
+        "a request at the minimum wrote something"
+    );
+    // Above the minimum: the mark is written again (9), and now binds.
+    assert!(is_key_result(&go(&mut h, 9).unwrap()));
+    assert_ne!(h.secrets, before);
+    assert_eq!(
+        go(&mut h, 8),
         Some(refused(77, refused::CALLER_NOT_AUTHORIZED))
     );
-    assert!(is_key_result(&go(&mut h, 8).unwrap()));
+    assert!(is_key_result(&go(&mut h, 9).unwrap()));
 }
 
 // ---- caller-mark edge cases on the operation path ------------------------
@@ -517,8 +520,11 @@ fn an_equal_version_different_record_is_refused() {
     )));
 }
 
+/// A mark flagged corrupt imposes no floor above `min_version` (spec 9), and
+/// the next valid raise rewrites it; one that does not verify imposes none
+/// either.
 #[test]
-fn a_mark_flagged_corrupt_still_binds_and_one_that_does_not_verify_does_not() {
+fn a_corrupt_mark_imposes_no_floor_and_the_next_raise_rewrites_it() {
     let mut h = MemHost::new();
     let (slot, _) = writer_with_key(&mut h);
     let q = crate::storage::Quota {
@@ -537,8 +543,11 @@ fn a_mark_flagged_corrupt_still_binds_and_one_that_does_not_verify_does_not() {
     );
     flagged.eflags = EFLAG_CORRUPT;
     plant(&mut h, flagged);
+    // No floor from the corrupt mark: version 4 is served and rewrites it, and
+    // that mark then binds.
+    assert!(is_key_result(&chat_pk(&mut h, 4, &slot)));
     assert_eq!(
-        chat_pk(&mut h, 4, &slot),
+        chat_pk(&mut h, 3, &slot),
         refused(77, refused::CALLER_NOT_AUTHORIZED)
     );
     assert!(is_key_result(&chat_pk(&mut h, 5, &slot)));
@@ -2367,9 +2376,11 @@ fn an_undecryptable_entry_is_missing_and_never_destroyed() {
 }
 
 /// An undecryptable caller mark reads as absent: the caller is served at the
-/// compiled-in floor and the mark is not overwritten by an operation.
+/// compiled-in floor, and the next valid request above the minimum writes the
+/// mark again (to the other parity copy, so the corrupt blob is never written
+/// over).
 #[test]
-fn an_undecryptable_caller_mark_is_not_overwritten() {
+fn an_undecryptable_caller_mark_is_rewritten_by_the_next_raise() {
     let mut h = MemHost::new();
     let (slot, _) = writer_with_key(&mut h);
     let c = chat(5);
@@ -2380,14 +2391,18 @@ fn an_undecryptable_caller_mark_is_not_overwritten() {
     )));
     h.undecryptable
         .insert(entry_name_of(&h, KIND_CALLER_MARK, &mark_key()));
-    let before = h.secrets.clone();
     let c9 = chat(9);
     assert!(is_key_result(&from_delegate(
         &mut h,
         c9.key,
         pk_req(&c9, &slot)
     )));
-    assert_eq!(h.secrets, before, "a corrupt mark was overwritten");
+    let c7 = chat(7);
+    assert_eq!(
+        from_delegate(&mut h, c7.key, pk_req(&c7, &slot)),
+        refused(77, refused::CALLER_NOT_AUTHORIZED),
+        "the rewritten mark (9) binds"
+    );
 }
 
 /// Corrupt gc lists read as absent: nothing is removed on that evidence, and
@@ -2459,4 +2474,62 @@ fn an_entry_with_an_unknown_flag_bit_is_never_served() {
     );
     assert_eq!(sign_batch(&mut h, 4, &slot, pk), unusable_reply(4));
     assert_eq!(h.secrets[&name], b, "the bytes were changed");
+}
+
+/// Once a write has failed in a call (here the startup gc rewrite) the call is
+/// read-only for every store it opens: an authorised delegate whose proof
+/// would raise its mark is still served, on the read-only path.
+#[test]
+fn a_delegate_is_still_served_after_a_failed_write_earlier_in_the_call() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, pk) = writer_with_key(&mut h);
+    let c = chat(5);
+    assert!(is_key_result(&from_delegate(
+        &mut h,
+        c.key,
+        pk_req(&c, &slot)
+    )));
+    // Pending gc work, whose rewrite fails at the start of the call.
+    let stray = names::entry(&p, KIND_KEY, &[9; 32], 0);
+    h.secrets.insert(stray.clone(), vec![1]);
+    let list = crate::storage::encode_gc_for_test(std::slice::from_ref(&stray));
+    h.secrets.insert(names::gc(&p), list.clone());
+    h.secrets.insert(names::gc2(&p), list);
+    let (g1, g2) = (names::gc(&p), names::gc2(&p));
+    h.set_fault(move |n| {
+        if n == g1.as_slice() || n == g2.as_slice() {
+            WriteFault::Fail
+        } else {
+            WriteFault::None
+        }
+    });
+    let c6 = chat(6);
+    let batch = req(
+        c6.header.clone(),
+        Operation::Batch {
+            slot: slot.clone(),
+            expected_public_key: pk,
+            items: vec![BatchItem::Sign(b"hi".to_vec())],
+        },
+    );
+    assert!(is_sig(&from_delegate(&mut h, c6.key, batch)));
+}
+
+/// A malformed `vault:parts` with a verified index: the index verifies, so the
+/// partition stays writable (spec 4.5 as revised), and the malformed list is
+/// never overwritten except by ResetPartition's repair path.
+#[test]
+fn a_malformed_parts_list_with_a_verified_index_stays_writable_and_untouched() {
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    h.secrets.insert(names::PARTS.to_vec(), vec![1; 33]);
+    assert_eq!(problems_of(&mut h) & problems::INDEX_LOST, 0);
+    assert!(is_key_result(&import_replace(&mut h, 2, &slot, [0xB2; 32])));
+    assert_eq!(seed_of(&h, &slot), [0xB2; 32]);
+    assert_eq!(
+        h.secrets[names::PARTS],
+        vec![1; 33],
+        "parts was overwritten"
+    );
 }

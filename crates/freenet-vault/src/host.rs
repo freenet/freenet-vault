@@ -22,6 +22,12 @@ pub trait Host {
     fn write_context(&mut self, data: &[u8]) -> bool;
     /// Fills `out` from the node's random source.
     fn random_bytes(&mut self, out: &mut [u8]);
+    /// Every write and removal is refused for the rest of this call (a write
+    /// failed earlier in it). A `Store` opened later in the call reports
+    /// read-only, so reads and signing still take the read-only path.
+    fn writes_refused(&self) -> bool {
+        false
+    }
 }
 
 /// Wraps the host for one call: after a `set_secret` that reports failure the
@@ -67,6 +73,9 @@ impl<H: Host> Host for WriteLatch<'_, H> {
     }
     fn random_bytes(&mut self, out: &mut [u8]) {
         self.inner.random_bytes(out)
+    }
+    fn writes_refused(&self) -> bool {
+        self.failed || self.inner.writes_refused()
     }
 }
 

@@ -258,9 +258,10 @@ enum StoredMark {
     /// compiled-in `min_version` is the floor, and the next raise rewrites it
     /// (DESIGN-NOTES.md).
     NoFloor,
-    /// The index names a mark whose secret is gone (a wipe or restore). The
-    /// compiled-in floor applies, and the entry is never overwritten by an
-    /// operation on this evidence.
+    /// The index names a mark whose secret is gone (a wipe or restore, or an
+    /// undecryptable blob). The compiled-in floor applies; a valid request
+    /// above `min_version` writes the mark again, and one at or below it
+    /// leaves the entry alone (there is nothing to raise).
     Unreadable,
 }
 
@@ -272,8 +273,10 @@ fn stored_mark<H: Host>(
     sealed: bool,
 ) -> StoredMark {
     let e = match store.read(KIND_CALLER_MARK, key, sealed) {
-        Read::Ok(e) | Read::Corrupt(Some(e)) => e,
+        Read::Ok(e) => e,
         Read::Missing => return StoredMark::Unreadable,
+        // A corrupt mark imposes no floor above `min_version` (spec 9); the
+        // next valid raise rewrites it.
         _ => return StoredMark::NoFloor,
     };
     let Ok(bytes) = <[u8; 100]>::try_from(e.content.as_slice()) else {
@@ -414,7 +417,22 @@ fn gate_caller<H: Host>(
     };
     let key = caller.mark_key()?;
     let mark = stored_mark(store, &key, author_vk, app_id, sealed);
-    match compare_mark(record, mark) {
+    let cmp = match mark {
+        // The mark is gone: a valid request above the compiled-in minimum
+        // writes it again, one at the minimum has nothing to establish.
+        StoredMark::Unreadable => {
+            let min = domain
+                .caller_delegate(author_vk, app_id)
+                .map_or(0, |c| c.min_version);
+            if PointerRecord::decode(record).version > min {
+                MarkCmp::Raise
+            } else {
+                MarkCmp::Same
+            }
+        }
+        m => compare_mark(record, m),
+    };
+    match cmp {
         MarkCmp::Refuse => Some(refusal(rid, refused::CALLER_NOT_AUTHORIZED)),
         MarkCmp::Same => None,
         MarkCmp::Raise => {

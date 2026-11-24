@@ -211,7 +211,7 @@ impl<'a, H: Host> Store<'a, H> {
     }
 
     pub fn is_read_only(&self) -> bool {
-        self.mode != Mode::Clean
+        self.mode != Mode::Clean || self.host.writes_refused()
     }
 
     pub fn mode(&self) -> Mode {
@@ -219,7 +219,7 @@ impl<'a, H: Host> Store<'a, H> {
     }
 
     fn writable(&self) -> Result<(), StorageFailure> {
-        if self.mode != Mode::Clean {
+        if self.is_read_only() {
             Err(StorageFailure)
         } else {
             Ok(())
@@ -239,7 +239,7 @@ impl<'a, H: Host> Store<'a, H> {
     /// (the write may still land), so the store is read-only for the rest of
     /// the call.
     pub fn commit(&mut self, new: Index) -> Result<(), CommitFailure> {
-        if self.mode != Mode::Clean {
+        if self.is_read_only() {
             return Err(CommitFailure { old_intact: true });
         }
         let name = names::index(&self.partition);
@@ -327,7 +327,7 @@ impl<'a, H: Host> Store<'a, H> {
     /// reads (retried by the next call); a drained list is stored empty.
     pub fn process_gc(&mut self) {
         // Only on positive evidence of what the index names.
-        if self.mode != Mode::Clean || !self.verified {
+        if self.is_read_only() || !self.verified {
             return;
         }
         let list = self.read_gc();
