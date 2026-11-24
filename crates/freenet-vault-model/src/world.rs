@@ -365,6 +365,10 @@ pub struct World {
     /// Revision 10 stated residual (4.4): builds whose vault:gc was lost
     /// (made undecryptable) while it listed names.
     gc_lost: BTreeSet<Ver>,
+    /// Builds whose vault:parts was made undecryptable at some point (4.4
+    /// stated residual "both vault:parts and the index undecryptable": the
+    /// remove-before-write rule can turn that copy into an absent one).
+    parts_lost: BTreeSet<Ver>,
     /// Revision 10 stated residual (4.4): entry copies named by a RECEIVING
     /// index when that index was lost, as (build, identity, content).
     receiver_leftover: BTreeSet<(Ver, Ident, u32)>,
@@ -425,6 +429,7 @@ impl World {
             sealed_corrupt_sent: 0,
             last_good: BTreeMap::new(),
             gc_lost: BTreeSet::new(),
+            parts_lost: BTreeSet::new(),
             receiver_leftover: BTreeSet::new(),
             damage_other: false,
             damage_scoped: BTreeSet::new(),
@@ -1449,6 +1454,9 @@ impl World {
             self.damage_other = true;
         }
         let _ = aimed;
+        if n == SName::Parts && undecryptable {
+            self.parts_lost.insert(v);
+        }
         // 4.4 stated residual: vault:gc lost while it lists names
         if n == SName::Gc && undecryptable && gc_names {
             self.gc_lost.insert(v);
@@ -1490,7 +1498,7 @@ impl World {
                 _ if matches!(
                     self.stores[b].secrets.get(&SName::Parts),
                     Some(SVal::Undecryptable)
-                ) || (n == SName::Parts && undecryptable) =>
+                ) || self.parts_lost.contains(&v) =>
                 {
                     // 4.4: both vault:parts and the index undecryptable, or
                     // wiped: the build reads as NONE (stated residual)
