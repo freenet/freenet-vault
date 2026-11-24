@@ -126,6 +126,11 @@ pub enum Mutant {
     /// Revision 10.1 (G2): direct-read in 4.5 condition 3 although
     /// vault:succ holds a non-withdrawal record above OWN_VERSION.
     DirectReadDespiteSuccessor,
+    /// Revision 10.2: heal from a mirror that does not match the index
+    /// digest (any copy of the identity that parses).
+    HealWithoutDigestCheck,
+    /// Revision 10.2: heal (rewrite and serve) while sealed.
+    HealWhileSealed,
 }
 
 impl Mutant {
@@ -139,7 +144,7 @@ impl Mutant {
         Mutant::ReceiverMirrors,
         Mutant::SweepWhileSealed,
     ];
-    pub const ALL: [Mutant; 20] = [
+    pub const ALL: [Mutant; 22] = [
         Mutant::RetiredBeforeUnlist,
         Mutant::NeverUnlist,
         Mutant::RelistRetired,
@@ -160,6 +165,8 @@ impl Mutant {
         Mutant::MalformedUnlistedIsLost,
         Mutant::WriteWithoutRemove,
         Mutant::DirectReadDespiteSuccessor,
+        Mutant::HealWithoutDigestCheck,
+        Mutant::HealWhileSealed,
     ];
     pub fn name(self) -> String {
         format!("{self:?}")
@@ -322,6 +329,9 @@ pub enum Note {
     DeleteStep(u8, Ident),
     /// The mirror sweep (7.7) finished in this call.
     SweepDone,
+    /// Revision 10.2: a heal from the mirror of this identity is about to
+    /// rewrite the named copy (4.3).
+    HealStep(Ident, bool),
     /// The partition was listed in vault:parts in this call (4.2).
     Listed,
     /// An injected write fault fired on this write or removal (coverage of
@@ -1379,11 +1389,50 @@ impl<'a> Cx<'a> {
                 return Ok(Ok(Some(e.clone())));
             }
         }
+        let sealed = matches!(idx.state, PState::Sealed { .. });
+        // revision 10.2, S1 (4.3): heal from the mirror. Before treating
+        // the named copy as corrupt (by digest, by parse, or as Missing),
+        // read the other parity copy; if it parses and matches the index
+        // digest, rewrite the named copy from it (remove-before-write) and
+        // serve it. Nothing is rewritten while sealed (4.3).
+        if !sealed || self.p.mutant == Some(Mutant::HealWhileSealed) {
+            let mn = SName::E(id, !ie.parity);
+            if let Some(SVal::E(m)) = self.host.read(&mn) {
+                let ok = if m.digest() == ie.digest {
+                    true
+                } else if self.p.mutant == Some(Mutant::HealWithoutDigestCheck) && m.ident() == id {
+                    self.hit("mutant/heal-without-digest-check");
+                    true
+                } else {
+                    self.hit("4.3/heal-skipped-mirror-fails-digest");
+                    false
+                };
+                if ok {
+                    if sealed {
+                        self.hit("mutant/heal-while-sealed");
+                    }
+                    self.hit(match &val {
+                        None => "4.3/heal-from-mirror/named-missing",
+                        Some(SVal::E(_)) => "4.3/heal-from-mirror/named-digest-mismatch",
+                        Some(_) => "4.3/heal-from-mirror/named-unparseable",
+                    });
+                    self.notes.push(Note::HealStep(id, ie.parity));
+                    if self.put(SName::E(id, ie.parity), SVal::E(m.clone()))? {
+                        self.hit("4.3/heal-from-mirror/rewritten");
+                        self.notes.push(Note::Mirrored(id));
+                    } else {
+                        self.hit("4.3/heal-from-mirror/rewrite-failed-served");
+                    }
+                    return Ok(Ok(Some(m)));
+                }
+            } else {
+                self.hit("4.3/heal-skipped-no-usable-mirror");
+            }
+        }
         if val.is_none() {
             self.hit("4.3/entry-absent-answers-missing-kept");
             return Ok(Err(()));
         }
-        let sealed = matches!(idx.state, PState::Sealed { .. });
         if sealed {
             // Nothing is rewritten or removed while sealed (4.3). The model
             // copies the bytes as they are on disk.

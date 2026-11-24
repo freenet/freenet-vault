@@ -181,6 +181,15 @@ pub enum Action {
         b: u8,
         undecryptable: bool,
     },
+    /// Damage the named (`named`) or mirror copy of key slot `slot` at
+    /// build `b`, aimed (revision 10.2 heal scenarios): mode 0
+    /// undecryptable, 1 malformed, 2 corrupt but parses.
+    GarbleEntry {
+        b: u8,
+        slot: u16,
+        named: bool,
+        mode: u8,
+    },
     /// Damage one named control secret of build `b` (0 vault:parts, 1
     /// vault:gc, 2 vault:succ), aimed (revision 10, F17 liveness).
     GarbleNamed {
@@ -603,7 +612,7 @@ impl World {
                     Note::SweepDone => {
                         self.incomplete.retain(|(x, _)| *x != v);
                     }
-                    Note::EntryStep(_, id) | Note::DeleteStep(_, id) => {
+                    Note::EntryStep(_, id) | Note::DeleteStep(_, id) | Note::HealStep(id, _) => {
                         pending.insert(*id);
                     }
                     Note::Mirrored(id) => {
@@ -676,7 +685,16 @@ impl World {
         if self.faults.quota_hits > quota_before {
             self.cov.hit("fault/quota");
         }
-        self.check_events();
+        // label only (revision 10.2 heal): removals made by a heal's
+        // remove-before-write of the named copy in this call
+        let healing: BTreeSet<SName> = notes
+            .iter()
+            .filter_map(|n| match n {
+                Note::HealStep(id, par) => Some(SName::E(*id, *par)),
+                _ => None,
+            })
+            .collect();
+        self.check_events_with(&healing);
         let after = self.stores[b].idx_or_none();
         if after != before {
             let h = &mut self.history[b];
@@ -1440,6 +1458,34 @@ impl World {
                     self.damage(b, SName::Idx, undecryptable, true);
                 }
             }
+            Action::GarbleEntry {
+                b,
+                slot,
+                named,
+                mode,
+            } => {
+                let b = b as usize % NBUILDS;
+                let id = (KIND_KEY, slot);
+                if let Some(ie) = self.stores[b]
+                    .idx()
+                    .and_then(|i| i.entries.get(&id).copied())
+                {
+                    let n = SName::E(id, if named { ie.parity } else { !ie.parity });
+                    if let Some(SVal::E(e)) = self.stores[b].secrets.get(&n).cloned() {
+                        self.cov.hit("fault/garble-entry-aimed");
+                        let val = match mode {
+                            0 => SVal::Undecryptable,
+                            1 => SVal::Garbled,
+                            _ => {
+                                let mut c = e.clone();
+                                c.content ^= 0x00C0_FFEE;
+                                SVal::E(c)
+                            }
+                        };
+                        self.damage_to(b, n, val, true);
+                    }
+                }
+            }
             Action::GarbleNamed {
                 b,
                 which,
@@ -1995,7 +2041,7 @@ impl World {
 
     // ---------------------------------------------------------- invariants
 
-    fn check_events(&mut self) {
+    fn check_events_with(&mut self, healing: &BTreeSet<SName>) {
         let evs = std::mem::take(&mut self.events);
         for e in evs {
             let Event::Delete {
@@ -2003,9 +2049,22 @@ impl World {
                 name,
                 named_by_committed,
             } = e;
+            if named_by_committed
+                && healing.contains(&name)
+                && std::env::var("HEAL_I6_COUNT_ONLY").is_ok()
+            {
+                // diagnostic mode: count the heal's removal and keep
+                // checking everything else in the schedule
+                self.cov.hit("diag/I6-heal-remove-before-write");
+                continue;
+            }
             if named_by_committed {
                 self.fail(
-                    "I6",
+                    if healing.contains(&name) {
+                        "I6-heal-remove-before-write"
+                    } else {
+                        "I6"
+                    },
                     format!("build {build} deleted {name:?}, which its committed index names"),
                 );
             }

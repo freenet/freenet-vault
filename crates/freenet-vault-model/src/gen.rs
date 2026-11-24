@@ -473,5 +473,5 @@ pub const COVERAGE_SEEDS: &[(u64, &str)] = &[
     (31534, "7.6/other-writer-or-not-from-P/Abort"),
     (47625, "7.6/RECEIVING(lower)/Complete"),
     (60718, "7.4/query-crash-after-record-stored"),
-    (233565, "7.2/outcome-staging-full"),
+    (253303, "7.2/outcome-staging-full"),
 ];

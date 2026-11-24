@@ -1018,6 +1018,242 @@ pub fn mirror_writes_failing_then_restart(cfg: &Cfg) -> Scenario {
     r.done()
 }
 
+// ---------------------------------------------------------------- revision 10.2: heal from mirror
+
+fn heal_label(mode: u8) -> &'static str {
+    match mode {
+        0 => "4.3/heal-from-mirror/named-missing",
+        1 => "4.3/heal-from-mirror/named-unparseable",
+        _ => "4.3/heal-from-mirror/named-digest-mismatch",
+    }
+}
+
+impl Rec_ {
+    /// Reads of `slot` at build `b` by a cached caller (PublicKey, Batch
+    /// with the oracle's key, Export), then the loss of b's index and the
+    /// same reads by direct read.
+    fn read_then_lose_index(&mut self, b: u8, slot: u16) {
+        for _ in 0..2 {
+            self.act(Action::Cached {
+                op: Op::PublicKey { slot },
+                b: Some(b),
+            });
+            self.act(Action::Cached {
+                op: Op::Batch { slot, expected: 0 },
+                b: Some(b),
+            });
+        }
+        self.act(Action::GarbleIndex {
+            b,
+            undecryptable: true,
+        });
+        self.act(Action::Cached {
+            op: Op::PublicKey { slot },
+            b: Some(b),
+        });
+        self.act(Action::Cached {
+            op: Op::Export { slot },
+            b: Some(b),
+        });
+    }
+}
+
+/// Revision 10.2 (S1): writer 10's named copy of slot 0 is damaged (`mode`
+/// 0 undecryptable, 1 malformed, 2 corrupt but parses) and a fault `fault`
+/// hits write `j` of the heal (mode 0: 0 the removal, 1 the rewrite; modes
+/// 1 and 2: 0 the rewrite). Then reads, a restart, reads again, and the
+/// loss of the index.
+pub fn heal_crash(cfg: &Cfg, mode: u8, j: u8, fault: WriteFault) -> Scenario {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10)]);
+    r.act(Action::Publish);
+    r.load(vec![
+        Op::Generate { slot: 0, seed: 500 },
+        Op::Generate { slot: 1, seed: 501 },
+    ]);
+    r.act(Action::GarbleEntry {
+        b: 0,
+        slot: 0,
+        named: true,
+        mode,
+    });
+    r.act(Action::ArmWriteFault { after: j, fault });
+    r.act(Action::Cached {
+        op: Op::PublicKey { slot: 0 },
+        b: Some(0),
+    });
+    r.act(Action::Crash);
+    r.drain();
+    r.act(Action::Wakeup { b: 0 });
+    r.drain();
+    r.read_then_lose_index(0, 0);
+    r.done()
+}
+
+/// Revision 10.2 (S1), handover in progress. `phase` 0: 10 is a writer
+/// copying to 40 (successor handover in progress) when its named copy of
+/// slot 0 is damaged and read. `phase` 1: 40 has taken over and is
+/// awaiting 10's retirement, its sweep has run, and its named copy of slot
+/// 0 is damaged and read. `phase` 2: 10 is SEALED toward 40 when its named
+/// copy is damaged and read: it must not heal (nothing is rewritten while
+/// sealed). The handover then completes and every slot is read.
+pub fn heal_during_handover(cfg: &Cfg, phase: u8, mode: u8) -> Option<Scenario> {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10), Rec::build(40)]);
+    r.act(Action::Publish);
+    r.load(vec![
+        Op::Generate { slot: 0, seed: 500 },
+        Op::Generate { slot: 1, seed: 501 },
+        Op::Generate { slot: 2, seed: 502 },
+    ]);
+    r.act(Action::Publish);
+    r.act(Action::Load {
+        client: 0,
+        fetch: Fetch::Newest,
+        ops: vec![],
+    });
+    let (b, ok) = match phase {
+        0 => {
+            let ok = r.steps_until(|r| {
+                matches!(r.state(40), PState::Receiving { .. })
+                    && matches!(r.state(10), PState::Writer(_))
+            });
+            (0u8, ok)
+        }
+        1 => {
+            let ok = r.steps_until(|r| matches!(r.state(40), PState::Writer(ref w) if w.awaiting));
+            // let 40 run a step (its mirror sweep) without delivering the
+            // Query's answer yet
+            r.act(Action::Wakeup { b: 3 });
+            (3u8, ok)
+        }
+        _ => {
+            let ok = r.steps_until(|r| matches!(r.state(10), PState::Sealed { .. }));
+            (0u8, ok)
+        }
+    };
+    if !ok {
+        return None;
+    }
+    // hold the phase: drop every pending hop and reply so the node goes
+    // quiet in this state; later page loads and resends finish the handover
+    for _ in 0..200 {
+        if r.w.idle() || r.w.violation.is_some() {
+            break;
+        }
+        r.act(Action::Step {
+            pick: 0,
+            fate: Fate::Drop,
+        });
+    }
+    let held = match phase {
+        0 => matches!(r.state(10), PState::Writer(_)),
+        1 => matches!(r.state(40), PState::Writer(ref w) if w.awaiting),
+        _ => matches!(r.state(10), PState::Sealed { .. }),
+    };
+    if !held {
+        return None;
+    }
+    r.act(Action::GarbleEntry {
+        b,
+        slot: 0,
+        named: true,
+        mode,
+    });
+    r.act(Action::Cached {
+        op: Op::PublicKey { slot: 0 },
+        b: Some(b),
+    });
+    r.act(Action::Cached {
+        op: Op::Batch {
+            slot: 0,
+            expected: 0,
+        },
+        b: Some(b),
+    });
+    r.drain();
+    for _ in 0..3 {
+        r.load(vec![
+            Op::PublicKey { slot: 0 },
+            Op::PublicKey { slot: 1 },
+            Op::Batch {
+                slot: 2,
+                expected: 0,
+            },
+        ]);
+    }
+    r.read_then_lose_index(3, 0);
+    Some(r.done())
+}
+
+/// Revision 10.2 (S1), stale mirror: slot 0 holds 500; an Import of 600
+/// commits but its mirror write (step 4) fails, so the mirror still holds
+/// the older acknowledged 500. The named copy (600) is then damaged: the
+/// mirror does not match the index digest, so it must NOT heal from it.
+pub fn heal_stale_mirror(cfg: &Cfg, mode: u8) -> Scenario {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10)]);
+    r.act(Action::Publish);
+    r.load(vec![Op::Generate { slot: 0, seed: 500 }]);
+    // Import writes: 0 the entry, 1 the index, 2 the mirror (fails)
+    r.act(Action::ArmWriteFault {
+        after: 2,
+        fault: WriteFault::Fail,
+    });
+    r.act(Action::Cached {
+        op: Op::Import {
+            slot: 0,
+            seed: 600,
+            replace: true,
+        },
+        b: Some(0),
+    });
+    r.act(Action::GarbleEntry {
+        b: 0,
+        slot: 0,
+        named: true,
+        mode,
+    });
+    r.read_then_lose_index(0, 0);
+    r.done()
+}
+
+/// Revision 10.2 (S1), heal after a change that failed part-way. `what` 0:
+/// an Import of 600 over 500 whose commit (write 1) fails, leaving the
+/// unacknowledged 600 at the mirror name; 1: a Delete whose commit (write 2)
+/// fails after the mirror was removed; 2: a Delete whose commit lands but
+/// reports failure (the slot is deleted, the client does not know). The
+/// named copy is then damaged and slot 0 is read: the heal must never serve
+/// 600, and never bring back a deleted key.
+pub fn heal_after_failed_change(cfg: &Cfg, what: u8, mode: u8) -> Scenario {
+    let mut r = Rec_::new(cfg, vec![Rec::build(10)]);
+    r.act(Action::Publish);
+    r.load(vec![
+        Op::Generate { slot: 0, seed: 500 },
+        Op::Generate { slot: 1, seed: 501 },
+    ]);
+    let (after, fault, op) = match what {
+        0 => (
+            1,
+            WriteFault::Fail,
+            Op::Import {
+                slot: 0,
+                seed: 600,
+                replace: true,
+            },
+        ),
+        1 => (2, WriteFault::Fail, Op::Delete { slot: 0 }),
+        _ => (2, WriteFault::LandedButError, Op::Delete { slot: 0 }),
+    };
+    r.act(Action::ArmWriteFault { after, fault });
+    r.act(Action::Cached { op, b: Some(0) });
+    r.act(Action::GarbleEntry {
+        b: 0,
+        slot: 0,
+        named: true,
+        mode,
+    });
+    r.read_then_lose_index(0, 0);
+    r.done()
+}
+
 /// Every directed scenario with the row it exists to reach.
 pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
     let mut v = vec![];
@@ -1158,6 +1394,48 @@ pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
     }
     if let Some(sc) = query_crash_after_record_stored(cfg) {
         v.push(("7.4/query-crash-after-record-stored", sc));
+    }
+    // revision 10.2: heal from the mirror
+    for mode in 0..3u8 {
+        let writes = if mode == 0 { 2 } else { 1 };
+        for j in 0..writes {
+            for f in [
+                WriteFault::CrashBefore,
+                WriteFault::CrashAfter,
+                WriteFault::Fail,
+                WriteFault::LandedButError,
+            ] {
+                v.push((heal_label(mode), heal_crash(cfg, mode, j, f)));
+            }
+        }
+        for phase in 0..3u8 {
+            if let Some(sc) = heal_during_handover(cfg, phase, mode) {
+                v.push((
+                    if phase == 2 {
+                        "5.1/SEALED/read"
+                    } else {
+                        heal_label(mode)
+                    },
+                    sc,
+                ));
+            }
+        }
+        v.push((
+            "4.3/heal-skipped-mirror-fails-digest",
+            heal_stale_mirror(cfg, mode),
+        ));
+        for what in 0..3u8 {
+            v.push((
+                match what {
+                    0 => "4.3/heal-skipped-mirror-fails-digest",
+                    1 => "4.3/heal-skipped-no-usable-mirror",
+                    // the Delete committed: the slot is not named, so no
+                    // heal is attempted; direct read finds one copy
+                    _ => "4.5/direct-read-unavailable/missing-copy",
+                },
+                heal_after_failed_change(cfg, what, mode),
+            ));
+        }
     }
     for (name, sc) in crate::replay_rev9::scenarios() {
         v.push((name, sc));

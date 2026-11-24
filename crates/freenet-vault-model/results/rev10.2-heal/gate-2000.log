@@ -1,0 +1,513 @@
+schedules: 2000 (seeds 0..2000) plus 11 coverage seeds and 184 directed scenarios, delivery Core, adversarial false, stale pointer false, global FIFO true, catch-all listing failure continues false, absent vault:parts is a valid list true, mutant None (protocol revision 10)
+violation I6 in the directed scenario for 4.3/heal-from-mirror/named-missing: build 10 deleted E((1, 0), false), which its committed index names
+violation I6 in the directed scenario for 4.3/heal-from-mirror/named-missing: build 10 deleted E((1, 0), false), which its committed index names
+violation I6 in the directed scenario for 4.3/heal-from-mirror/named-missing: build 10 deleted E((1, 0), false), which its committed index names
+violation I6 in the directed scenario for 4.3/heal-from-mirror/named-missing: build 10 deleted E((1, 0), false), which its committed index names
+violation I6 in the directed scenario for 4.3/heal-from-mirror/named-missing: build 10 deleted E((1, 0), false), which its committed index names
+violation I6 in the directed scenario for 4.3/heal-from-mirror/named-missing: build 10 deleted E((1, 0), false), which its committed index names
+violation I6 in the directed scenario for 4.3/heal-from-mirror/named-missing: build 10 deleted E((1, 0), false), which its committed index names
+violation I6 in the directed scenario for 4.3/heal-from-mirror/named-missing: build 10 deleted E((1, 0), false), which its committed index names
+violation I4 in the directed scenario for rev9-trace/stated-F5-I4-two-restores-seed88774: build 10 unsealed while its target 20 has taken over from it at the same manifest
+violation I5-after-restore: 2 schedules, first seeds [1762, 1894]
+violation I6: 12 schedules, first seeds [109, 142, 277, 356, 396, 941, 942, 1358]
+  shape      1 (first seed   1894) I5-after-restore: build # created the partition while build # holds state (RECEIVING)
+  shape      1 (first seed   1762) I5-after-restore: build # created the partition while build # holds state (WRITER)
+  shape     12 (first seed    109) I6: build # deleted E((#, #), false), which its committed index names
+sealed build sent a corrupt entry: 0 times
+schedules run: 2011; handovers (took over): 2390; calls in read-only mode: 21631; direct reads served: 7725, storage failure: 3480; I2 checks in read-only mode: served 65566, storage failure with the copy on disk 33419
+coverage: 351 counters, 1 required missing
+  MISSING 7.2/outcome-staging-full
+  13.1/arm-already-armed = 4234
+  13.1/armed = 3395
+  3/arm-refused-stopped = 182
+  3/create-refused-stopped = 7
+  3/creation-bar-refused-arm = 1690
+  3/creation-bar-refused-create = 16
+  3/not-newer = 147432
+  3/record-malformed-call = 29475
+  3/record-malformed-refuses-handover = 19671
+  3/record-stored = 15678
+  3/record-write-failed-but-landed = 287
+  3/record-write-failed-read-back = 1271
+  3/retry = 165301
+  3/withdrawal-stored = 3411
+  4.0/call-poisoned = 2660
+  4.0/write-refused-after-failed-read = 457
+  4.2/BUG-index-of-listed-partition-written-while-absent = 3
+  4.2/catch-all-listing-failed = 64
+  4.2/commit-failed-but-landed = 238
+  4.2/commit-failed-read-back = 921
+  4.2/creation-not-listed-refused-12 = 28
+  4.2/delete/fault-at-step-1 = 13
+  4.2/delete/fault-at-step-1/DurableButError = 2
+  4.2/delete/fault-at-step-1/Fail = 2
+  4.2/delete/fault-at-step-1/LandedButError = 2
+  4.2/delete/fault-at-step-1/crash = 7
+  4.2/delete/fault-at-step-2 = 17
+  4.2/delete/fault-at-step-2/DurableButError = 4
+  4.2/delete/fault-at-step-2/Fail = 3
+  4.2/delete/fault-at-step-2/LandedButError = 3
+  4.2/delete/fault-at-step-2/crash = 7
+  4.2/delete/fault-at-step-3 = 18
+  4.2/delete/fault-at-step-3/Fail = 6
+  4.2/delete/fault-at-step-3/LandedButError = 7
+  4.2/delete/fault-at-step-3/crash = 5
+  4.2/delete/fault-at-step-4 = 48
+  4.2/delete/fault-at-step-4/DurableButError = 4
+  4.2/delete/fault-at-step-4/Fail = 19
+  4.2/delete/fault-at-step-4/LandedButError = 11
+  4.2/delete/fault-at-step-4/crash = 14
+  4.2/delete/step-2-refused = 10
+  4.2/entry-write/fault-at-step-1 = 10
+  4.2/entry-write/fault-at-step-1/DurableButError = 2
+  4.2/entry-write/fault-at-step-1/Fail = 3
+  4.2/entry-write/fault-at-step-1/LandedButError = 2
+  4.2/entry-write/fault-at-step-1/crash = 3
+  4.2/entry-write/fault-at-step-2 = 257
+  4.2/entry-write/fault-at-step-2/DurableButError = 38
+  4.2/entry-write/fault-at-step-2/Fail = 50
+  4.2/entry-write/fault-at-step-2/LandedButError = 62
+  4.2/entry-write/fault-at-step-2/crash = 107
+  4.2/entry-write/fault-at-step-3 = 227
+  4.2/entry-write/fault-at-step-3/DurableButError = 33
+  4.2/entry-write/fault-at-step-3/Fail = 55
+  4.2/entry-write/fault-at-step-3/LandedButError = 50
+  4.2/entry-write/fault-at-step-3/crash = 89
+  4.2/entry-write/fault-at-step-4 = 139
+  4.2/entry-write/fault-at-step-4/DurableButError = 25
+  4.2/entry-write/fault-at-step-4/Fail = 25
+  4.2/entry-write/fault-at-step-4/LandedButError = 33
+  4.2/entry-write/fault-at-step-4/crash = 56
+  4.2/entry-write/mirror-failed-committed = 144
+  4.2/entry-write/step-4 = 8219
+  4.2/first-index-read-back-failed-not-listed = 2
+  4.2/gc-dropped-named-by-commit = 34
+  4.2/gc-name-kept-not-absent = 46
+  4.2/gc-processed = 1116
+  4.2/listed-after-first-writer-index = 4161
+  4.2/listing-attempt-did-not-land = 97
+  4.2/listing-fix-failed-answers-nothing = 64
+  4.2/listing-write-failed = 56
+  4.2/receiver/single-copy-written = 4782
+  4.2/remove-before-write/entry = 37
+  4.2/remove-before-write/gc = 1
+  4.2/remove-before-write/index = 48
+  4.2/remove-before-write/parts = 25
+  4.2/remove-before-write/progress = 1
+  4.2/remove-before-write/succ = 422
+  4.2/retired-not-unlisted-no-answer = 1
+  4.2/retired-still-listed-unlists-first = 33
+  4.2/step-1/leftover-found = 230
+  4.2/step-1/removal-failed-refused = 116
+  4.2/take-over-not-listed-no-answer = 26
+  4.2/unlist-failed = 19
+  4.2/unlist-parts-absent-no-write = 3
+  4.2/unlisted-on-retire = 2402
+  4.2/valid-index-unlisted-listed-first = 221
+  4.3/corrupt-rewritten-flagged = 159
+  4.3/corrupt-unparseable-removed = 7
+  4.3/entry-absent-answers-missing-kept = 100
+  4.3/heal-from-mirror/named-digest-mismatch = 11
+  4.3/heal-from-mirror/named-missing = 27
+  4.3/heal-from-mirror/named-unparseable = 9
+  4.3/heal-from-mirror/rewrite-failed-served = 12
+  4.3/heal-from-mirror/rewritten = 26
+  4.3/heal-skipped-mirror-fails-digest = 13
+  4.3/heal-skipped-no-usable-mirror = 253
+  4.4/gc-lost-while-listing-names = 12
+  4.4/receiver-index-lost-reads-none = 43
+  4.4/retired-index-lost-reads-none = 79
+  4.4/retired-still-listed-window = 28
+  4.5/courier-selects-damaged-build = 3893
+  4.5/damaged-index-listed-lost = 271
+  4.5/damaged-index-malformed-unlisted-none = 174
+  4.5/damaged-index-unlisted-lost-parts-not-valid-list = 4
+  4.5/direct-read-served = 7725
+  4.5/direct-read-storage-failure = 3480
+  4.5/direct-read-unavailable/authentication-failure = 368
+  4.5/direct-read-unavailable/disagreement = 539
+  4.5/direct-read-unavailable/missing-copy = 2573
+  4.5/direct-read-unavailable/no-copy = 710
+  4.5/g2-condition-3-successor-moved = 15
+  4.5/g2b-condition-2-successor-moved = 6
+  4.5/index-absent-while-listed = 12774
+  4.5/index-lost-call = 21631
+  4.5/lost/change-refused = 1036
+  4.5/lost/export = 5410
+  4.5/lost/hop-not-answered = 1118
+  4.5/lost/poke-reports-state-7 = 4692
+  4.5/lost/read = 5795
+  4.5/malformed-index-listed-lost = 8680
+  4.5/malformed-index-parts-not-valid-list-lost = 177
+  4.5/malformed-index-unlisted-reads-none = 5072
+  4.5/unlisted-index-lost-reads-none-by-design = 3
+  4.5/write-refused-after-failed-write = 534
+  5.1/NONE/change = 11426
+  5.1/NONE/mark = 1785
+  5.1/NONE/read = 3128
+  5.1/RECEIVING/change = 104
+  5.1/RECEIVING/mark = 23
+  5.1/RECEIVING/read = 35
+  5.1/RETIRED/change = 4505
+  5.1/RETIRED/mark = 740
+  5.1/RETIRED/read = 1773
+  5.1/SEALED/change = 88
+  5.1/SEALED/mark = 11
+  5.1/SEALED/read = 22
+  5.1/WRITER(awaiting)/change = 57
+  5.1/WRITER(awaiting)/mark = 11
+  5.1/WRITER(awaiting)/read = 15
+  5.1/WRITER/change = 13525
+  5.1/WRITER/mark = 2088
+  5.1/WRITER/read = 5773
+  5.1/arming-cleared-by-record = 649
+  5.1/created = 1848
+  5.2/paused-no-arm = 3081
+  5.2/unavailable = 10355
+  5.3/armed-all-confirmed = 7833
+  5.3/arming-cleared-by-state-answer = 513
+  5.3/confirmed = 3196
+  5.3/confirmed-again = 1
+  5.3/create-refused-unconfirmed = 410
+  5.3/created-after-every-predecessor-confirmed = 494
+  5.3/nostate-answer-lost = 66
+  5.3/probe-answer-other/Stopped = 574
+  5.3/probe-answer-other/StorageFailure = 2
+  5.3/probe-answered-state = 10
+  5.3/probe-crash-after-record-stored = 2
+  5.3/probe-received = 5470
+  5.3/probe-sent = 25799
+  5.3/two-builds-armed-at-once = 2225
+  6/ack-from-successor = 13475
+  6/ignored = 768
+  6/ignored/answer-from-predecessor = 699
+  6/poke = 345779
+  6/predecessor-role = 5881
+  6/query-answer/armed = 4369
+  6/query-answer/awaiting = 382
+  6/query-answer/awaiting-cleared/NoState = 15
+  6/query-answer/awaiting-cleared/Noted = 226
+  6/query-answer/awaiting/AnotherWriter = 129
+  6/receiver-role = 14596
+  6/wakeup = 197500
+  7.2/outcome-identical = 1071
+  7.2/outcome-policy-dropped = 361
+  7.2/outcome-storage-failure = 166
+  7.2/outcome-stored = 4782
+  7.3/ack-ignored-no-target = 2
+  7.3/ack/AnotherWriter = 1085
+  7.3/ack/HigherBuild = 3
+  7.3/ack/Malformed = 77
+  7.3/ack/Processed = 4034
+  7.3/ack/Stopped = 1
+  7.4/awaiting-cleared-by-retired = 2149
+  7.4/missing = 7
+  7.4/query-crash-after-record-stored = 2
+  7.4/retired = 2402
+  7.4/sealed = 6067
+  7.4/took-over = 2390
+  7.4/unlisted-dropped = 2
+  7.5/completeack-ignored-not-sealed = 2068
+  7.5/completeack/Aborted = 40
+  7.5/completeack/Accepted = 2266
+  7.5/completeack/AlreadyWriter = 129
+  7.5/completeack/AnotherWriter = 1946
+  7.5/completeack/DifferentManifest = 126
+  7.5/completeack/HigherBuild = 1601
+  7.5/completeack/Malformed = 53
+  7.5/completeack/Missing = 24
+  7.5/completeack/Noted = 1
+  7.5/completeack/Stopped = 1
+  7.5/completeack/StorageFailure = 18
+  7.5/pause-cleared-by-poke = 1360
+  7.5/pause-set = 542
+  7.5/step-abort = 460
+  7.5/step-resend-complete = 690
+  7.5/unsealed = 3652
+  7.6/NONE/Abort = 17
+  7.6/NONE/Chunk = 2554
+  7.6/NONE/Complete = 241
+  7.6/NONE/Retired = 2
+  7.6/RECEIVING(P)/Abort = 26
+  7.6/RECEIVING(P)/Chunk = 1949
+  7.6/RECEIVING(P)/Complete = 2274
+  7.6/RECEIVING(higher)/Chunk = 4
+  7.6/RECEIVING(higher)/Complete = 1718
+  7.6/RECEIVING(lower)/Chunk = 2
+  7.6/RECEIVING(lower)/Complete = 1
+  7.6/malformed/Abort = 2
+  7.6/malformed/Chunk = 85
+  7.6/malformed/Complete = 54
+  7.6/other-writer-or-not-from-P/Abort = 2
+  7.6/other-writer-or-not-from-P/Chunk = 863
+  7.6/other-writer-or-not-from-P/Complete = 2091
+  7.6/other-writer-or-not-from-P/Retired = 1
+  7.6/stopped/Abort = 1
+  7.6/stopped/Chunk = 1
+  7.6/stopped/Complete = 1
+  7.6/taken-over-from-P/Abort = 159
+  7.6/taken-over-from-P/Chunk = 225
+  7.6/taken-over-from-P/Complete = 117
+  7.6/taken-over-from-P/Retired = 2206
+  7.6/taken-over-from-P/Retired-other-m-ignored = 25
+  7.6q/NONE-record-stored = 110
+  7.6q/NONE-storage-failure = 3
+  7.6q/NONE/probe = 5460
+  7.6q/NONE/probe-already-current-0x0B = 3860
+  7.6q/NONE/probe-higher-record-0x07 = 925
+  7.6q/NONE/probe-stopped-0x03 = 580
+  7.6q/NONE/query = 23
+  7.6q/RETIRED-to-querier-same-m = 205
+  7.6q/RETIRED/probe-0x07 = 1
+  7.6q/SEALED-toward-querier-same-m = 54
+  7.6q/SEALED/probe-0x07 = 1
+  7.6q/anything-else = 139
+  7.6q/anything-else/RETIRED-elsewhere-or-other-m = 130
+  7.6q/index-lost = 886
+  7.7/step-copy = 4533
+  7.7/step-query = 1676
+  7.7/sweep-finished = 5734
+  7.7/sweep-repair = 4399
+  7.7/sweep-skipped-named-copy-fails-digest = 87
+  7.7/sweep-write-failed = 272
+  8/quota-refused = 362
+  9/mark-raised = 1629
+  AVAIL/checked = 1420418
+  I2/read-only-served = 65566
+  I2/read-only-storage-failure-copy-on-disk = 33419
+  I5/creation = 1871
+  I7-scope/control-damage/gc = 14
+  I7-scope/control-damage/parts = 43
+  I7-scope/control-damage/succ = 71
+  I7-scope/receiver-index-lost/malformed = 23
+  I7-scope/receiver-index-lost/undecryptable = 20
+  I7/checked = 942
+  I7/checked-control-damage = 10
+  I7/checked-receiver-index-lost = 8
+  client/cached-caller = 16121
+  client/old-lineage = 10339
+  core/claim-runs-unit-first = 1144
+  core/forwarded-to-loop = 24541
+  core/handed-off-unit = 24186
+  core/hop-dropped-target-mid-round-trip = 112
+  core/hop-runs-target-unit-first = 117
+  core/lane-call = 339885
+  core/reply-dropped-no-iterations-left = 270
+  dec1/awaiting-nostate-answer-lost = 3
+  dec1/nostate-answers-awaiting-query = 20
+  dec1/two-queriers-got-nostate-from-same-predecessor = 511
+  fault/corrupt-but-parses/entry = 85
+  fault/crash-after-write = 510
+  fault/crash-before-write = 501
+  fault/crash-between-calls = 3739
+  fault/durable-but-error = 456
+  fault/garble-control-aimed = 130
+  fault/garble-entry-aimed = 34
+  fault/garble-equivalent-to-wipe-or-restore = 431
+  fault/garble-index-aimed = 370
+  fault/garble-secret = 1802
+  fault/garbled-hop = 413
+  fault/hop-cap = 46
+  fault/hop-lost = 568
+  fault/landed-but-error = 531
+  fault/listing-corrupt = 1121
+  fault/malformed/entry = 53
+  fault/malformed/gc = 2
+  fault/malformed/index = 288
+  fault/malformed/parts = 45
+  fault/malformed/progress = 2
+  fault/malformed/rx = 21
+  fault/malformed/succ = 351
+  fault/pointer-unreachable = 3985
+  fault/quota = 1761
+  fault/read-poisoned = 2660
+  fault/reply-lost = 383
+  fault/restore-secret = 318
+  fault/restore-whole = 1600
+  fault/storage-failure = 548
+  fault/storage-failure-seen = 3447
+  fault/undecryptable/entry = 106
+  fault/undecryptable/gc = 15
+  fault/undecryptable/index = 340
+  fault/undecryptable/parts = 59
+  fault/undecryptable/progress = 2
+  fault/undecryptable/rx = 11
+  fault/undecryptable/succ = 422
+  fault/unregister = 3053
+  fault/wipe = 1335
+  liveness/awaiting-forever-predecessor-index-lost = 6
+  liveness/awaiting-forever-predecessor-index-lost/no-restore = 5
+  ops/delete = 1066
+  ops/key-written = 5696
+  ops/unknown-kind-written = 892
+  ops/unknown-op-refused = 2039
+  oracle/acked-change = 7969
+  publish/rollback = 849
+  publish/withdrawal = 1558
+  reading/0x0B-current-below-withdrawal = 87
+  restore/acknowledged-value-destroyed = 680
+  runtime/hop-to-unregistered = 690
+  sent/Ack/AnotherWriter = 1088
+  sent/Ack/HigherBuild = 4
+  sent/Ack/Malformed = 85
+  sent/Ack/Processed = 4366
+  sent/Ack/Stopped = 1
+  sent/CompleteAck/Aborted = 46
+  sent/CompleteAck/Accepted = 2364
+  sent/CompleteAck/AlreadyWriter = 150
+  sent/CompleteAck/AnotherWriter = 3155
+  sent/CompleteAck/DifferentManifest = 126
+  sent/CompleteAck/HigherBuild = 1718
+  sent/CompleteAck/Malformed = 56
+  sent/CompleteAck/Missing = 35
+  sent/CompleteAck/NoState = 3970
+  sent/CompleteAck/Noted = 2428
+  sent/CompleteAck/Stopped = 581
+  sent/CompleteAck/StorageFailure = 55
+  unavailable-by-cause/corruption = 1011
+  unavailable-by-cause/delete-outcome-unknown = 420
+  unavailable-by-cause/last-change-unfinished = 1599
+  unavailable-by-cause/no-acknowledged-key = 442
+
+==== seed 1762: shrunk to 13 actions; ledger [Rec { v: 10, withdrawal: false }, Rec { v: 20, withdrawal: false }, Rec { v: 25, withdrawal: true }, Rec { v: 30, withdrawal: false }, Rec { v: 40, withdrawal: false }, Rec { v: 50, withdrawal: false }, Rec { v: 55, withdrawal: true }, Rec { v: 60, withdrawal: false }]
+violation: Some(Violation { inv: "I5-after-restore", msg: "build 10 created the partition while build 20 holds state (RECEIVING)", at: 19 })
+[1] Publish
+[2] Load { client: 0, fetch: Newest, ops: [Generate { slot: 0, seed: 216056 }, PutExt { key: 0, content: 1 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[3] Step { pick: 0, fate: Drop }
+  20 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[4] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[5] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[6] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[7] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[8] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(10)
+  10 Poke { flags: 2, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [] state NONE -> NONE(armed)
+[9] Step { pick: 0, fate: Deliver }
+  10 Op(Generate { slot: 0, seed: 216056 }) -> "Key(216056)" hops [] state NONE(armed) -> WRITER
+  op Generate { slot: 0, seed: 216056 } at 10 -> Key(216056)
+[10] Publish
+[11] Load { client: 1, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 2)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[12] Restore { b: 0, snap: 49, secret: None }
+[13] Step { pick: 37, fate: Deliver }
+== quiescence
+[14] Load { client: 0, fetch: Newest, ops: [] }
+[15] Step { pick: 0, fate: Deliver }
+[16] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 216056, ext: [] }], malformed: false } } -> "Ack(Processed, [(1622078705403458907, Stored)], succ None)" hops [] state NONE -> RECEIVING
+[17] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Ack { tid: (10, Rec { v: 20, withdrawal: false }), status: Processed, succ: None, outcomes: [(1622078705403458907, Stored)] } } -> "-" hops [] state NONE(armed) -> NONE(armed)
+[18] Step { pick: 0, fate: Deliver }
+[19] Step { pick: 0, fate: Deliver }
+  10 Op(PutExt { key: 0, content: 1 }) -> "Refused(10)" hops [] state NONE(armed) -> WRITER
+!! I5-after-restore: build 10 created the partition while build 20 holds state (RECEIVING)
+  op PutExt { key: 0, content: 1 } at 10 -> Refused(10)
+[20] Wakeup { b: 0 }
+[21] Wakeup { b: 1 }
+[22] Wakeup { b: 2 }
+[23] Wakeup { b: 3 }
+[24] Wakeup { b: 4 }
+[25] Wakeup { b: 5 }
+
+==== seed 109: shrunk to 33 actions; ledger [Rec { v: 10, withdrawal: false }, Rec { v: 20, withdrawal: false }, Rec { v: 30, withdrawal: false }, Rec { v: 40, withdrawal: false }, Rec { v: 50, withdrawal: false }, Rec { v: 60, withdrawal: false }]
+violation: Some(Violation { inv: "I6", msg: "build 50 deleted E((1, 0), false), which its committed index names", at: 47 })
+[1] Publish
+[2] Load { client: 0, fetch: Newest, ops: [Generate { slot: 0, seed: 337690 }, PutExt { key: 0, content: 1 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[3] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[4] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[5] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[6] Load { client: 2, fetch: Newest, ops: [Batch { slot: 0, expected: 0 }, PutExt { key: 0, content: 549 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[7] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[8] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[9] Load { client: 1, fetch: Newest, ops: [Import { slot: 3, seed: 1, replace: true }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[10] Wakeup { b: 3 }
+[11] Publish
+[12] Step { pick: 9, fate: Deliver }
+  courier client 0 route Create(10)
+  10 Poke { flags: 2, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [] state NONE -> NONE(armed)
+[13] Publish
+[14] Wakeup { b: 0 }
+[15] Publish
+[16] Publish
+[17] Step { pick: 62, fate: Deliver }
+  10 Op(Generate { slot: 0, seed: 337690 }) -> "Key(337690)" hops [] state NONE(armed) -> WRITER
+  op Generate { slot: 0, seed: 337690 } at 10 -> Key(337690)
+[18] Crash
+[19] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state WRITER -> WRITER
+[20] Load { client: 0, fetch: Newest, ops: [Generate { slot: 1, seed: 100359 }, PutExt { key: 0, content: 243 }, PublicKey { slot: 0 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 50, withdrawal: false }) } -> "Status(WRITER, rec 2)" hops [50:Chunk(rec 50, 1 entries)] state WRITER -> WRITER
+[21] Step { pick: 17, fate: Deliver }
+[22] Wakeup { b: 2 }
+[23] Step { pick: 0, fate: Deliver }
+  50 Hop { from: 10, frame: Chunk { rec: Rec { v: 50, withdrawal: false }, entries: [Entry { kind: 1, key: 0, flagged: false, content: 337690, ext: [] }], malformed: false } } -> "Ack(Processed, [(4161488520250848464, Stored)], succ None)" hops [] state NONE -> RECEIVING
+[24] Step { pick: 0, fate: Garble }
+  10 Hop { from: 50, frame: Ack { tid: (10, Rec { v: 50, withdrawal: false }), status: Processed, succ: None, outcomes: [(4161488520250848464, Stored)] } } -> "-" hops [50:Complete(m da74, 1 digests)] state WRITER -> SEALED
+[25] Step { pick: 0, fate: Deliver }
+  50 Hop { from: 10, frame: Complete { rec: Rec { v: 50, withdrawal: false }, m: 8664928883762453108, digests: [4161488520250848464], malformed: false } } -> "CompleteAck(Accepted, m da74, missing 0, succ None)" hops [] state RECEIVING -> WRITER(awaiting)
+[26] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 50, frame: CompleteAck { tid: (10, Rec { v: 50, withdrawal: false }), m: 8664928883762453108, status: Accepted, succ: None, missing: [] } } -> "-" hops [50:Retired(m da74)] state SEALED -> RETIRED
+[27] Step { pick: 0, fate: Deliver }
+  50 Hop { from: 10, frame: Retired { rec: Rec { v: 50, withdrawal: false }, m: 8664928883762453108, malformed: false } } -> "CompleteAck(Noted, m da74, missing 0, succ None)" hops [] state WRITER(awaiting) -> WRITER
+[28] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 50, frame: CompleteAck { tid: (10, Rec { v: 50, withdrawal: false }), m: 8664928883762453108, status: Noted, succ: None, missing: [] } } -> "-" hops [] state RETIRED -> RETIRED
+[29] Step { pick: 0, fate: Deliver }
+[30] Step { pick: 0, fate: Drop }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[31] Step { pick: 40, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[32] Step { pick: 22, fate: Deliver }
+  50 Wakeup -> "-" hops [] state WRITER -> WRITER
+[33] Garble { b: 4, pick: 27, undecryptable: true }
+== quiescence
+[34] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 50, withdrawal: false }) } -> "Status(RETIRED, rec 0)" hops [] state RETIRED -> RETIRED
+[35] Step { pick: 0, fate: Deliver }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[36] Step { pick: 0, fate: Deliver }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[37] Step { pick: 0, fate: Deliver }
+  60 Wakeup -> "-" hops [] state NONE -> NONE
+[38] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 50, withdrawal: false }) } -> "Status(NONE, rec 2)" hops [] state NONE -> NONE
+[39] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 50, withdrawal: false }) } -> "Status(NONE, rec 2)" hops [] state NONE -> NONE
+[40] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 50, withdrawal: false }) } -> "Status(NONE, rec 2)" hops [] state NONE -> NONE
+[41] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 50, withdrawal: false }) } -> "Status(WRITER, rec 3)" hops [] state WRITER -> WRITER
+[42] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 50, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[43] Step { pick: 0, fate: Deliver }
+  10 Poke { flags: 0, rec: Some(Rec { v: 50, withdrawal: false }) } -> "Status(RETIRED, rec 0)" hops [] state RETIRED -> RETIRED
+[44] Step { pick: 0, fate: Deliver }
+  courier client 0 route Writer(50)
+[45] Step { pick: 0, fate: Deliver }
+  50 Op(Generate { slot: 1, seed: 100359 }) -> "Key(100359)" hops [] state WRITER -> WRITER
+  op Generate { slot: 1, seed: 100359 } at 50 -> Key(100359)
+[46] Step { pick: 0, fate: Deliver }
+  50 Op(PutExt { key: 0, content: 243 }) -> "Refused(10)" hops [] state WRITER -> WRITER
+  op PutExt { key: 0, content: 243 } at 50 -> Refused(10)
+[47] Step { pick: 0, fate: Deliver }
+!! I6: build 50 deleted E((1, 0), false), which its committed index names
+  50 Op(PublicKey { slot: 0 }) -> "Key(337690)" hops [] state WRITER -> WRITER
+  op PublicKey { slot: 0 } at 50 -> Key(337690)
+[48] Wakeup { b: 0 }
+[49] Wakeup { b: 1 }
+[50] Wakeup { b: 2 }
+[51] Wakeup { b: 3 }
+[52] Wakeup { b: 4 }
+[53] Wakeup { b: 5 }
