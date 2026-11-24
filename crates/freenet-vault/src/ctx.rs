@@ -69,7 +69,11 @@ impl Ctx {
         if self == &Self::default() {
             return Vec::new();
         }
-        let p = self.pending.as_ref().map(|p| p.encode()).unwrap_or_default();
+        let p = self
+            .pending
+            .as_ref()
+            .map(|p| p.encode())
+            .unwrap_or_default();
         let v = &self.vol;
         let mut w = Writer::new();
         w.bytes(b"FVCT").len_u16(p.len(), "pending").bytes(&p);

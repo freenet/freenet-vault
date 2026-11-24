@@ -827,7 +827,9 @@ impl<'a, H: Host> Cx<'a, H> {
         let _ = fname;
         // Strict decode; a request that does not decode is "malformed", and
         // its leading fields are read on their own for the answer.
-        let chunk = (ftype == types::CHUNK).then(|| Chunk::decode(body).ok()).flatten();
+        let chunk = (ftype == types::CHUNK)
+            .then(|| Chunk::decode(body).ok())
+            .flatten();
         let complete = (ftype == types::COMPLETE)
             .then(|| Complete::decode(body).ok())
             .flatten();
@@ -971,12 +973,16 @@ impl<'a, H: Host> Cx<'a, H> {
                             // Still NONE on disk: nothing stored.
                             let outs = entries
                                 .iter()
-                                .map(|e| (freenet_vault_common::hash::entry_digest(e), outcome::STORAGE_FAILURE))
+                                .map(|e| {
+                                    (
+                                        freenet_vault_common::hash::entry_digest(e),
+                                        outcome::STORAGE_FAILURE,
+                                    )
+                                })
                                 .collect();
                             return ack(chunk_status::PROCESSED, outs, hs);
                         }
-                        Some(self.process_chunk(from, tid, cdig, entries))
-                            .flatten()
+                        Some(self.process_chunk(from, tid, cdig, entries)).flatten()
                     }
                     types::COMPLETE => {
                         let c = complete.expect("decoded");
@@ -1021,7 +1027,12 @@ impl<'a, H: Host> Cx<'a, H> {
                         if !self.discard_to(&idx, from) {
                             let outs = entries
                                 .iter()
-                                .map(|e| (freenet_vault_common::hash::entry_digest(e), outcome::STORAGE_FAILURE))
+                                .map(|e| {
+                                    (
+                                        freenet_vault_common::hash::entry_digest(e),
+                                        outcome::STORAGE_FAILURE,
+                                    )
+                                })
                                 .collect();
                             return ack(chunk_status::PROCESSED, outs, hs);
                         }
@@ -1285,7 +1296,10 @@ impl<'a, H: Host> Cx<'a, H> {
             hit!("7.4/missing");
             cack(
                 cstatus::MISSING,
-                missing.into_iter().take(limits::get().missing_max).collect(),
+                missing
+                    .into_iter()
+                    .take(limits::get().missing_max)
+                    .collect(),
             )
         }
     }
@@ -1552,7 +1566,9 @@ impl<'a, H: Host> Cx<'a, H> {
         } else if storage::unlist(self.h, &self.part).is_err() {
             return false;
         }
-        let _ = self.h.remove_secret(&names::progress(version(target), &self.part));
+        let _ = self
+            .h
+            .remove_secret(&names::progress(version(target), &self.part));
         true
     }
 
@@ -1902,8 +1918,11 @@ pub fn poke<H: Host>(d: &Domain, h: &mut H, own_page: bool, body: &[u8]) -> Out 
     // report it and keep serving as whatever it was.
     if Succ::load(d, &*h).is_err() {
         hit!("3/record-malformed-call");
-        let ix = Index::decode(&h.get_secret(&names::index(&d.partition())).unwrap_or_default())
-            .unwrap_or_else(|_| Index::none());
+        let ix = Index::decode(
+            &h.get_secret(&names::index(&d.partition()))
+                .unwrap_or_default(),
+        )
+        .unwrap_or_else(|_| Index::none());
         return Out {
             reply: Some(encode_status(handover_status(
                 d,
@@ -1931,8 +1950,11 @@ pub fn poke<H: Host>(d: &Domain, h: &mut H, own_page: bool, body: &[u8]) -> Out 
     if h.writes_refused() {
         extra |= problems::STORAGE_FAILURE;
     }
-    let ix = Index::decode(&h.get_secret(&names::index(&d.partition())).unwrap_or_default())
-        .unwrap_or_else(|_| Index::none());
+    let ix = Index::decode(
+        &h.get_secret(&names::index(&d.partition()))
+            .unwrap_or_default(),
+    )
+    .unwrap_or_else(|_| Index::none());
     let succ = Succ::load(d, &*h).ok();
     if saw_missing {
         extra |= problems::CORRUPT_OR_LOST;
@@ -2034,8 +2056,11 @@ pub fn submit_domain_record<H: Host>(d: &Domain, h: &mut H, rec: &Rec, own_page:
         return handover_status(d, succ.as_ref(), None, step_result::NOTHING, 0, own_page);
     }
     let read_ix = |h: &H| {
-        Index::decode(&h.get_secret(&names::index(&d.partition())).unwrap_or_default())
-            .unwrap_or_else(|_| Index::none())
+        Index::decode(
+            &h.get_secret(&names::index(&d.partition()))
+                .unwrap_or_default(),
+        )
+        .unwrap_or_else(|_| Index::none())
     };
     if Succ::load(d, &*h).is_err() {
         let ix = read_ix(h);

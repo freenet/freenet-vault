@@ -14,11 +14,24 @@
 /// A transition the invariant checker needs to see (the model's `Note`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Note {
-    Unsealed { target: u32, m: [u8; 32], cause: u8 },
-    UnsealIntent { target: u32, m: [u8; 32] },
+    Unsealed {
+        target: u32,
+        m: [u8; 32],
+        cause: u8,
+    },
+    UnsealIntent {
+        target: u32,
+        m: [u8; 32],
+    },
     Created,
-    TookOver { from: u32, m: [u8; 32] },
-    Retired { to: u32, m: [u8; 32] },
+    TookOver {
+        from: u32,
+        m: [u8; 32],
+    },
+    Retired {
+        to: u32,
+        m: [u8; 32],
+    },
     AwaitingCleared,
     SealedCorruptSent,
     /// Step k of an entry write of (kind, key) is about to happen (4.2).

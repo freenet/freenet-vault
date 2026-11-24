@@ -6,9 +6,9 @@ use crate::caller::{self, Caller};
 use crate::consent::{self, Pending};
 use crate::crypto;
 use crate::domain::Domain;
+use crate::hit;
 use crate::host::Host;
 use crate::storage::index::State;
-use crate::hit;
 use crate::storage::{rescue_export_seed, PutError, Quota, Read, Store};
 use crate::succ::Succ;
 use crate::trace::{self, Mutant, Note};
@@ -915,7 +915,8 @@ fn lost_hits<H: Host>(host: &H, domain: &Domain, f: crate::storage::StoredIndexM
     let _ = (host, domain, f);
     hit!("4.5/index-lost-call");
     match f.0 {
-        crate::storage::IndexFault::LostWhileListed | crate::storage::IndexFault::PartsUnreadable => {
+        crate::storage::IndexFault::LostWhileListed
+        | crate::storage::IndexFault::PartsUnreadable => {
             hit!("4.5/index-absent-while-listed")
         }
         crate::storage::IndexFault::Damaged

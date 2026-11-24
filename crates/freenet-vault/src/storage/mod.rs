@@ -766,11 +766,17 @@ impl<'a, H: Host> Store<'a, H> {
         }
         match self.read(kind, key, false) {
             Read::Corrupt(Some(_)) | Read::Ok(_) => {
-                match self.index.find(kind, key).map(|i| self.index.entries[i].clone()) {
-                    Some(ie) => match self.host.get_secret(&self.entry_name(kind, key, ie.parity)) {
-                        Some(b) if entry_digest(&b) == ie.digest => CopyRead::Bytes(b),
-                        _ => CopyRead::Missing,
-                    },
+                match self
+                    .index
+                    .find(kind, key)
+                    .map(|i| self.index.entries[i].clone())
+                {
+                    Some(ie) => {
+                        match self.host.get_secret(&self.entry_name(kind, key, ie.parity)) {
+                            Some(b) if entry_digest(&b) == ie.digest => CopyRead::Bytes(b),
+                            _ => CopyRead::Missing,
+                        }
+                    }
                     None => CopyRead::Absent,
                 }
             }
@@ -997,7 +1003,11 @@ fn direct_entry<H: Host>(host: &H, partition: &[u8; 32], kind: u8, key: &[u8]) -
             unavailable("disagreement")
         }
         (Some(x), None) | (None, Some(x)) => {
-            let other_absent = if c0.is_some() { c1.is_none() } else { c0.is_none() };
+            let other_absent = if c0.is_some() {
+                c1.is_none()
+            } else {
+                c0.is_none()
+            };
             if other_absent && trace::mutant(Mutant::DirectReadSingleCopy) {
                 hit!("mutant/direct-read-served-single-copy");
                 return DirectRead::Served(x);
