@@ -2225,7 +2225,9 @@ fn double_corruption_of_index_and_parts_looks_fresh_but_keys_stay_exportable() {
     h.undecryptable.insert(names::PARTS.to_vec());
     assert!(!Store::open(&mut h, p).unwrap().has_index());
     assert_eq!(
-        crate::storage::rescue_export_seed(&h, &p, &slot),
+        crate::storage::rescue_export_seed(&h, &p, &slot)
+            .ok()
+            .flatten(),
         Some(seed)
     );
 }
