@@ -100,9 +100,9 @@ impl MemHost {
     }
 
     /// Stores `value` under an entry name AND under its parity twin (`...:0` and
-    /// `...:1`): damage that hits both copies of an entry, which the mirror
-    /// cannot repair (revision 10.2: a digest-matching mirror restores the
-    /// named copy).
+    /// `...:1`): damage that hits both copies of an entry, so that no intact
+    /// mirror is left. (The heal of a damaged named copy from a digest-matching
+    /// mirror is on hold and not implemented: branch `hold/item7-mirror-heal`.)
     pub fn set_pair(&mut self, name: &[u8], value: Vec<u8>) {
         let mut twin = name.to_vec();
         let last = twin.len() - 1;

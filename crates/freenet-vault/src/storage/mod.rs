@@ -297,7 +297,7 @@ impl<'a, H: Host> Store<'a, H> {
         let listable = |st: index::State| matches!(st, index::State::Writer | index::State::Sealed);
         // Only the commit that makes the index WRITER (or SEALED) lists it; an
         // index that already was needs nothing here (the catch-all lists it
-        // when it is not listed, and leaves a malformed list untouched).
+        // when it is not listed, overwriting a malformed list, revision 10.2).
         let lists = listable(new.state) && !listable(self.index.state);
         self.index = new;
         self.on_disk = Some(bytes.clone());
