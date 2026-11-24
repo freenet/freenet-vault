@@ -220,6 +220,7 @@ fn run_cli_inner(args: Vec<String>) {
         .filter(|s| !(start..start + seeds).contains(s))
         .collect();
     for seed in (start..start + seeds).chain(extra.iter().copied()) {
+        CURRENT_SEED.store(seed, std::sync::atomic::Ordering::Relaxed);
         let sc = gen_scenario(seed, &cfg);
         let o = run(&cfg, &sc);
         ran += 1;
@@ -233,6 +234,7 @@ fn run_cli_inner(args: Vec<String>) {
             e.0 += 1;
         }
     }
+    CURRENT_SEED.store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
     let mut directed_violations = vec![];
     let ds = directed(&cfg);
     let n_directed = ds.len();
@@ -310,6 +312,10 @@ fn run_cli_inner(args: Vec<String>) {
         exit_failed();
     }
 }
+
+/// The seed the runner is executing (u64::MAX for a directed scenario), for
+/// an implementation's own findings.
+pub static CURRENT_SEED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
 
 thread_local! {
     static EXTRA_NOT_BLOCKING: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(vec![]) };

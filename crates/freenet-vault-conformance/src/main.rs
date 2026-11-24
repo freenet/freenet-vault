@@ -59,6 +59,16 @@ fn main() {
         lib_mutants(&cfg, seeds);
         return;
     }
+    // LIB_MUTANT=Name runs the ordinary arguments with one library-only
+    // mutant switched on (to read a trace under it)
+    if let Ok(name) = std::env::var("LIB_MUTANT") {
+        let m = LIB_ONLY
+            .iter()
+            .copied()
+            .find(|m| format!("{m:?}") == name)
+            .expect("a library-only mutant name");
+        freenet_vault_conformance::set_extra_mutant(Some(m));
+    }
     freenet_vault_model::cli::set_finish_hook(Some(|| {
         let r = freenet_vault_conformance::report();
         if r.is_empty() {
@@ -84,7 +94,17 @@ fn lib_mutants(cfg: &Cfg, seeds: u64) {
         cfg.adversarial
     );
     let mut survivors = 0;
+    // LIB_MUTANTS_ONLY=A,B limits the run to the named mutants
+    let only: Option<Vec<String>> = std::env::var("LIB_MUTANTS_ONLY")
+        .ok()
+        .map(|v| v.split(',').map(str::to_string).collect());
     for m in LIB_ONLY {
+        if only
+            .as_ref()
+            .is_some_and(|o| !o.contains(&format!("{m:?}")))
+        {
+            continue;
+        }
         freenet_vault_conformance::set_extra_mutant(Some(m));
         let mut caught: BTreeMap<&'static str, (u64, String)> = BTreeMap::new();
         for s in 0..seeds {

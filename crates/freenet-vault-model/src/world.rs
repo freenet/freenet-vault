@@ -191,7 +191,8 @@ pub enum Action {
         mode: u8,
     },
     /// Damage one named control secret of build `b` (0 vault:parts, 1
-    /// vault:gc, 2 vault:succ), aimed (revision 10, F17 liveness).
+    /// vault:gc, 2 vault:succ, 3 the second gc copy), aimed (revision 10, F17
+    /// liveness). The generator draws 0 to 2 only.
     GarbleNamed {
         b: u8,
         which: u8,
@@ -1494,7 +1495,10 @@ impl World {
                 undecryptable,
             } => {
                 let b = b as usize % NBUILDS;
-                let n = [SName::Parts, SName::Gc, SName::Succ][which as usize % 3];
+                let n = match which {
+                    3 => SName::Gc2,
+                    w => [SName::Parts, SName::Gc, SName::Succ][w as usize % 3],
+                };
                 if matches!(self.stores[b].secrets.get(&n), Some(v) if !matches!(v, SVal::Garbled | SVal::Undecryptable))
                 {
                     self.cov.hit("fault/garble-control-aimed");

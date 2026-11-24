@@ -12,13 +12,48 @@ use crate::world::*;
 struct Rec_ {
     w: World,
     actions: Vec<Action>,
+    cfg: Cfg,
+    ledger: Vec<Rec>,
 }
 
 impl Rec_ {
     fn new(cfg: &Cfg, ledger: Vec<Rec>) -> Rec_ {
         Rec_ {
-            w: World::new(cfg.clone(), ledger),
+            w: World::new(cfg.clone(), ledger.clone()),
             actions: vec![],
+            cfg: cfg.clone(),
+            ledger,
+        }
+    }
+    /// The log lines the next delivered step would produce, found by
+    /// replaying the recorded actions in a second, traced world (a world
+    /// cannot be cloned).
+    fn peek_step(&self) -> Vec<String> {
+        let mut c = self.cfg.clone();
+        c.trace = true;
+        let mut w = World::new(c, self.ledger.clone());
+        for a in &self.actions {
+            w.apply(a);
+        }
+        let n = w.trace.len();
+        w.apply(&Action::Step {
+            pick: 0,
+            fate: Fate::Deliver,
+        });
+        w.trace[n..].to_vec()
+    }
+    /// Steps until nothing is pending, losing every hop for which `lose`
+    /// holds of the step's log.
+    fn drain_losing(&mut self, lose: impl Fn(&str) -> bool) {
+        for _ in 0..300 {
+            if self.w.idle() || self.w.violation.is_some() {
+                return;
+            }
+            let lost = self.peek_step().iter().any(|l| lose(l));
+            self.act(Action::Step {
+                pick: 0,
+                fate: if lost { Fate::Drop } else { Fate::Deliver },
+            });
         }
     }
     fn act(&mut self, a: Action) {
@@ -890,7 +925,12 @@ pub fn orphan_copy_of_failed_write(cfg: &Cfg) -> Scenario {
 /// write `j` of that change (0 step 1's removal of the leftover, 1 the
 /// entry, 2 the index), and 10's index is lost. Direct read must never
 /// serve the deleted 501 unless the new change was acknowledged.
-pub fn delete_then_recreate_same_seed(cfg: &Cfg, j: u8, fault: WriteFault) -> Scenario {
+pub fn delete_then_recreate_same_seed(
+    cfg: &Cfg,
+    delete_fails_at: u8,
+    j: u8,
+    fault: WriteFault,
+) -> Scenario {
     let mut r = Rec_::new(cfg, vec![Rec::build(10)]);
     r.act(Action::Publish);
     r.load(vec![
@@ -903,22 +943,27 @@ pub fn delete_then_recreate_same_seed(cfg: &Cfg, j: u8, fault: WriteFault) -> Sc
         },
     ]);
     // Delete writes: 0 vault:gc, 1 mirror removal, 2 index, 3 removal of
-    // the named copy (fails, not landed)
+    // the named copy (fails, not landed). An implementation that keeps the
+    // list in two copies writes one more before the removal, so the caller
+    // names the write: 3 or 4.
     r.act(Action::ArmWriteFault {
-        after: 3,
+        after: delete_fails_at,
         fault: WriteFault::Fail,
     });
     r.act(Action::Cached {
         op: Op::Delete { slot: 1 },
         b: Some(0),
     });
-    // vault:gc, which still lists the leftover, is lost (4.4: the copies it
-    // listed stay on disk until the slot is next written or deleted)
-    r.act(Action::GarbleNamed {
-        b: 0,
-        which: 1,
-        undecryptable: true,
-    });
+    // vault:gc (both copies), which still lists the leftover, is lost (4.4:
+    // the copies it listed stay on disk until the slot is next written or
+    // deleted)
+    for which in [1, 3] {
+        r.act(Action::GarbleNamed {
+            b: 0,
+            which,
+            undecryptable: true,
+        });
+    }
     r.act(Action::ArmWriteFault { after: j, fault });
     r.act(Action::Cached {
         op: Op::Generate { slot: 1, seed: 501 },
@@ -1313,11 +1358,66 @@ fn staging_full(cfg: &Cfg) -> Option<Scenario> {
     Some(r.done())
 }
 
+/// 7 (awaiting retirement): a build that took over but has not heard
+/// that its predecessor retired copies nowhere. Writer 10 seals toward 20
+/// and 20 takes over, but 20's acknowledgement is lost, so 10 stays SEALED
+/// and 20 stays WRITER(awaiting). Record 30 is then published; the load that
+/// carries it reaches 10, whose Abort and Complete to 20 are lost, and 20's
+/// Query to 10 is lost, so 10 stays SEALED while 20 is poked with record 30. A build that copied while
+/// awaiting would hand over to 30 and retire, and 10's next Abort would find
+/// it retired and unseal against a target that had taken over from it (I4);
+/// a build that waits asks 10 (Query), 10 retires to it, and only then does
+/// it copy to 30.
+fn awaiting_does_not_copy(cfg: &Cfg) -> Option<Scenario> {
+    // hops between 10 and 20 about the handover are lost
+    let lose = |l: &str| {
+        l.contains("Hop { from: 20, frame: Query")
+            || l.contains("Hop { from: 10, frame: Complete")
+            || l.contains("Hop { from: 10, frame: Abort")
+    };
+    let mut r = Rec_::new(cfg, vec![Rec::build(10), Rec::build(20), Rec::build(30)]);
+    r.act(Action::Publish);
+    r.load(vec![Op::Generate { slot: 0, seed: 500 }]);
+    r.act(Action::Publish);
+    r.act(Action::Load {
+        client: 0,
+        fetch: Fetch::Newest,
+        ops: vec![],
+    });
+    if !r.steps_until(|r| matches!(r.state(20), PState::Writer(ref w) if w.awaiting)) {
+        return None;
+    }
+    // 20's acknowledgement is lost; the rest of that load runs with 10's
+    // Complete and 20's Query lost
+    r.act(Action::Step {
+        pick: 0,
+        fate: Fate::Drop,
+    });
+    r.drain_losing(lose);
+    if !matches!(r.state(10), PState::Sealed { .. })
+        || !matches!(r.state(20), PState::Writer(ref w) if w.awaiting)
+    {
+        return None;
+    }
+    r.act(Action::Publish);
+    r.act(Action::Load {
+        client: 0,
+        fetch: Fetch::Newest,
+        ops: vec![],
+    });
+    r.drain_losing(lose);
+    r.load(vec![]);
+    Some(r.done())
+}
+
 /// Every directed scenario with the row it exists to reach.
 pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
     let mut v = vec![];
     if let Some(sc) = staging_full(cfg) {
         v.push(("7.2/outcome-staging-full", sc));
+    }
+    if let Some(sc) = awaiting_does_not_copy(cfg) {
+        v.push(("7/awaiting-does-not-copy", sc));
     }
     if let Some(sc) = other_writer_retired(cfg) {
         v.push(("7.6/other-writer-or-not-from-P/Retired", sc));
@@ -1363,15 +1463,17 @@ pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
                 ));
             }
             if !malformed {
-                for j in 0..3u8 {
-                    v.push((
-                        if j == 0 {
-                            "4.2/entry-write/fault-at-step-1"
-                        } else {
-                            "4.2/step-1/leftover-found"
-                        },
-                        delete_then_recreate_same_seed(cfg, j, f),
-                    ));
+                for d in [3u8, 4] {
+                    for j in 0..3u8 {
+                        v.push((
+                            if j == 0 {
+                                "4.2/entry-write/fault-at-step-1"
+                            } else {
+                                "4.2/step-1/leftover-found"
+                            },
+                            delete_then_recreate_same_seed(cfg, d, j, f),
+                        ));
+                    }
                 }
             }
         }

@@ -167,6 +167,15 @@ impl LibHost for BHost<'_, '_> {
                 )))
             });
         }
+        // The model counts a write over an undecryptable blob as the
+        // write-without-remove mutant diverging (build.rs); a library that
+        // removes first never reaches it.
+        if matches!(self.h.store.secrets.get(&n), Some(SVal::Undecryptable)) {
+            EVENTS.with(|b| {
+                b.borrow_mut()
+                    .push(Ev::Hit("mutant/write-without-remove".into()))
+            });
+        }
         let fired = self.h.faults.fired.len();
         let r = self.h.set(n, v);
         if self.h.faults.fired.len() > fired {
@@ -553,7 +562,12 @@ fn finish(
                 let f = match tb.wire_to_frame(def.v, &dm.payload) {
                     Ok(f) => f,
                     Err(why) => {
-                        tb.finding(format!("build {} sent an undecodable hop: {why}", def.v));
+                        tb.finding(format!(
+                            "build {} sent an undecodable hop: {why} (seed {})",
+                            def.v,
+                            freenet_vault_model::cli::CURRENT_SEED
+                                .load(std::sync::atomic::Ordering::Relaxed)
+                        ));
                         continue;
                     }
                 };
