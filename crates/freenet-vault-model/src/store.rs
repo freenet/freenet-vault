@@ -20,9 +20,10 @@ thread_local! {
     /// that does not name the partition. false (default) is the literal
     /// reading, most likely to fail: only a list on disk is a valid list.
     pub static ABSENT_PARTS_IS_VALID_LIST: Cell<bool> = const { Cell::new(true) };
-    /// Labelled proposal (sim7b): apply the 10.1 G2 rule to a malformed
-    /// index too, not only an absent one.
-    pub static G2_ALSO_CONDITION_2: Cell<bool> = const { Cell::new(false) };
+    /// Revision 10.1 G2b: the G2 rule also applies under condition 2
+    /// (vault:parts present but not a valid list, index malformed). Default
+    /// on, as the document now says; false replays the text before G2b.
+    pub static G2_ALSO_CONDITION_2: Cell<bool> = const { Cell::new(true) };
 }
 
 /// vault:parts reads as a valid list (4.5 condition 2). Revision 10.1
@@ -44,9 +45,8 @@ pub fn parts_valid_list(parts: Option<&SVal>) -> bool {
 pub fn g2_moved(s: &Store, own: Ver) -> Option<Rec> {
     let parts_malformed = matches!(s.secrets.get(&SName::Parts), Some(SVal::Garbled));
     let idx_absent = matches!(s.secrets.get(&SName::Idx), None | Some(SVal::Undecryptable));
-    // proposed one-sentence extension (sim7b): the same rule when the index
-    // is malformed too (4.5 condition 2 with vault:parts present but not a
-    // valid list); off by default, the 10.1 text covers condition 3 only
+    // revision 10.1, G2b: the same rule when the index is malformed (4.5
+    // condition 2 with vault:parts present but not a valid list)
     let cond2 = G2_ALSO_CONDITION_2.with(|c| c.get())
         && matches!(s.secrets.get(&SName::Idx), Some(v) if !matches!(v, SVal::Idx(_) | SVal::Undecryptable));
     if !(parts_malformed && (idx_absent || cond2)) {

@@ -905,7 +905,11 @@ impl<'a> Cx<'a> {
                             self.hit("mutant/direct-read-despite-successor");
                         }
                     } else {
-                        self.hit("4.5/g2-condition-3-successor-moved");
+                        self.hit(if self.host.read(&SName::Idx).is_some() {
+                            "4.5/g2b-condition-2-successor-moved"
+                        } else {
+                            "4.5/g2-condition-3-successor-moved"
+                        });
                         return Ok(Reply::Op(OpRes::Moved(r)));
                     }
                 }

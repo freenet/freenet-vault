@@ -78,8 +78,8 @@ fn main() {
                 i += 1;
             }
             "--quiesce-shuffle" => cfg.quiesce_shuffle = true,
-            "--g2-also-condition-2" => {
-                freenet_vault_model::store::G2_ALSO_CONDITION_2.with(|c| c.set(true))
+            "--g2-condition-3-only" => {
+                freenet_vault_model::store::G2_ALSO_CONDITION_2.with(|c| c.set(false))
             }
             a => panic!("unknown argument {a}"),
         }
