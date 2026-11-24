@@ -1952,7 +1952,11 @@ impl World {
             | (Op::Export { slot }, OpRes::Absent)
             | (Op::Batch { slot, .. }, OpRes::Absent) => {
                 let id = (KIND_KEY, *slot);
-                if !self.restored && !self.tainted.contains(&id) {
+                // 15.4 I2 (revision 10): direct read answering Absent for an
+                // acknowledged key is a violation; damage to its copies
+                // excuses storage failure, never Absent
+                let lost_mode = self.stores[b].index_lost();
+                if !self.restored && (lost_mode || !self.tainted.contains(&id)) {
                     let p = self.oracle.get(&id).cloned().unwrap_or_default();
                     if !p.allows(&None) {
                         let label = self.i3_label(b, sid, id, None);
