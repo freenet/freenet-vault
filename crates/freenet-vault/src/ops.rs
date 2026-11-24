@@ -8,9 +8,7 @@ use crate::crypto;
 use crate::domain::Domain;
 use crate::host::Host;
 use crate::storage::index::State;
-use crate::storage::{
-    rescue_export_seed, reset_partition, PutError, Quota, Read, Store, StoredIndexMalformed,
-};
+use crate::storage::{rescue_export_seed, reset_partition, PutError, Quota, Read, Store};
 use crate::succ::{accept_record, Succ};
 use freenet_vault_common::bounds::FORBIDDEN_SIGNING_PREFIX;
 use freenet_vault_common::codec::Malformed;
@@ -260,9 +258,9 @@ enum StoredMark {
     /// compiled-in `min_version` is the floor, and the next raise rewrites it
     /// (DESIGN-NOTES.md).
     NoFloor,
-    /// The index names a mark but the host returned nothing for it, which can
-    /// be a transient read failure. The compiled-in floor applies, and the
-    /// entry is never overwritten on this evidence.
+    /// The index names a mark whose secret is gone (a wipe or restore). The
+    /// compiled-in floor applies, and the entry is never overwritten by an
+    /// operation on this evidence.
     Unreadable,
 }
 
@@ -472,13 +470,13 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
             Err(_) => return refusal(rid, refused::STORAGE_FAILURE),
         },
         // The index state is unknown: read-only (protocol 4.5).
-        Some(fault) => match (&req.op, caller) {
+        Some(_) => match (&req.op, caller) {
             // A page may rescue a key with Export, behind the consent prompt.
             (Operation::Export { slot }, Caller::Page { id }) => {
                 return ask(domain, host, id, rid, slot, false)
             }
             (Operation::ResetPartition { confirm }, Caller::Page { id }) => {
-                return reset_request(domain, host, id, rid, confirm, fault)
+                return reset_request(domain, host, id, rid, confirm)
             }
             // Signing does not stop: the entry is found by its two parity
             // copies.
@@ -584,8 +582,8 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
                 // Same key: a no-op, except that it rewrites a slot marked corrupt.
                 Read::Ok(e) if e.content == seed.as_slice() => false,
                 Read::Corrupt(Some(e)) if e.content == seed.as_slice() => true,
-                // The index names the slot but its secret did not read. That
-                // may be transient, so only an explicit replace overwrites it.
+                // The index names the slot but its secret is gone, so only an
+                // explicit replace overwrites it.
                 Read::Missing if !replace => {
                     return refusal(rid, refused::STORAGE_FAILURE);
                 }
@@ -713,9 +711,12 @@ fn reset_request<H: Host>(
     origin: &[u8; 32],
     rid: u64,
     confirm: &[u8; 32],
-    fault: StoredIndexMalformed,
 ) -> Outcome {
-    if !fault.index_lost() {
+    // A newer build is known: this one must not become a writer again.
+    if Succ::load(domain, host)
+        .ok()
+        .is_some_and(|s| s.successor().is_some())
+    {
         return refusal(rid, refused::OPERATION_NOT_ALLOWED);
     }
     if *confirm != freenet_vault_common::hash::reset_confirm(&domain.partition()) {
@@ -802,11 +803,11 @@ pub fn export_answer<H: Host>(
         // The index must still be lost when the user answers.
         let p = domain.partition();
         return Some(match Store::fault(&*host, &p) {
-            Some(f) if f.index_lost() => match reset_partition(host, &p) {
+            Some(_) => match reset_partition(host, &p) {
                 Ok(()) => reply(OpResult::Ok.encode(rid), rid),
                 Err(_) => refusal(rid, refused::STORAGE_FAILURE),
             },
-            _ => refusal(rid, refused::OPERATION_NOT_ALLOWED),
+            None => refusal(rid, refused::OPERATION_NOT_ALLOWED),
         });
     }
     let succ = Succ::load(domain, host).ok();
@@ -851,8 +852,7 @@ fn partition_state_of(store_state: State, armed: bool, awaiting: bool) -> u8 {
 /// the index is lost (protocol 4.5).
 fn fault_bits<H: Host>(host: &H, partition: &[u8; 32]) -> u8 {
     match Store::fault(host, partition) {
-        Some(f) if f.index_lost() => problems::STORAGE_FAILURE | problems::INDEX_LOST,
-        Some(_) => problems::STORAGE_FAILURE,
+        Some(_) => problems::STORAGE_FAILURE | problems::INDEX_LOST,
         None => 0,
     }
 }
@@ -1092,14 +1092,11 @@ fn submit_record<H: Host>(
         };
         let key = [s.author_vk.as_slice(), &s.app_id].concat();
         let sealed = store.index.state == State::Sealed;
-        let mut found = stored_mark(&mut store, &key, &s.author_vk, &s.app_id, sealed);
-        if found == StoredMark::Unreadable {
-            // Read again: a transient miss resolves. A mark that is still
-            // unreadable is lost for good, and a submitted record at or above
-            // the compiled-in minimum replaces it, so it is not stuck for ever
-            // (it then lowers the floor to that record's version).
-            found = stored_mark(&mut store, &key, &s.author_vk, &s.app_id, sealed);
-        }
+        // A mark whose secret is gone is lost for good (a read in a completed
+        // call is truthful, so there is nothing to retry): a submitted record
+        // at or above the compiled-in minimum replaces it, so it is not stuck
+        // for ever (it then lowers the floor to that record's version).
+        let found = stored_mark(&mut store, &key, &s.author_vk, &s.app_id, sealed);
         let mark = match found {
             StoredMark::Mark(m) => Some(m),
             StoredMark::NoFloor => None,

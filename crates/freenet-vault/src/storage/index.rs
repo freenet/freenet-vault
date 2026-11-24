@@ -15,9 +15,9 @@
 //! checksum 32     BLAKE3 of every byte above
 //! ```
 //! flags: bit 0 armed, bit 1 awaiting_retirement, bit 2 peer record present.
-//! Entries are sorted by `(kind, key)` with no duplicates. The checksum is what
-//! lets the second index copy cover bit rot: a flipped bit that still parses
-//! (a digest, a parity, the state) fails the checksum, so the good copy wins.
+//! Entries are sorted by `(kind, key)` with no duplicates. The checksum rejects
+//! a copy whose bytes were damaged (a torn write, a flipped bit that still
+//! parses); the partition is then read-only (protocol 4.5).
 
 use freenet_vault_common::bounds::{MAX_ENTRY, MAX_KEY, MAX_PARTITION_ENTRIES};
 use freenet_vault_common::codec::{Malformed, Reader, Writer};

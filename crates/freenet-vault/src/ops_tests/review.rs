@@ -263,8 +263,8 @@ fn export_does_not_drop_an_unparseable_slot() {
     assert_ne!(h.secrets, before);
 }
 
-/// A submitted caller record replaces a mark that stays unreadable, but never
-/// below the compiled-in minimum (the stuck-mark repair).
+/// A submitted caller record replaces a mark whose secret is gone (a wipe),
+/// but never below the compiled-in minimum (the stuck-mark repair).
 #[test]
 fn a_submitted_record_replaces_a_mark_that_stays_unreadable() {
     let dom = leaked_domain(vec![chat_caller(3)], 2);
@@ -273,7 +273,7 @@ fn a_submitted_record_replaces_a_mark_that_stays_unreadable() {
     let go = |h: &mut MemHost, v: u32| send_in(&dom, h, chat(v).key, pk_req(&chat(v), &slot));
     assert!(is_key_result(&go(&mut h, 8).unwrap()));
     let name = entry_name_of(&h, KIND_CALLER_MARK, &mark_key());
-    h.hidden.insert(name);
+    h.secrets.remove(&name);
     let submit = |h: &mut MemHost, v: u32| {
         let s = SubmitRecord {
             header: page_header(6),
@@ -299,7 +299,6 @@ fn a_submitted_record_replaces_a_mark_that_stays_unreadable() {
     // At or above it: the lost mark is replaced.
     let st = handover(submit(&mut h, 4));
     assert_eq!(st.step_result, step_result::RECORD_ACCEPTED);
-    h.hidden.clear();
     assert_eq!(
         go(&mut h, 3),
         Some(refused(77, refused::CALLER_NOT_AUTHORIZED)),
@@ -465,8 +464,9 @@ fn min_version_floors_a_fresh_vault_and_one_that_lost_its_mark() {
     );
 }
 
-/// A mark whose secret does not read (maybe transiently) is served at the
-/// compiled-in floor and is never overwritten on that evidence.
+/// A mark whose secret is gone (a wipe of that secret) is served at the
+/// compiled-in floor and is never overwritten on that evidence; it binds again
+/// if the secret returns.
 #[test]
 fn an_unreadable_mark_is_not_overwritten() {
     let dom = leaked_domain(vec![chat_caller(5)], 2);
@@ -475,7 +475,7 @@ fn an_unreadable_mark_is_not_overwritten() {
     let go = |h: &mut MemHost, v: u32| send_in(&dom, h, chat(v).key, pk_req(&chat(v), &slot));
     assert!(is_key_result(&go(&mut h, 8).unwrap()));
     let name = entry_name_of(&h, KIND_CALLER_MARK, &mark_key());
-    h.hidden.insert(name.clone());
+    let bytes = h.secrets.remove(&name).unwrap();
     let before = h.secrets.clone();
     assert!(
         is_key_result(&go(&mut h, 5).unwrap()),
@@ -483,7 +483,7 @@ fn an_unreadable_mark_is_not_overwritten() {
     );
     assert!(is_key_result(&go(&mut h, 9).unwrap()));
     assert_eq!(h.secrets, before, "nothing was written or removed");
-    h.hidden.clear();
+    h.secrets.insert(name, bytes);
     // The mark (8) survived.
     assert_eq!(
         go(&mut h, 5),
@@ -660,13 +660,16 @@ fn a_stored_withdrawal_and_a_stored_current_are_checked_for_their_role() {
 
 // ---- item 5 at the operation level ---------------------------------------
 
+/// An entry the index names whose secret is gone (a wipe of that secret)
+/// changes and destroys nothing and answers storage failure; it works again if
+/// the secret returns.
 #[test]
-fn a_transient_read_miss_destroys_nothing_and_answers_storage_failure() {
+fn a_named_entry_whose_secret_is_gone_destroys_nothing_and_answers_storage_failure() {
     let mut h = MemHost::new();
     let (slot, pk) = writer_with_key(&mut h);
     let seed = seed_of(&h, &slot);
     let name = entry_name_of(&h, KIND_KEY, &slot);
-    h.hidden.insert(name);
+    let bytes = h.secrets.remove(&name).unwrap();
     let before = h.secrets.clone();
     for o in [
         Operation::PublicKey { slot: slot.clone() },
@@ -696,7 +699,7 @@ fn a_transient_read_miss_destroys_nothing_and_answers_storage_failure() {
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].status, LIST_CORRUPT);
     assert_eq!(h.secrets, before, "nothing changed");
-    h.hidden.clear();
+    h.secrets.insert(name, bytes);
     assert_eq!(seed_of(&h, &slot), seed);
     assert_eq!(
         page(&mut h, op(10, Operation::PublicKey { slot: slot.clone() })),
@@ -710,12 +713,13 @@ fn a_transient_read_miss_destroys_nothing_and_answers_storage_failure() {
     );
 }
 
-/// With replace, a page may overwrite an entry the host cannot read.
+/// With replace, a page may overwrite an entry whose secret is gone.
 #[test]
-fn import_with_replace_overwrites_an_unreadable_slot() {
+fn import_with_replace_overwrites_a_slot_whose_secret_is_gone() {
     let mut h = MemHost::new();
     let (slot, _) = writer_with_key(&mut h);
-    h.hidden.insert(entry_name_of(&h, KIND_KEY, &slot));
+    let name = entry_name_of(&h, KIND_KEY, &slot);
+    h.secrets.remove(&name);
     assert!(is_key_result(&page(
         &mut h,
         op(
@@ -727,7 +731,6 @@ fn import_with_replace_overwrites_an_unreadable_slot() {
             }
         )
     )));
-    h.hidden.clear();
     assert_eq!(seed_of(&h, &slot), [4; 32]);
 }
 
@@ -1577,50 +1580,6 @@ fn a_failed_index_write_refuses_the_replace_and_keeps_the_old_seed() {
     }
 }
 
-/// Sequence 2: a replace crashes after writing its candidate and before the
-/// index commit; the index still names the original. On restart the index
-/// read and the partition list miss transiently while a gc list remains
-/// readable. gc must not treat that as a fresh partition and delete the
-/// original.
-#[test]
-fn a_blind_open_never_runs_gc_on_the_committed_original() {
-    let p = domain().partition();
-    let slot = vec![7; 32];
-    let (a, b) = ([0xA1; 32], [0xB2; 32]);
-    let mut total = 0;
-    for n in 0..40 {
-        let mut h = MemHost::new();
-        arm(&mut h);
-        assert!(is_key_result(&import_replace(&mut h, 1, &slot, a)));
-        let start = h.mutations;
-        h.crash_after(n);
-        let _ = import_replace(&mut h, 2, &slot, b);
-        if h.mutations - start < n {
-            break;
-        }
-        total = n;
-        let mut h = h.restart();
-        h.hidden.insert(names::index(&p));
-        h.hidden.insert(names::PARTS.to_vec());
-        let _ = from_page_as(
-            &mut h,
-            page_id(),
-            op(
-                900,
-                Operation::List {
-                    after: vec![],
-                    max: 100,
-                },
-            ),
-        );
-        h.hidden.clear();
-        recover(&mut h);
-        let s = seed_of(&h, &slot);
-        assert!(s == a || s == b, "crash point {n}: the key was lost");
-    }
-    assert!(total > 2, "the sweep must reach the commit");
-}
-
 // ---- round 3: more crash sweeps ------------------------------------------
 
 /// Export of a corrupt slot, flagged or not yet flagged, never mutates
@@ -1876,28 +1835,6 @@ fn export_in_read_only_mode_needs_consent_and_exactly_one_decodable_copy() {
             refused(24, refused::STORAGE_FAILURE)
         );
     }
-}
-
-/// Both gc list copies unreadable while entries exist: a delete (which must
-/// list names) fails and the lists are not rewritten.
-#[test]
-fn both_gc_lists_unreadable_blocks_a_delete_through_process() {
-    let mut h = MemHost::new();
-    let (slot, _) = writer_with_key(&mut h);
-    let p = domain().partition();
-    h.hidden.insert(names::gc(&p));
-    h.hidden.insert(names::gc2(&p));
-    let before = h.secrets.clone();
-    assert_eq!(
-        page(&mut h, op(5, Operation::Delete { slot: slot.clone() })),
-        refused(5, refused::STORAGE_FAILURE)
-    );
-    assert_eq!(h.secrets, before);
-    h.hidden.clear();
-    assert!(matches!(
-        page(&mut h, op(6, Operation::Delete { slot })),
-        Reply::Op(6, OpResult::Ok)
-    ));
 }
 
 /// An uncertain index commit, then a second write in the same call: a Batch of
@@ -2221,21 +2158,161 @@ fn reset_partition_is_refused_unless_every_condition_holds() {
     let _ = slot;
 }
 
-/// A malformed `vault:parts` is not "index lost": bit 6 stays clear and
-/// ResetPartition is refused (it could not keep the listing).
+// ---- the real host's fault model (freenet-core #5857) ----------------------
+
+/// A read that fails poisons the call: every later write and removal is
+/// refused, so a call that went on to arm or create over a "missing" index
+/// writes nothing (core then discards the call's result).
 #[test]
-fn a_malformed_parts_list_does_not_allow_reset() {
+fn a_read_fault_while_arming_writes_nothing() {
+    let p = domain().partition();
     let mut h = MemHost::new();
-    let _ = writer_with_key(&mut h);
-    h.secrets.remove(&names::index(&domain().partition()));
+    h.read_fault.insert(names::index(&p));
+    let _ = from_page_as(
+        &mut h,
+        page_id(),
+        poke(poke_flags::ARM, Some(domain_record(1, [0x11; 32]))),
+    );
+    assert!(h.poisoned());
+    assert!(
+        !h.secrets.contains_key(&names::index(&p)),
+        "an index was written after the failed read"
+    );
+}
+
+/// The same for a request: a failed read of the entry copy mid-call is followed
+/// by no write and no removal.
+#[test]
+fn a_read_fault_during_a_request_is_followed_by_no_write() {
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    h.read_fault.insert(entry_name_of(&h, KIND_KEY, &slot));
+    let before = h.secrets.clone();
+    let _ = from_page_as(
+        &mut h,
+        page_id(),
+        op(
+            3,
+            Operation::Import {
+                slot,
+                seed: [4; 32],
+                replace: true,
+            },
+        ),
+    );
+    assert!(h.poisoned());
+    assert_eq!(h.secrets, before);
+}
+
+/// Reset (protocol 4.5) must make the old gc intent harmless BEFORE it
+/// publishes an empty index: a crash at any point leaves the committed entry
+/// copy on disk after the next calls (whose gc would otherwise remove a name an
+/// interrupted replacement had listed).
+#[test]
+fn a_crash_during_reset_never_lets_gc_remove_a_recoverable_copy() {
+    let p = domain().partition();
+    let mut max_seen = 0;
+    for n in 0..12 {
+        let mut h = MemHost::new();
+        let (slot, _) = writer_with_key(&mut h);
+        let copy = names::entry(&p, KIND_KEY, &slot, 0);
+        // An interrupted replacement left the live copy's name in the gc list.
+        let list = crate::storage::encode_gc_for_test(std::slice::from_ref(&copy));
+        h.secrets.insert(names::gc(&p), list.clone());
+        h.secrets.insert(names::gc2(&p), list);
+        h.secrets.remove(&names::index(&p));
+        let start = h.mutations;
+        h.crash_after(n);
+        let out = from_page_as(&mut h, page_id(), reset_op(40));
+        let id = match out.as_slice() {
+            [OutboundDelegateMsg::RequestUserInput(r)] => r.request_id,
+            other => panic!("{other:?}"),
+        };
+        let _ = answer(&mut h, page_id(), id, b"Allow");
+        max_seen = max_seen.max(h.mutations - start);
+        let mut h = h.restart();
+        // Any later calls run gc first.
+        let _ = problems_of(&mut h);
+        let _ = problems_of(&mut h);
+        assert!(
+            h.secrets.contains_key(&copy),
+            "crash point {n}: gc removed the live copy"
+        );
+    }
+    assert!(max_seen >= 3, "the sweep must reach the index write");
+}
+
+/// A malformed `vault:parts` with the index absent is an index loss too (bit 6),
+/// and ResetPartition repairs it: the list is replaced by this partition.
+#[test]
+fn a_malformed_parts_list_with_no_index_is_recoverable_by_reset() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let seed = seed_of(&h, &slot);
+    h.secrets.remove(&names::index(&p));
     h.secrets.insert(names::PARTS.to_vec(), vec![1; 33]);
     let bits = problems_of(&mut h);
-    assert_eq!(bits & problems::INDEX_LOST, 0);
-    assert_ne!(bits & problems::STORAGE_FAILURE, 0);
-    let before = h.secrets.clone();
+    assert_ne!(bits & problems::INDEX_LOST, 0);
+    let out = from_page_as(&mut h, page_id(), reset_op(70));
+    let id = match out.as_slice() {
+        [OutboundDelegateMsg::RequestUserInput(r)] => r.request_id,
+        other => panic!("{other:?}"),
+    };
     assert_eq!(
-        page(&mut h, reset_op(70)),
-        refused(70, refused::OPERATION_NOT_ALLOWED)
+        single_app_reply(answer(&mut h, page_id(), id, b"Allow").unwrap()),
+        Reply::Op(70, OpResult::Ok)
     );
-    assert_eq!(h.secrets, before);
+    assert_eq!(h.secrets[names::PARTS], p.to_vec());
+    assert_eq!(problems_of(&mut h) & problems::INDEX_LOST, 0);
+    assert!(is_key_result(&import_replace(&mut h, 71, &slot, seed)));
+}
+
+/// Both gc list copies torn: neither parses, so they contribute nothing, and
+/// the next write rewrites both (no permanent brick).
+#[test]
+fn two_damaged_gc_copies_do_not_block_writes() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    h.secrets.insert(names::gc(&p), b"torn".to_vec());
+    h.secrets.insert(names::gc2(&p), b"torn".to_vec());
+    assert!(is_key_result(&import_replace(&mut h, 2, &slot, [0xB2; 32])));
+    assert_eq!(seed_of(&h, &slot), [0xB2; 32]);
+    assert!(crate::storage::pending_gc_names(&h, &p).len() <= 2);
+}
+
+/// After a Reset, a stale copy at the other parity is listed and collected by
+/// the next write of the slot, so a later direct read never meets two
+/// different copies.
+#[test]
+fn a_stale_other_parity_copy_is_collected_by_the_next_write() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, _) = writer_with_key(&mut h);
+    let stale = names::entry(&p, KIND_KEY, &slot, 1);
+    let other = Entry::new(KIND_KEY, slot.clone(), vec![0x77; 32])
+        .encode()
+        .unwrap();
+    h.secrets.insert(stale.clone(), other);
+    assert!(is_key_result(&import_replace(&mut h, 2, &slot, [0xB2; 32])));
+    // The write used parity 1 (overwriting the stale one) and removed parity 0.
+    let _ = problems_of(&mut h);
+    let live = h.names_with_prefix(&names::entry_prefix(&p));
+    assert_eq!(live.len(), 1, "{live:?}");
+}
+
+/// A known newer build: this one must not become a writer again.
+#[test]
+fn reset_is_refused_when_a_newer_build_is_known() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let _ = writer_with_key(&mut h);
+    // A newer record is known.
+    let _ = page(&mut h, poke(0, Some(domain_record(2, [0x22; 32]))));
+    h.secrets.remove(&names::index(&p));
+    assert_eq!(
+        page(&mut h, reset_op(80)),
+        refused(80, refused::OPERATION_NOT_ALLOWED)
+    );
 }

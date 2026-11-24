@@ -37,8 +37,8 @@ fn gc_names(host: &MemHost) -> Vec<Vec<u8>> {
     for n in [names::gc(&P), names::gc2(&P)] {
         if let Some(l) = host.secrets.get(&n).and_then(|b| decode_names(b)) {
             for g in l {
-                if !out.contains(&g.name) {
-                    out.push(g.name);
+                if !out.contains(&g) {
+                    out.push(g);
                 }
             }
         }
@@ -48,14 +48,7 @@ fn gc_names(host: &MemHost) -> Vec<Vec<u8>> {
 
 /// Plants a gc list (both copies), as a crash leaves one.
 fn set_gc(host: &mut MemHost, list: &[Vec<u8>]) {
-    let l: Vec<GcName> = list
-        .iter()
-        .map(|n| GcName {
-            name: n.clone(),
-            uncertain: 0,
-        })
-        .collect();
-    let b = encode_names(&l).unwrap();
+    let b = encode_names(list).unwrap();
     host.secrets.insert(names::gc(&P), b.clone());
     host.secrets.insert(names::gc2(&P), b);
 }
@@ -268,30 +261,53 @@ fn unparseable_or_missing_entry_leaves_the_index_and_is_counted() {
     assert!(!h.secrets.contains_key(&entry_name(1, 0)));
 }
 
-/// An absent secret is absent, never corrupt: nothing is deleted, flagged or
-/// counted, and the entry reads again once the host returns it (item 5).
+/// An entry the index names whose secret is gone (a wipe or restore of that
+/// one secret) is Missing, never corrupt: nothing is deleted, flagged or
+/// counted, and it reads again if the secret comes back.
 #[test]
-fn a_secret_that_does_not_read_is_never_destroyed() {
+fn a_named_entry_whose_secret_is_gone_is_never_destroyed() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
     let name = entry_name(1, 0);
-    h.hidden.insert(name.clone());
+    let bytes = h.secrets.remove(&name).unwrap();
     let before = h.secrets.clone();
     assert_eq!(read(&mut h, 1), Read::Missing);
     assert_eq!(read(&mut h, 1), Read::Missing);
-    // Nothing was written or removed.
     assert_eq!(h.secrets, before);
     let s = Store::open(&mut h, P).unwrap();
     assert_eq!(s.index.lost_entries, 0);
     assert_eq!(s.index.problems, 0);
     assert_eq!(s.index.entries.len(), 1);
     drop(s);
-    h.hidden.clear();
+    h.secrets.insert(name.clone(), bytes);
     assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
     // Also when sealed.
-    h.hidden.insert(name);
+    h.secrets.remove(&name);
     let mut s = Store::open(&mut h, P).unwrap();
     assert_eq!(s.read(KIND_KEY, &[1; 32], true), Read::Missing);
+}
+
+/// The real host (freenet-core #5857): a read that fails poisons the call, so
+/// no write or removal follows it. The host model refuses them.
+#[test]
+fn a_read_fault_poisons_the_call_and_no_write_follows() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    h.read_fault.insert(entry_name(1, 0));
+    let before = h.secrets.clone();
+    let mut s = Store::open(&mut h, P).unwrap();
+    assert_eq!(s.read(KIND_KEY, &[1; 32], false), Read::Missing);
+    assert_eq!(
+        s.put(&key_entry(2, 2), &QUOTA, |_| {}),
+        Err(PutError::Storage)
+    );
+    assert_eq!(s.delete(KIND_KEY, &[1; 32]), Err(StorageFailure));
+    drop(s);
+    assert!(h.poisoned());
+    assert_eq!(
+        h.secrets, before,
+        "a write or removal followed the failed read"
+    );
 }
 
 /// A failed removal keeps its name listed and is retried by the next call
@@ -339,10 +355,10 @@ fn an_interrupted_entry_write_is_reachable_by_gc() {
     assert!(gc_names(&h).is_empty());
 }
 
-/// A gc list that fails to read must not lose pending removals (copy two
-/// still has them), and writing it again keeps them.
+/// A gc list copy damaged by a torn write contributes nothing; the other copy
+/// still holds every pending name, and the next write repairs the damaged one.
 #[test]
-fn the_gc_list_survives_one_copy_not_reading() {
+fn the_gc_list_survives_one_damaged_copy() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
     // An undeletable stray copy is pending.
@@ -350,21 +366,19 @@ fn the_gc_list_survives_one_copy_not_reading() {
     h.secrets.insert(stray.clone(), vec![7]);
     h.undeletable.insert(stray.clone());
     set_gc(&mut h, std::slice::from_ref(&stray));
-    // Copy one stops reading; another operation adds its own names.
-    h.hidden.insert(names::gc(&P));
+    h.secrets.insert(names::gc(&P), b"torn write".to_vec());
     put(&mut h, &key_entry(1, 8)).unwrap();
-    assert!(gc_names_both(&h).contains(&stray), "pending removal lost");
+    assert!(gc_names(&h).contains(&stray), "pending removal lost");
+    // Both copies parse again.
+    for n in [names::gc(&P), names::gc2(&P)] {
+        assert!(decode_names(&h.secrets[&n]).is_some());
+    }
     // Still retried: once removable, it goes.
-    h.hidden.clear();
     h.undeletable.clear();
     let mut s = Store::open(&mut h, P).unwrap();
     s.process_gc();
     drop(s);
     assert!(!h.secrets.contains_key(&stray));
-}
-
-fn gc_names_both(h: &MemHost) -> Vec<Vec<u8>> {
-    gc_names(h)
 }
 
 /// The list is bounded: a write that would exceed it fails and leaves the
@@ -390,31 +404,30 @@ fn the_gc_list_is_bounded_and_never_erases_itself() {
     assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
 }
 
-/// A removal that neither succeeds nor reads back (freenet-stdlib answers
-/// false for a secret that was never there) is kept for a few passes and then
-/// dropped, so names of candidates that never landed do not fill the list. A
-/// secret that reads is never dropped, however often removal fails.
+/// A name leaves the list only when its secret reads as absent after the
+/// removal attempt: a removal that fails and leaves the secret keeps the name
+/// for ever; one that reports failure but landed, or a name that never existed,
+/// is done (reads are truthful in a call that completes).
 #[test]
-fn an_unconfirmed_removal_is_bounded_but_a_readable_secret_is_never_dropped() {
+fn a_name_is_dropped_only_when_the_secret_reads_absent() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
     let never = entry_name(5, 0);
     let stuck = entry_name(6, 0);
+    let landed = entry_name(7, 0);
     h.secrets.insert(stuck.clone(), vec![3]);
+    h.secrets.insert(landed.clone(), vec![4]);
     h.undeletable.insert(stuck.clone());
-    set_gc(&mut h, &[never.clone(), stuck.clone()]);
-    for pass in 1..=GC_UNCERTAIN_LIMIT {
+    h.remove_lands_but_fails.insert(landed.clone());
+    set_gc(&mut h, &[never.clone(), stuck.clone(), landed.clone()]);
+    for pass in 1..=5 {
         let mut s = Store::open(&mut h, P).unwrap();
         s.process_gc();
         drop(s);
-        let listed = gc_names(&h);
-        assert!(listed.contains(&stuck), "pass {pass}");
-        assert_eq!(
-            listed.contains(&never),
-            pass < GC_UNCERTAIN_LIMIT,
-            "pass {pass}"
-        );
+        assert_eq!(gc_names(&h), vec![stuck.clone()], "pass {pass}");
+        assert!(h.secrets.contains_key(&stuck));
     }
+    assert!(!h.secrets.contains_key(&landed));
     h.undeletable.clear();
     let mut s = Store::open(&mut h, P).unwrap();
     s.process_gc();
@@ -463,7 +476,6 @@ fn a_failed_candidate_write_with_a_read_miss_stays_listed() {
             WriteFault::None
         }
     });
-    h.hidden.insert(cand.clone());
     h.undeletable.insert(cand.clone());
     assert_eq!(put(&mut h, &key_entry(1, 8)), Err(PutError::Storage));
     assert!(
@@ -471,31 +483,6 @@ fn a_failed_candidate_write_with_a_read_miss_stays_listed() {
         "the landed candidate was forgotten"
     );
     assert!(h.secrets.contains_key(&cand));
-}
-
-/// A removal that failed while the follow-up read also fails is not taken as
-/// done: the name stays listed (the secret is present, just unreadable now).
-#[test]
-fn a_failed_removal_with_a_failing_read_is_retried() {
-    let mut h = MemHost::new();
-    put(&mut h, &key_entry(1, 9)).unwrap();
-    let stray = entry_name(3, 0);
-    h.secrets.insert(stray.clone(), vec![7]);
-    h.undeletable.insert(stray.clone());
-    h.hidden.insert(stray.clone());
-    set_gc(&mut h, std::slice::from_ref(&stray));
-    for _ in 0..1 {
-        let mut s = Store::open(&mut h, P).unwrap();
-        s.process_gc();
-    }
-    // One uncertain pass: still listed. Once readable again it is retried.
-    assert_eq!(gc_names(&h), vec![stray.clone()]);
-    h.hidden.clear();
-    h.undeletable.clear();
-    let mut s = Store::open(&mut h, P).unwrap();
-    s.process_gc();
-    drop(s);
-    assert!(!h.secrets.contains_key(&stray));
 }
 
 /// An index write that fails and leaves something that is neither the old nor
@@ -882,36 +869,6 @@ fn an_uncertain_commit_makes_the_rest_of_the_call_read_only() {
     assert_eq!(s.delete(KIND_KEY, &[1; 32]), Err(StorageFailure));
 }
 
-/// Both gc list copies reading as nothing while the index names entries is
-/// "unreadable": gc does not run and a write that needs to list a name fails,
-/// instead of rewriting the list without what it held.
-#[test]
-fn an_unreadable_gc_list_blocks_gc_and_writes_that_need_it() {
-    let mut h = MemHost::new();
-    put(&mut h, &key_entry(1, 9)).unwrap();
-    let stray = entry_name(3, 0);
-    h.secrets.insert(stray.clone(), vec![7]);
-    set_gc(&mut h, std::slice::from_ref(&stray));
-    h.hidden.insert(names::gc(&P));
-    h.hidden.insert(names::gc2(&P));
-    let before = h.secrets.clone();
-    let mut s = Store::open(&mut h, P).unwrap();
-    s.process_gc();
-    assert_eq!(
-        s.put(&key_entry(1, 8), &QUOTA, |_| {}),
-        Err(PutError::Storage)
-    );
-    assert_eq!(s.delete(KIND_KEY, &[1; 32]), Err(StorageFailure));
-    drop(s);
-    assert_eq!(h.secrets, before, "nothing was written or removed");
-    // Readable again: the stray is collected.
-    h.hidden.clear();
-    let mut s = Store::open(&mut h, P).unwrap();
-    s.process_gc();
-    drop(s);
-    assert!(!h.secrets.contains_key(&stray));
-}
-
 /// A full gc list refuses writes that need a gc entry; no name is dropped to
 /// make room.
 #[test]
@@ -919,18 +876,16 @@ fn a_full_gc_list_refuses_writes_and_drops_nothing() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
     let prefix = names::entry_prefix(&P);
-    let full: Vec<GcName> = (0..MAX_GC_NAMES)
-        .map(|i| GcName {
-            name: [prefix.as_slice(), format!("{i:05}").as_bytes()].concat(),
-            uncertain: 2,
-        })
+    let prefix_full: Vec<Vec<u8>> = (0..MAX_GC_NAMES)
+        .map(|i| [prefix.as_slice(), format!("{i:05}").as_bytes()].concat())
         .collect();
-    let b = encode_names(&full).unwrap();
+    let full = &prefix_full;
+    let b = encode_names(full).unwrap();
     h.secrets.insert(names::gc(&P), b.clone());
     h.secrets.insert(names::gc2(&P), b);
-    for g in &full {
-        h.secrets.insert(g.name.clone(), vec![1]);
-        h.undeletable.insert(g.name.clone());
+    for g in full {
+        h.secrets.insert(g.clone(), vec![1]);
+        h.undeletable.insert(g.clone());
     }
     let mut s = Store::open(&mut h, P).unwrap();
     assert_eq!(
@@ -965,4 +920,24 @@ fn rescue_export_needs_exactly_one_decodable_copy() {
     let wrong = key_entry(2, 5).encode().unwrap();
     h.secrets.insert(entry_name(1, 0), wrong);
     assert_eq!(rescue_export_seed(&h, &P, &slot), None);
+}
+
+/// After an index reset the entry list is empty but old copies remain. A new
+/// identity writes parity 0 only; a stale, different copy at parity 1 must be
+/// collected, or a later direct read would meet two different copies.
+#[test]
+fn a_new_identity_collects_a_stale_copy_at_the_other_parity() {
+    let mut h = MemHost::new();
+    put(&mut h, &key_entry(1, 9)).unwrap();
+    // The entry list is emptied (as a Reset does), the old copy stays.
+    let mut s = Store::open(&mut h, P).unwrap();
+    s.update(|ix| ix.entries.clear()).unwrap();
+    drop(s);
+    let stale = Entry::new(KIND_KEY, vec![1; 32], vec![0x77; 32])
+        .encode()
+        .unwrap();
+    h.secrets.insert(entry_name(1, 1), stale);
+    put(&mut h, &key_entry(1, 8)).unwrap();
+    assert_eq!(h.secrets.get(&entry_name(1, 1)), None, "stale copy left");
+    assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 8)));
 }

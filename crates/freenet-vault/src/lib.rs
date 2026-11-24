@@ -47,6 +47,10 @@ pub fn process<H: Host>(
             "a vault is registered with empty parameters".into(),
         ));
     }
+    // One latch for the whole call: after a failed write nothing more is
+    // written or removed, however many stores the call opens.
+    let mut latch = host::WriteLatch::new(host);
+    let host = &mut latch;
     // A non-empty vault:gc is processed at the start of every call (4.2).
     if let Ok(mut store) = storage::Store::open(host, domain.partition()) {
         store.process_gc();

@@ -59,16 +59,11 @@ pub enum IndexFault {
 }
 
 /// The index state is unknown: never read as "no partition". The partition is
-/// read-only for the call (protocol 4.5).
+/// read-only for the call, and HandoverStatus problems bit 6 is set (protocol
+/// 4.5). Every fault is an index loss for ResetPartition: a malformed
+/// `vault:parts` with the index absent would otherwise be a permanent brick.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StoredIndexMalformed(pub IndexFault);
-
-impl StoredIndexMalformed {
-    /// HandoverStatus `problems` bit 6 is set for these (protocol 4.5).
-    pub fn index_lost(&self) -> bool {
-        matches!(self.0, IndexFault::Damaged | IndexFault::LostWhileListed)
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PutError {
@@ -97,9 +92,9 @@ pub enum Read {
     /// Failed its integrity check, now or earlier (eflags bit 0). The entry is
     /// what the stored bytes parse to, when they parse; informational only.
     Corrupt(Option<Entry>),
-    /// The index names the entry but the host returned no secret for it. That
-    /// can be a transient read failure, so nothing is changed or deleted and
-    /// the entry is never treated as corrupt. Callers answer storage failure.
+    /// The index names the entry but its secret is gone (a wipe or restore of
+    /// that one secret). Nothing is changed or deleted and the entry is never
+    /// treated as corrupt. Callers answer storage failure.
     Missing,
 }
 
@@ -113,22 +108,11 @@ pub enum Mode {
     ReadOnly,
 }
 
-/// A name in the gc list and how many times its removal was left uncertain
-/// (not removed, yet not read back either).
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct GcName {
-    name: Vec<u8>,
-    uncertain: u8,
-}
-
-/// A name is dropped from the gc list only after a confirmed removal. The
-/// list never holds more names than this, so it cannot outgrow its encoding; a
-/// write that would exceed it fails until gc drains it (no name is ever
-/// dropped to make room).
-/// A name whose removal reports failure while it also reads as absent is
-/// dropped after this many passes: freenet-stdlib's `remove_secret` returns
-/// false for a secret that was never there.
-pub const GC_UNCERTAIN_LIMIT: u8 = 3;
+/// The gc list never holds more names than this, so it cannot outgrow its
+/// encoding; a write that would exceed it fails until gc drains it. (A name
+/// leaves the list only once its secret reads as absent after a removal
+/// attempt, so names whose removal keeps failing accumulate: after this many,
+/// writes that need a gc entry fail.)
 pub const MAX_GC_NAMES: usize = 4096;
 
 pub struct Store<'a, H: Host> {
@@ -153,6 +137,9 @@ impl<'a, H: Host> Store<'a, H> {
     /// unknown and the caller must treat the partition as read-only; it is
     /// never read as "no partition".
     pub fn open(host: &'a mut H, partition: [u8; 32]) -> Result<Self, StoredIndexMalformed> {
+        if let Some(fault) = Self::fault(&*host, &partition) {
+            return Err(fault);
+        }
         let first = host.get_secret(&names::index(&partition));
         let (index, on_disk, exists, verified) = match first.as_deref().map(Index::decode) {
             Some(Ok(ix)) => {
@@ -161,20 +148,10 @@ impl<'a, H: Host> Store<'a, H> {
                 let _ = ensure_part_listed(host, &partition);
                 (ix, first, true, true)
             }
-            Some(Err(_)) => return Err(StoredIndexMalformed(IndexFault::Damaged)),
-            None => {
-                // Absent. A new partition only when `vault:parts` reads and
-                // does not name it.
-                match host.get_secret(names::PARTS) {
-                    Some(l) if l.len() % 32 != 0 => {
-                        return Err(StoredIndexMalformed(IndexFault::PartsUnreadable))
-                    }
-                    Some(l) if l.chunks(32).any(|c| c == partition) => {
-                        return Err(StoredIndexMalformed(IndexFault::LostWhileListed))
-                    }
-                    _ => (Index::none(), None, false, false),
-                }
-            }
+            // `fault` found no fault: the index is absent and `vault:parts`
+            // does not name the partition, so it is new (reads in a completed
+            // call are truthful, freenet-core #5857).
+            _ => (Index::none(), None, false, false),
         };
         Ok(Self {
             host,
@@ -302,78 +279,59 @@ impl<'a, H: Host> Store<'a, H> {
         names::entry(&self.partition, kind, key, parity)
     }
 
-    /// The union of both gc list copies, and whether the list can be trusted.
-    /// A list is always present once any entry was written (an emptied list is
-    /// stored as an empty list, never removed), so BOTH copies reading as
-    /// nothing while the index names entries means the reads failed: the list
-    /// is not trusted and nothing is rewritten or run from it. A copy that is
-    /// absent or does not parse contributes nothing.
-    fn read_gc(&self) -> (Vec<GcName>, bool) {
-        let mut out: Vec<GcName> = Vec::new();
-        let mut any = false;
+    /// The union of both gc list copies. A copy that is absent or does not
+    /// parse (a torn write) contributes nothing; `write_gc` writes the copies
+    /// one after the other, so at most one can be damaged and the other still
+    /// holds every pending name.
+    fn read_gc(&self) -> Vec<Vec<u8>> {
+        let mut out: Vec<Vec<u8>> = Vec::new();
         for name in [names::gc(&self.partition), names::gc2(&self.partition)] {
             if let Some(list) = self.host.get_secret(&name).and_then(|b| decode_names(&b)) {
-                any = true;
-                for g in list {
-                    match out.iter_mut().find(|x| x.name == g.name) {
-                        Some(x) => x.uncertain = x.uncertain.min(g.uncertain),
-                        None => out.push(g),
+                for n in list {
+                    if !out.contains(&n) {
+                        out.push(n);
                     }
                 }
             }
         }
-        let trusted = any || self.index.entries.is_empty();
-        (out, trusted)
+        out
     }
 
-    /// Writes both gc list copies. With `both`, a copy that does not take is
-    /// an error: names are being ADDED, and a list held by one copy only can
-    /// be erased by a later write after that copy misses a read. Without it
-    /// (shrinking), one copy taking is enough, since a stale second copy only
-    /// lists names already removed.
-    fn write_gc(&mut self, list: &[GcName], both: bool) -> Result<(), StorageFailure> {
+    /// Writes the list to `vault:gc`, then to `vault:gc2`, stopping at the
+    /// first failure. A failed write may be torn, and may have landed: with
+    /// one copy written at a time the other is intact.
+    fn write_gc(&mut self, list: &[Vec<u8>]) -> Result<(), StorageFailure> {
         let bytes = encode_names(list)?;
-        let a = self.host.set_secret(&names::gc(&self.partition), &bytes);
-        let b = self.host.set_secret(&names::gc2(&self.partition), &bytes);
-        if (a && b) || (!both && (a || b)) {
-            Ok(())
-        } else {
-            Err(StorageFailure)
-        }
-    }
-
-    /// Adds names to the gc list. Fails, writing nothing, when the list is not
-    /// trusted (both copies unreadable), when it would exceed [`MAX_GC_NAMES`]
-    /// (no name is dropped to make room), or when either copy cannot be
-    /// written.
-    fn add_gc(&mut self, add: &[Vec<u8>]) -> Result<(), StorageFailure> {
-        let (mut list, trusted) = self.read_gc();
-        if !trusted {
-            return Err(StorageFailure);
-        }
-        for n in add {
-            if !list.iter().any(|g| &g.name == n) {
-                list.push(GcName {
-                    name: n.clone(),
-                    uncertain: 0,
-                });
+        for name in [names::gc(&self.partition), names::gc2(&self.partition)] {
+            if !self.host.set_secret(&name, &bytes) {
+                return Err(StorageFailure);
             }
         }
-        self.write_gc(&list, true)
+        Ok(())
+    }
+
+    /// Adds names to the gc list. Fails, writing nothing further, when the list
+    /// would exceed [`MAX_GC_NAMES`] or a copy cannot be written.
+    fn add_gc(&mut self, add: &[Vec<u8>]) -> Result<(), StorageFailure> {
+        let mut list = self.read_gc();
+        for n in add {
+            if !list.contains(n) {
+                list.push(n.clone());
+            }
+        }
+        self.write_gc(&list)
     }
 
     /// Processes a non-empty `vault:gc`: removes every listed entry secret
-    /// the index does not reference. Names whose removal did not take stay
-    /// listed (and are retried by the next call). A drained list is stored
-    /// empty, not removed.
+    /// the index does not reference. A name stays listed while its secret still
+    /// reads (retried by the next call); a drained list is stored empty.
     pub fn process_gc(&mut self) {
-        // Only on positive evidence of what the index names, and with a list
-        // that can be trusted.
+        // Only on positive evidence of what the index names.
         if self.mode != Mode::Clean || !self.verified {
             return;
         }
-        let (list, trusted) = self.read_gc();
-        if list.is_empty() || !trusted {
+        let list = self.read_gc();
+        if list.is_empty() {
             return;
         }
         let prefix = names::entry_prefix(&self.partition);
@@ -383,28 +341,20 @@ impl<'a, H: Host> Store<'a, H> {
             .iter()
             .map(|e| self.entry_name(e.kind, &e.key, e.parity))
             .collect();
-        let mut keep: Vec<GcName> = Vec::new();
-        for g in list {
-            if !g.name.starts_with(&prefix) || referenced.contains(&g.name) {
+        let mut keep: Vec<Vec<u8>> = Vec::new();
+        for name in list {
+            if !name.starts_with(&prefix) || referenced.contains(&name) {
                 continue;
             }
-            // `removed` is true when the secret is gone. freenet-stdlib answers
-            // false for a secret that was not there, so a name that neither
-            // removes nor reads is counted, and dropped after
-            // [`GC_UNCERTAIN_LIMIT`] such passes (otherwise every candidate
-            // that never landed would stay listed for ever and fill the list).
-            let removed = self.host.remove_secret(&g.name);
-            if self.host.get_secret(&g.name).is_some() {
-                keep.push(g);
-            } else if !removed {
-                let uncertain = g.uncertain.saturating_add(1);
-                if uncertain < GC_UNCERTAIN_LIMIT {
-                    keep.push(GcName { uncertain, ..g });
-                }
+            // The result is not trusted (a failed removal may have landed); the
+            // read back is.
+            let _ = self.host.remove_secret(&name);
+            if self.host.get_secret(&name).is_some() {
+                keep.push(name);
             }
         }
         // If this write fails the old, longer list stays: also fine.
-        let _ = self.write_gc(&keep, false);
+        let _ = self.write_gc(&keep);
     }
 
     /// Writes `bytes` as the entry `(kind, key)` into the parity slot the
@@ -427,15 +377,14 @@ impl<'a, H: Host> Store<'a, H> {
         // index commit leaves a name gc removes, never an untracked secret.
         // The old copy is listed now too; gc skips it while the index still
         // references it.
-        let mut listed = vec![new_name.clone()];
-        if let Some(old) = &existing {
-            listed.push(self.entry_name(kind, key, old.parity));
-        }
+        // Both parity names are listed (gc skips the referenced one), so a stale
+        // copy at the other parity is always collected, including one left by
+        // a Reset.
+        let listed = vec![self.entry_name(kind, key, 0), self.entry_name(kind, key, 1)];
         self.add_gc(&listed)?;
         if !self.host.set_secret(&new_name, bytes) {
             // Nothing references it. If it landed anyway gc removes it; the
-            // name stays listed whatever a read now says, since a miss here
-            // does not show that nothing was written.
+            // name stays listed until its secret reads as absent.
             self.process_gc();
             return Err(StorageFailure);
         }
@@ -527,8 +476,9 @@ impl<'a, H: Host> Store<'a, H> {
         };
         let ie = self.index.entries[i].clone();
         let got = self.host.get_secret(&self.entry_name(kind, key, ie.parity));
-        // An absent secret is absent, never corrupt: the read may have failed
-        // transiently, and deleting on that evidence would destroy a key.
+        // An absent secret is absent, never corrupt: there are no bytes to
+        // judge, and dropping the entry would destroy what a restore could
+        // bring back.
         if got.is_none() {
             return Read::Missing;
         }
@@ -588,26 +538,24 @@ pub struct CommitFailure {
     pub old_intact: bool,
 }
 
-/// `"FVGC" 4 ; count 2 ; count x { len 2 ; name ; uncertain 1 }`. Fails above
+/// `"FVGC" 4 ; count 2 ; count x { len 2 ; name }`. Fails above
 /// [`MAX_GC_NAMES`] names, so the count always fits and a full list is
 /// refused rather than truncated.
-fn encode_names(names: &[GcName]) -> Result<Vec<u8>, StorageFailure> {
+fn encode_names(names: &[Vec<u8>]) -> Result<Vec<u8>, StorageFailure> {
     if names.len() > MAX_GC_NAMES {
         return Err(StorageFailure);
     }
     let mut w = Writer::new();
     w.bytes(b"FVGC").len_u16(names.len(), "gc list length");
     for n in names {
-        w.len_u16(n.name.len(), "gc name length")
-            .bytes(&n.name)
-            .u8(n.uncertain);
+        w.len_u16(n.len(), "gc name length").bytes(n);
     }
     w.finish().map_err(|_| StorageFailure)
 }
 
 /// `None` when the bytes are not a gc list this build wrote.
-fn decode_names(bytes: &[u8]) -> Option<Vec<GcName>> {
-    let parse = || -> Result<Vec<GcName>, Malformed> {
+fn decode_names(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
+    let parse = || -> Result<Vec<Vec<u8>>, Malformed> {
         let mut r = Reader::new(bytes);
         if r.take(4, "gc magic")? != b"FVGC" {
             return Err(Malformed("gc magic"));
@@ -619,9 +567,7 @@ fn decode_names(bytes: &[u8]) -> Option<Vec<GcName>> {
         let mut out = Vec::with_capacity(count.min(64));
         for _ in 0..count {
             let len = r.u16("len")? as usize;
-            let name = r.take(len, "name")?.to_vec();
-            let uncertain = r.u8("uncertain")?;
-            out.push(GcName { name, uncertain });
+            out.push(r.take(len, "name")?.to_vec());
         }
         r.finish()?;
         Ok(out)
@@ -636,8 +582,8 @@ pub fn pending_gc_names<H: Host>(host: &H, partition: &[u8; 32]) -> Vec<Vec<u8>>
     for n in [names::gc(partition), names::gc2(partition)] {
         if let Some(l) = host.get_secret(&n).and_then(|b| decode_names(&b)) {
             for g in l {
-                if !out.contains(&g.name) {
-                    out.push(g.name);
+                if !out.contains(&g) {
+                    out.push(g);
                 }
             }
         }
@@ -648,14 +594,7 @@ pub fn pending_gc_names<H: Host>(host: &H, partition: &[u8; 32]) -> Vec<Vec<u8>>
 /// An encoded gc list naming `names`, for tests.
 #[cfg(any(test, feature = "testing"))]
 pub fn encode_gc_for_test(names: &[Vec<u8>]) -> Vec<u8> {
-    let list: Vec<GcName> = names
-        .iter()
-        .map(|n| GcName {
-            name: n.clone(),
-            uncertain: 0,
-        })
-        .collect();
-    encode_names(&list).expect("short list")
+    encode_names(names).expect("short list")
 }
 
 /// Finds the entry `(kind, key)` with no index: reads both parity copies and
@@ -697,6 +636,16 @@ pub fn rescue_export_seed<H: Host>(
 /// in them (possibly a live copy, since no index says which) is removed.
 /// The caller has checked that the index is lost.
 pub fn reset_partition<H: Host>(host: &mut H, partition: &[u8; 32]) -> Result<(), StorageFailure> {
+    // The gc lists go first, and both must take: once the empty index is
+    // published, gc would remove every name still listed, and a listed name
+    // may be the only copy of a key. A crash or a failure after this point
+    // leaves empty lists, which is harmless.
+    let empty = encode_names(&[])?;
+    for name in [names::gc(partition), names::gc2(partition)] {
+        if !host.set_secret(&name, &empty) {
+            return Err(StorageFailure);
+        }
+    }
     let mut fresh = Index::none();
     fresh.state = index::State::Writer;
     let bytes = fresh.encode();
@@ -706,10 +655,23 @@ pub fn reset_partition<H: Host>(host: &mut H, partition: &[u8; 32]) -> Result<()
     {
         return Err(StorageFailure);
     }
-    let empty = encode_names(&[])?;
-    let _ = host.set_secret(&names::gc(partition), &empty);
-    let _ = host.set_secret(&names::gc2(partition), &empty);
-    ensure_part_listed(host, partition)
+    match ensure_part_listed(host, partition) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // A malformed list is replaced by this partition alone (this build
+            // has one partition): leaving it would keep the partition read-only
+            // for ever.
+            if host
+                .get_secret(names::PARTS)
+                .is_some_and(|l| l.len() % 32 != 0)
+                && host.set_secret(names::PARTS, partition)
+            {
+                Ok(())
+            } else {
+                Err(e)
+            }
+        }
+    }
 }
 
 /// `vault:parts`: the partition ids this build holds state for.

@@ -101,21 +101,64 @@ Storage and formats:
   storage failure for that slot only. The routing state is taken to be WRITER
   and a delegate is served on the record it offers (no mark raise is
   written). List, Generate, Import and Delete answer storage failure.
-  HandoverStatus problems bit 6 (`INDEX_LOST`) is set when the index is damaged
-  or absent while listed (not for a malformed `vault:parts`).
+  HandoverStatus problems bit 6 (`INDEX_LOST`) is set for every unknown index
+  state: the index damaged, absent while listed, or absent with a malformed
+  `vault:parts` (otherwise that state would be a permanent brick).
   **ResetPartition (0x88)** (`confirm = BLAKE3("freenet-vault/reset/v1" ||
   partition)`): domain pages only, behind the consent prompt, only while bit 6
   is set; it writes a fresh empty WRITER index, empties both gc lists (a listed
   name may be the only copy of a key) and keeps `vault:parts` listing the
   partition. Old entry copies stay on disk until a later Import of the same
-  slot overwrites them. Residuals, all by design for v1:
-  losing or tearing the index leaves the partition read-only with its keys
-  exportable by consent and no automatic repair; the host cannot tell an absent
-  secret from a failed read, so a call where the index AND `vault:parts` both
-  miss at once looks like a new partition (creation or arming could then write
-  a fresh index over a real one); a torn index write is not repaired.
-- **A secret that does not read is Missing, never corrupt.** When the index
-  names an entry but `get_secret` returns nothing, the vault changes and
+  slot overwrites them. The gc lists are cleared (both must take) BEFORE the
+  empty index is published, so a crash at any point leaves nothing for gc to
+  remove. Residuals, all by design for v1: losing or tearing the index leaves
+  the partition read-only with its keys exportable by consent until the user
+  runs ResetPartition; a torn index write is not repaired automatically.
+- **The host fault model (freenet-core #5857), and the defences it made
+  unnecessary.** A secret read that fails with an I/O error POISONS THE CALL in
+  core: every later `set_secret`, `remove_secret` and `create_delegate` in that
+  call is refused and the call's result is discarded and retried. So in a call
+  that completes, a `None` read means the secret really is absent, and a
+  "transient miss that looks like absence" can never lead to a write, a removal
+  or a reply. `MemHost` models exactly this (`read_fault` poisons the call;
+  a write or removal fault reports failure and may or may not have landed;
+  crashes at any write boundary). What the vault still defends against: a
+  write or removal that reports failure and may have landed, bytes that are
+  present but corrupt (checksums and digests), crashes between host calls, and
+  restores or wipes of the store. Removed as moot: the "both gc list copies
+  read as nothing while the index names entries means unreadable" test and the
+  untrusted-list state (an absent list is absent); the drop-after-3-passes rule
+  and the per-name uncertainty counter in the gc list (a name now leaves the
+  list when its secret reads as absent after a removal attempt, whatever the
+  removal reported, and stays for ever while it still reads); the stated
+  residual that index and `vault:parts` both missing "looks like a new
+  partition" as a transient (it is really absent); the tests that hid a secret
+  from reads (they now wipe it, or poison the call). Kept: read-only mode for
+  index bytes that are present but damaged, `vault:parts` that is present but
+  malformed, and for the rest of a call after a failed write, which is now one
+  latch for the whole call (`WriteLatch` around the host in `process`), not per
+  store: a failed `set_secret` refuses every later write and removal however
+  many stores the call opens (a failed removal does not latch; its name stays
+  listed). gc list copies are written one after the other and the write stops
+  at the first failure, so a torn write damages at most one copy.
+  Round-5 findings against this model: moot (they need a present secret to read
+  as absent in a completed call): blind arming over a transient miss, `vault:parts`
+  rewritten after a miss, direct-read mode meeting a stale or uncommitted copy
+  because the other copy read as absent, the empty-index exception and the
+  3-pass forgetting in gc, both gc lists unreadable. Fixed: Reset clears both gc
+  lists first and requires them to take; the failed-write latch is per call;
+  both gc copies unparseable no longer blocks writes; a malformed `vault:parts`
+  with no index can be reset; a Reset is refused when a newer build is known;
+  both parity names are always listed for gc so a stale copy left at the other
+  parity is collected. Stated residuals: direct-read mode has no content
+  integrity check on an entry (an entry has no checksum; Batch is guarded by
+  `expected_public_key`, Export by the UI's check); a deleted key whose copies
+  could not be removed is served by direct read if the index is later lost; names
+  whose removal keeps failing accumulate to 4096, after which writes that need a
+  gc entry fail.
+- **A secret that is gone is Missing, never corrupt.** When the index
+  names an entry but `get_secret` returns nothing (a wipe or restore of that
+  secret), the vault changes and
   deletes nothing, and answers storage failure (Refused 12). List shows the
   slot as corrupt with a zero key; Import without `replace` is refused, and
   with `replace` overwrites it; Delete works. Only bytes that are present and
@@ -123,19 +166,13 @@ Storage and formats:
   gone for good stays Missing until the page imports over it.
 - **gc is durable and bounded.** Every entry copy is listed in the gc list
   before it is written, so a crash leaves a name the next call removes. The
-  list is kept twice (`vault:gc`, `vault:gc2`, read as a union) and is stored
-  empty, never removed, once used. If BOTH copies read as nothing while the
-  index names entries, the list is untrusted: gc does not run and a write that
-  must list a name fails with storage failure, so the list is never rewritten
-  without what it held. Names are added only when both copies take. A name
-  leaves the list after a confirmed removal. freenet-stdlib's `remove_secret`
-  returns false for a secret that was not there, so a name that neither
-  removes nor reads back is dropped after 3 such passes (otherwise every
-  candidate that never landed would stay listed and fill the list); a secret
-  that reads is never dropped. Residual: a real secret hidden from reads and
-  undeletable for 3 passes is no longer tracked. The list holds at most 4096
-  names; when full, writes that need a gc entry fail with storage failure and
-  no name is dropped to make room.
+  list is kept twice (`vault:gc`, `vault:gc2`, read as a union; a copy that does
+  not parse contributes nothing) and written one copy at a time, stopping at
+  the first failure. Names are added only when both copies take. A name leaves
+  the list when its secret reads as absent after a removal attempt (a removal
+  that reports failure may still have landed; reads are truthful in a completed
+  call). The list holds at most 4096 names; when full, writes that need a gc
+  entry fail with storage failure and no name is dropped to make room.
 - **Stored successor records are verified on load.** `vault:succ` whose
   `current` or withdrawal no longer verifies under the domain key, is in the
   wrong role, or has `current` at or below OWN_VERSION is read as malformed:
@@ -173,12 +210,11 @@ Caller marks:
 
 - **Equal version, different record, withdrawals, lost marks**: decided; see
   "Decided 2026-11-23" above.
-- **A mark whose secret does not read** (transient or not) is served at the
-  compiled-in `min_version` and is never overwritten by an operation, so a
-  momentary read failure cannot lower a stored mark. While it lasts, a caller
-  below the stored mark but at or above `min_version` is served. A SubmitRecord
-  of a caller record reads it again; if it is still unreadable, a record at or
-  above `min_version` replaces it (it lowers the floor to that version), so a
+- **A mark whose secret is gone** (a wipe or restore of that secret) is served
+  at the compiled-in `min_version` and is never overwritten by an operation.
+  While it lasts, a caller below the stored mark but at or above `min_version`
+  is served. A SubmitRecord of a caller record at or above `min_version`
+  replaces it (it lowers the floor to that version), so a
   mark lost for good is not stuck for ever. Accepted residual: nothing else
   stores the lost mark's version (the index holds a digest, the gc list holds
   names), so the replacement cannot be required to reach the highest version

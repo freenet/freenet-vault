@@ -1,4 +1,13 @@
 //! An in-memory [`Host`] with fault injection, for tests.
+//!
+//! The fault model is the real host's (freenet-core #5857): a secret read that
+//! fails with an I/O error POISONS THE CALL (`read_fault`): every later
+//! `set_secret` and `remove_secret` is refused, and the caller must discard the
+//! call's result. So in a call that completes, a `None` read means the secret
+//! is really absent. A write or removal that reports failure may or may not
+//! have landed (`WriteFault`, `remove_fault`); that is the uncertainty the
+//! vault defends against, along with crashes between host calls (`crash_after`)
+//! and bytes that are present but corrupt.
 
 use crate::host::Host;
 use std::collections::{BTreeMap, BTreeSet};
@@ -28,14 +37,14 @@ pub struct MemHost {
     pub zero_rng: bool,
     fault: Option<FaultFn>,
     pub writes: usize,
-    /// Secret names `get_secret` reports as absent although they are stored:
-    /// a transient read failure.
-    pub hidden: BTreeSet<Vec<u8>>,
-    /// Secret names `remove_secret` fails to remove.
+    /// Secret names whose read fails with an I/O error: the read answers
+    /// `None` and poisons the call (see the module docs).
+    pub read_fault: BTreeSet<Vec<u8>>,
+    poisoned: std::cell::Cell<bool>,
+    /// Secret names `remove_secret` reports failure for without removing.
     pub undeletable: BTreeSet<Vec<u8>>,
-    /// `remove_secret` answers false for a secret that is not there, as
-    /// freenet-stdlib does.
-    pub remove_absent_is_false: bool,
+    /// Secret names `remove_secret` removes but reports failure for.
+    pub remove_lands_but_fails: BTreeSet<Vec<u8>>,
     /// Counts every `set_secret` and `remove_secret`, applied or not.
     pub mutations: usize,
     crash_after: Option<usize>,
@@ -56,9 +65,10 @@ impl MemHost {
             zero_rng: false,
             fault: None,
             writes: 0,
-            hidden: BTreeSet::new(),
+            read_fault: BTreeSet::new(),
+            poisoned: std::cell::Cell::new(false),
             undeletable: BTreeSet::new(),
-            remove_absent_is_false: true,
+            remove_lands_but_fails: BTreeSet::new(),
             mutations: 0,
             crash_after: None,
         }
@@ -76,6 +86,12 @@ impl MemHost {
         let mut h = Self::new();
         h.secrets = self.secrets.clone();
         h
+    }
+
+    /// A read failed in this call: writes are refused and the result must be
+    /// discarded.
+    pub fn poisoned(&self) -> bool {
+        self.poisoned.get()
     }
 
     fn crashed(&self) -> bool {
@@ -104,14 +120,15 @@ impl MemHost {
 
 impl Host for MemHost {
     fn get_secret(&self, key: &[u8]) -> Option<Vec<u8>> {
-        if self.hidden.contains(key) {
+        if self.read_fault.contains(key) {
+            self.poisoned.set(true);
             return None;
         }
         self.secrets.get(key).cloned()
     }
 
     fn set_secret(&mut self, key: &[u8], value: &[u8]) -> bool {
-        if self.crashed() {
+        if self.crashed() || self.poisoned.get() {
             self.mutations += 1;
             return false;
         }
@@ -139,7 +156,7 @@ impl Host for MemHost {
     }
 
     fn remove_secret(&mut self, key: &[u8]) -> bool {
-        if self.crashed() {
+        if self.crashed() || self.poisoned.get() {
             self.mutations += 1;
             return false;
         }
@@ -147,8 +164,10 @@ impl Host for MemHost {
         if self.undeletable.contains(key) {
             return false;
         }
+        // freenet-stdlib: true if the secret was removed, false if it was not
+        // there.
         let was = self.secrets.remove(key).is_some();
-        was || !self.remove_absent_is_false
+        was && !self.remove_lands_but_fails.contains(key)
     }
 
     fn read_context(&self) -> Vec<u8> {
