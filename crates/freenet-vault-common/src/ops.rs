@@ -433,6 +433,16 @@ pub struct ItemResult {
 }
 
 pub const ITEM_OK: u8 = 0;
+
+/// A successful item carries its signature (Sign, 64 bytes) or a 32-byte
+/// result (KeyAgreement, Derive); a failed item carries nothing (12.5).
+fn item_shape_ok(status: u8, len: usize) -> bool {
+    if status == ITEM_OK {
+        len == 64 || len == 32
+    } else {
+        len == 0
+    }
+}
 pub const ITEM_FORBIDDEN_SIGNING_DOMAIN: u8 = 11;
 
 /// One List row: `slot_len 1 ; slot ; public_key 32 ; status 1`.
@@ -495,7 +505,8 @@ impl OpResult {
                 )
                 .len_u16(results.len(), "batch count");
                 for r in results {
-                    w.u8(r.status)
+                    w.require(item_shape_ok(r.status, r.bytes.len()), "item result shape")
+                        .u8(r.status)
                         .len_u16(r.bytes.len(), "item result length")
                         .bytes(&r.bytes);
                 }
@@ -550,6 +561,9 @@ impl OpResult {
                 for _ in 0..count {
                     let status = r.u8("status")?;
                     let len = r.u16("len")? as usize;
+                    if !item_shape_ok(status, len) {
+                        return Err(Malformed("item result shape"));
+                    }
                     results.push(ItemResult {
                         status,
                         bytes: r.take(len, "bytes")?.to_vec(),
@@ -930,17 +944,25 @@ mod tests {
         };
         assert!(list(256).encode(1).is_ok());
         assert!(list(257).encode(1).is_err());
-        // A reply over 65,536 bytes in total is an error.
-        let big = |n: usize| {
+        // A reply over 65,536 bytes in total is an error (no valid result
+        // reaches it, so the bound is checked on the envelope).
+        assert!(frame::encode_reply(types::OK, &vec![0; 65_536 - 10]).is_ok());
+        assert!(frame::encode_reply(types::OK, &vec![0; 65_536 - 9]).is_err());
+        assert!(OpResult::Batch(vec![]).encode(1).is_err());
+        // Item payloads have fixed shapes.
+        let item = |status: u8, n: usize| {
             OpResult::Batch(vec![ItemResult {
-                status: 0,
+                status,
                 bytes: vec![0; n],
             }])
+            .encode(1)
         };
-        // envelope 10 + request_id 8 + count 2 + status 1 + len 2 + bytes + ext 2.
-        assert!(big(65_536 - 25).encode(1).is_ok());
-        assert!(big(65_536 - 24).encode(1).is_err());
-        assert!(OpResult::Batch(vec![]).encode(1).is_err());
+        assert!(item(ITEM_OK, 64).is_ok());
+        assert!(item(ITEM_OK, 32).is_ok());
+        assert!(item(ITEM_OK, 3).is_err());
+        assert!(item(ITEM_OK, 0).is_err());
+        assert!(item(ITEM_FORBIDDEN_SIGNING_DOMAIN, 0).is_ok());
+        assert!(item(ITEM_FORBIDDEN_SIGNING_DOMAIN, 32).is_err());
     }
 
     #[test]

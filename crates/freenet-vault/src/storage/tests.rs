@@ -620,9 +620,11 @@ fn byte_quota_is_the_library_maximum() {
     assert_eq!(put(&mut h, &big(17)), Err(PutError::Quota));
 }
 
-/// Unknown kinds, unknown eflags bits and extensions are stored byte for byte.
+/// Unknown kinds, unknown eflags bits and extensions are stored byte for byte,
+/// and never served: a read answers "cannot use" (Corrupt(None)) without
+/// dropping or rewriting the bytes (spec 11).
 #[test]
-fn unknown_kinds_and_extensions_are_stored_verbatim() {
+fn unknown_kinds_and_extensions_are_stored_verbatim_and_never_served() {
     let mut h = MemHost::new();
     let e = Entry {
         kind: 0x7F,
@@ -635,7 +637,16 @@ fn unknown_kinds_and_extensions_are_stored_verbatim() {
     let name = names::entry(&P, 0x7F, &[1, 2, 3], 0);
     assert_eq!(h.secrets[&name], e.encode().unwrap());
     let mut s = Store::open(&mut h, P).unwrap();
-    assert_eq!(s.read(0x7F, &[1, 2, 3], false), Read::Ok(e));
+    assert_eq!(s.read(0x7F, &[1, 2, 3], false), Read::Corrupt(None));
+    drop(s);
+    assert_eq!(h.secrets[&name], e.encode().unwrap(), "bytes changed");
+    // A known kind with an unknown flag bit is not served either, and a
+    // direct read (no index) skips it.
+    let mut k = key_entry(1, 9);
+    k.eflags = 0b0100_0000;
+    put(&mut h, &k).unwrap();
+    assert_eq!(read(&mut h, 1), Read::Corrupt(None));
+    assert_eq!(rescue_export_seed(&h, &P, &[1; 32]), None);
 }
 
 #[test]

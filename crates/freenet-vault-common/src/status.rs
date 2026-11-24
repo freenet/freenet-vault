@@ -75,12 +75,12 @@ pub mod problems {
     pub const INDEX_LOST: u8 = 1 << 6;
 }
 
-/// Poke flag bits. Only bit 1 is acted on by this implementation; bits 2 and 3
-/// are reserved and not used in v1 (revision 7), so they have no names here.
+/// Poke flag bits. Only bit 1 is acted on by this implementation; bit 0 belongs
+/// to the handover. Bits 2, 3 and 4 are reserved (revision 8 keeps a partial
+/// copy instead of discarding it, so bit 4 has no meaning) and have no names.
 pub mod poke_flags {
     pub const PAUSE_COPYING: u8 = 1 << 0;
     pub const ARM: u8 = 1 << 1;
-    pub const DISCARD_PARTIAL: u8 = 1 << 4;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -55,6 +55,12 @@ impl Entry {
         self.eflags & EFLAG_CORRUPT != 0
     }
 
+    /// Flag bits this build does not know (spec 11: stored and copied, never
+    /// served).
+    pub fn has_unknown_flags(&self) -> bool {
+        self.eflags & !EFLAG_CORRUPT != 0
+    }
+
     /// Encodes, checking every bound a decoder checks.
     pub fn encode(&self) -> Result<Vec<u8>> {
         self.check()?;

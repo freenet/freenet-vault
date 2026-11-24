@@ -54,7 +54,6 @@ fn frozen_constants_by_value() {
     // Poke flags: bits 0, 1 and 4.
     assert_eq!(poke_flags::PAUSE_COPYING, 0x01);
     assert_eq!(poke_flags::ARM, 0x02);
-    assert_eq!(poke_flags::DISCARD_PARTIAL, 0x10);
 
     // Frame types.
     assert_eq!(HEADER_LEN, 10);

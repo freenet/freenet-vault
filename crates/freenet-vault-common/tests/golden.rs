@@ -304,7 +304,7 @@ fn result_frame_vectors_0xa0_to_0xa4() {
         OpResult::Batch(vec![
             ItemResult {
                 status: ITEM_OK,
-                bytes: vec![0xAA, 0xBB, 0xCC],
+                bytes: vec![0xAA; 32],
             },
             ItemResult {
                 status: ITEM_FORBIDDEN_SIGNING_DOMAIN,
@@ -315,7 +315,8 @@ fn result_frame_vectors_0xa0_to_0xa4() {
         &cat(&[
             &RID,
             &[0, 2],
-            &[0, 0, 3, 0xAA, 0xBB, 0xCC],
+            &[0, 0, 32],
+            &[0xAA; 32],
             &[11, 0, 0],
             &NO_EXT,
         ]),

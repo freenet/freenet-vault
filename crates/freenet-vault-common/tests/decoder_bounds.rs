@@ -213,7 +213,7 @@ fn result_counts_on_decode() {
     assert!(OpResult::decode(types::LIST_RESULT, &list(256)).is_ok());
     assert!(OpResult::decode(types::LIST_RESULT, &list(257)).is_err());
     let batch = |n: usize| {
-        let item = [0u8, 0, 0];
+        let item = [11u8, 0, 0];
         cat(&[
             &[0; 8],
             &(n as u16).to_be_bytes(),
@@ -225,25 +225,54 @@ fn result_counts_on_decode() {
     assert!(OpResult::decode(types::BATCH_RESULT, &batch(257)).is_err());
 }
 
-/// The whole reply frame (10 header bytes + body) is at most 65,536: a batch
-/// result with one item of 65,511 payload bytes is the largest accepted.
+/// The whole reply frame (10 header bytes + body) is at most 65,536. No valid
+/// result reaches it, but a result may carry an extension of any length: an
+/// Export result with a long extension is the largest accepted at the bound.
 #[test]
 fn reply_frame_exactly_65536_bytes() {
-    let result = |payload: usize| {
+    let result = |ext: usize| {
         cat(&[
             &[0, 0, 0, 0, 0, 0, 0, 1],
+            &[7; 32],
+            &(ext as u16).to_be_bytes(),
+            &vec![5; ext],
+        ])
+    };
+    let last = result(65_536 - 10 - 8 - 32 - 2);
+    assert_eq!(10 + last.len(), 65_536);
+    assert!(OpResult::decode(types::EXPORT_RESULT, &last).is_ok());
+    assert!(OpResult::decode(types::EXPORT_RESULT, &result(65_536 - 10 - 8 - 32 - 1)).is_err());
+}
+
+/// A Batch item's payload has a fixed shape: OK carries 64 (Sign) or 32
+/// (KeyAgreement, Derive) bytes, every other status none.
+#[test]
+fn batch_item_payload_shapes_on_decode() {
+    let one = |status: u8, len: usize| {
+        cat(&[
+            &[0; 8],
             &1u16.to_be_bytes(),
-            &[0],
-            &(payload as u16).to_be_bytes(),
-            &vec![5; payload],
+            &[status],
+            &(len as u16).to_be_bytes(),
+            &vec![1; len],
             &NO_EXT,
         ])
     };
-    let last = result(65_511);
-    assert_eq!(10 + last.len(), 65_536);
-    assert!(OpResult::decode(types::BATCH_RESULT, &last).is_ok());
-    assert!(OpResult::decode(types::BATCH_RESULT, &result(65_512)).is_err());
-    assert!(OpResult::decode(types::BATCH_RESULT, &result(65_535)).is_err());
+    for (status, len, ok) in [
+        (0, 64, true),
+        (0, 32, true),
+        (0, 0, false),
+        (0, 3, false),
+        (0, 65, false),
+        (11, 0, true),
+        (11, 32, false),
+    ] {
+        assert_eq!(
+            OpResult::decode(types::BATCH_RESULT, &one(status, len)).is_ok(),
+            ok,
+            "status {status} len {len}"
+        );
+    }
 }
 
 /// Generate: mode 1 is "generated slot" (length 0); mode 0 names a slot of 1

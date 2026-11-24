@@ -488,6 +488,8 @@ impl<'a, H: Host> Store<'a, H> {
                 // decode them (a newer format), that is not damage: never
                 // dropped or rewritten, and not usable either.
                 return match Entry::decode(b) {
+                    // Unknown flag bits: stored and copied, never served (spec 11).
+                    Ok(e) if e.has_unknown_flags() => Read::Corrupt(None),
                     Ok(e) if e.is_flagged_corrupt() => Read::Corrupt(Some(e)),
                     Ok(e) => Read::Ok(e),
                     Err(_) => Read::Corrupt(None),
@@ -608,7 +610,7 @@ fn direct_entry<H: Host>(host: &H, partition: &[u8; 32], kind: u8, key: &[u8]) -
             continue;
         };
         if let Ok(e) = Entry::decode(&bytes) {
-            if e.kind == kind && e.key == key && !found.contains(&e) {
+            if e.kind == kind && e.key == key && !e.has_unknown_flags() && !found.contains(&e) {
                 found.push(e);
             }
         }

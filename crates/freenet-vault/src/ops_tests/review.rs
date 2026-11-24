@@ -2428,3 +2428,35 @@ fn double_corruption_of_index_and_parts_looks_fresh_but_keys_stay_exportable() {
         Some(seed)
     );
 }
+
+/// An entry with an unknown flag bit is stored but never served: PublicKey and
+/// Batch answer Unusable, and Export cannot use it either (spec 11).
+#[test]
+fn an_entry_with_an_unknown_flag_bit_is_never_served() {
+    let p = domain().partition();
+    let mut h = MemHost::new();
+    let (slot, pk) = writer_with_key(&mut h);
+    // Set an unknown bit in place and keep the index digest in step.
+    let name = entry_name_of(&h, KIND_KEY, &slot);
+    let mut b = h.secrets[&name].clone();
+    b[1] |= 0x80;
+    h.secrets.insert(name.clone(), b.clone());
+    let mut ix = crate::storage::index::Index::decode(&h.secrets[&names::index(&p)]).unwrap();
+    let i = ix.find(KIND_KEY, &slot).unwrap();
+    ix.entries[i].digest = hash::entry_digest(&b);
+    h.secrets.insert(names::index(&p), ix.encode());
+    let unusable_reply = |rid| {
+        Reply::St(Status::Unusable {
+            request_id: rid,
+            partition: p,
+            slot: slot.clone(),
+            reason: unusable::CORRUPT,
+        })
+    };
+    assert_eq!(
+        page(&mut h, op(3, Operation::PublicKey { slot: slot.clone() })),
+        unusable_reply(3)
+    );
+    assert_eq!(sign_batch(&mut h, 4, &slot, pk), unusable_reply(4));
+    assert_eq!(h.secrets[&name], b, "the bytes were changed");
+}
