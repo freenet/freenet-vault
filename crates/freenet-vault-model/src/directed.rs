@@ -518,6 +518,42 @@ pub fn retired_index_lost(cfg: &Cfg, malformed: bool) -> Scenario {
     r.done()
 }
 
+/// 4.5 (revision 10.1, G2, condition 3): 10 retired to 20, whose slot 0 has
+/// since changed. 10's index and its `vault:parts` are both damaged, so 10
+/// cannot tell that it holds no state; its `vault:succ` names a record above
+/// its own version, so every read it gets answers Moved(20's record) and never
+/// the stale key still on its disk. `vault:parts` is damaged first, aimed
+/// (`GarbleNamed` 0), because a random garble rarely picks it.
+pub fn retired_parts_and_index_damaged(cfg: &Cfg, malformed: bool) -> Scenario {
+    let mut r = handed_over_10_to_20(cfg, vec![Rec::build(10), Rec::build(20)]);
+    r.load(vec![Op::Import {
+        slot: 0,
+        seed: 501,
+        replace: true,
+    }]);
+    r.act(Action::GarbleNamed {
+        b: bi(10) as u8,
+        which: 0,
+        undecryptable: !malformed,
+    });
+    r.act(Action::GarbleIndex {
+        b: bi(10) as u8,
+        undecryptable: !malformed,
+    });
+    for _ in 0..2 {
+        r.act(Action::Cached {
+            op: Op::PublicKey { slot: 0 },
+            b: Some(bi(10) as u8),
+        });
+        r.act(Action::Cached {
+            op: Op::Export { slot: 0 },
+            b: Some(bi(10) as u8),
+        });
+    }
+    r.load(vec![Op::PublicKey { slot: 0 }]);
+    r.done()
+}
+
 /// Revision 9 finding F16 (directed): 10 copies to 20, 20's index is lost
 /// after its first chunk and the Ack is lost; 30 is published and 10 hands
 /// over to 30; 30 changes slot 0; an old-lineage client (10, 20, 30) and a
@@ -1494,6 +1530,10 @@ pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
         v.push((
             "4.4/retired-index-lost-reads-none",
             retired_index_lost(cfg, malformed),
+        ));
+        v.push((
+            "4.5/g2-condition-3-successor-moved",
+            retired_parts_and_index_damaged(cfg, malformed),
         ));
         for f in [
             WriteFault::Fail,

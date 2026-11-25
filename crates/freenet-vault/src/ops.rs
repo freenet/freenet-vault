@@ -510,6 +510,15 @@ fn operation<H: Host>(domain: &Domain, host: &mut H, caller: &Caller, req: Reque
     if let Some(f) = fault {
         lost_hits(&*host, domain, f);
     }
+    if let Some(f) = fault {
+        if f.0.parts_malformed()
+            && succ.as_ref().is_some_and(|s| s.successor().is_some())
+            && !is_change
+            && trace::mutant(Mutant::DirectReadDespiteSuccessor)
+        {
+            hit!("mutant/direct-read-despite-successor");
+        }
+    }
     let mut store = match fault {
         None => match Store::open(host, domain.partition()) {
             Ok(s) => s,
