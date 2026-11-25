@@ -50,21 +50,30 @@ protocol document (sections 9 and 11, added 2026-11-23).
 
 ## Scope of this build
 
-- The handover (copy, seal, take-over, retire; Chunk, Ack, Complete,
-  CompleteAck, Abort, Retired, Query) is not implemented. Its frame-type
-  numbers are reserved in `freenet-vault-common::frame::types` and nothing
-  else (protocol 12.3 has the layouts). A handover frame from a delegate is
-  ignored, as protocol 6 says for frames a build does not handle. A handover
-  frame, or the reserved 0x87 (RetireTo was removed in revision 7), from a page
-  answers Refused(10), which callers treat as "retry after the handover"
-  (protocol 5.2).
-- The partition index has an opaque `handover` field and the states SEALED,
-  RECEIVING and RETIRED, so the operation path already answers as protocol
-  5.1 says for those states. Nothing in this build enters them.
-- Not implemented here, so not tested: the handover frames, and the
-  WASM entry point's `CtxHost`. CI compiles and lints `CtxHost` (wasm32
-  build and clippy) but no test runs a WASM module; every behaviour is
-  tested through `process` over the in-memory host.
+- The handover (protocol 3 to 7, revision 10.2 without 4.6 and without the
+  4.3 heal) is in `handover.rs`, following the simulation model's build
+  (`crates/freenet-vault-model/src/build.rs`) transition by transition: Poke,
+  SubmitRecord, wake-ups, the receiver (Chunk, Complete, Abort, Retired),
+  the sender (Ack, CompleteAck, sealing, unsealing, retiring with unlisting
+  and read-back), take-over with its listing rule, Query and the creation
+  probes of 5.3, `vault:x` and `vault:rx`, the mirror sweep after take-over,
+  and the 7.7 windows. A handover frame, or the reserved 0x87, from a page
+  answers Refused(10).
+- The handover's volatile state (in-flight marks, whether the mirror sweep
+  finished, where an unfinished sweep continues) lives in the delegate
+  context with a pending Export prompt (`ctx.rs`, layout `"FVCT"`); losing it
+  is always safe. The Export prompt goes through the same context, so a
+  handover call between the prompt and its answer keeps it.
+- The mirror sweep is bounded per step: `window x sweep_per_message`
+  identities (7.7), continuing from a cursor in the context.
+- Conformance: `crates/freenet-vault-conformance` runs the model's
+  generator, scheduler, invariants, directed scenarios and mutation check
+  over this library (see its crate documentation). Its integration test
+  runs in CI; the 2,000-seed gate, the 100k batches and the mutation check
+  run from its binary (`--profile conformance`).
+- Not tested by running WASM: the entry point's `CtxHost`. CI compiles and
+  lints it (wasm32 build and clippy); every behaviour is tested through
+  `process` over the in-memory host.
 
 ## Readings chosen where the documents are silent or ambiguous
 
@@ -296,6 +305,9 @@ Storage and formats:
   with `replace` overwrites it; Delete works. Only bytes that are present and
   do not parse are dropped and counted. Residual: an entry whose secret is
   gone for good stays Missing until the page imports over it.
+- **A writer's maximums are the staging maximums.** `Store::put` and a
+  receiver both read `limits::get()` (equal to the frozen bounds in every
+  release build), so a writer never holds more than its successor can stage.
 - **gc is durable and bounded.** Every entry copy is listed in the gc list
   before it is written, so a crash leaves a name the next call removes. The
   list is kept twice (`vault:gc`, `vault:gc2`, read as a union; a copy that does
@@ -309,10 +321,20 @@ Storage and formats:
   `current` or withdrawal no longer verifies under the domain key, is in the
   wrong role, or has `current` at or below OWN_VERSION is read as malformed:
   Poke reports `STORED_MALFORMED`, Moved is never returned with an invalid
-  record, and record handling is refused (Refused 7). It is not permanent: a
-  submitted or poked record that verifies and is newer than this build replaces
-  it. Whatever the unreadable store held is lost, so the floor it carried is
-  too (corruption already cost that knowledge).
+  record, and record handling is refused (Refused 7). Changed with the
+  handover (2026-11-24): a verified newer record no longer replaces it.
+  Protocol 3 says a malformed stored record is never read as "no record",
+  and the checked model has no such repair; a replacement could lower a floor
+  the lost store held (a withdrawal, say). The cost is liveness: the build
+  stays at record_state 3 and refuses handover activity until the secret is
+  repaired, which v1 has no operation for.
+  Decided and accepted as a v1 residual (coordinator, 2026-11-24): one
+  corruption of `vault:succ` leaves the build at record_state 3 (no handover
+  activity, reported) until v1.1. The repair belongs to the v1.1 repair scope
+  next to G4, and must be modelled before it is built. Pinned by
+  `a_verified_record_does_not_replace_a_malformed_vault_succ` (a Poke and a
+  SubmitRecord of a verified newer record both leave it untouched) and
+  `index_loss_stores_no_records`.
 - **gc never deletes a referenced entry.** Protocol 4.2 writes `vault:gc`
   before the index. If that index write then fails, `vault:gc` names a copy
   the index still references; processing it as written would delete a live
@@ -362,7 +384,8 @@ Caller marks:
 
 Operations:
 
-- **Delete of an absent slot** answers Ok. Leaving a room is idempotent. On a
+- **Delete of an absent slot** answers Absent (the model's answer; the caller
+  treats it as done, so leaving a room stays idempotent). On a
   partition that is NONE and unarmed it answers NotHere (the route runs first).
 - **PublicKey of a publisher key** answers Unusable(1), like every other use.
   Delete of it is allowed.

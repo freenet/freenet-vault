@@ -80,7 +80,7 @@ impl Succ {
         })
     }
 
-    fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Vec<u8> {
         let mut w = Writer::new();
         w.bytes(b"FVSU")
             .u8(1)

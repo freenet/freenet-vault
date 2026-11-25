@@ -44,3 +44,19 @@ pub fn entry(partition: &[u8; 32], kind: u8, key: &[u8], parity: u8) -> Vec<u8> 
 pub fn entry_prefix(partition: &[u8; 32]) -> Vec<u8> {
     format!("vault:e:{}:", hex(partition)).into_bytes()
 }
+
+/// `vault:x:<tv>:<P>`: copy progress toward target version `tv` (8 hex digits).
+pub fn progress(target_version: u32, partition: &[u8; 32]) -> Vec<u8> {
+    format!(
+        "vault:x:{}:{}",
+        hex(&target_version.to_be_bytes()),
+        hex(partition)
+    )
+    .into_bytes()
+}
+
+/// `vault:rx:<P>`: digests delivered as "dropped by policy" in the current
+/// transfer (7.2).
+pub fn received_dropped(partition: &[u8; 32]) -> Vec<u8> {
+    format!("vault:rx:{}", hex(partition)).into_bytes()
+}

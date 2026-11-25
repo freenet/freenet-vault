@@ -1,0 +1,58 @@
+seed 25764: Some(Violation { inv: "I2-incomplete-delete", msg: "writer 40 holds None for (1, 3); acknowledged Possible { acked: Some(Entry { kind: 1, key: 3, flagged: false, content: 1, ext: [] }), maybe: [] }", at: 135 })
+
+==== seed 25764: shrunk to 28 actions; ledger [Rec { v: 10, withdrawal: false }, Rec { v: 20, withdrawal: false }, Rec { v: 30, withdrawal: false }, Rec { v: 40, withdrawal: false }, Rec { v: 50, withdrawal: false }]
+violation: Some(Violation { inv: "I2-incomplete-delete", msg: "writer 40 holds None for (1, 3); acknowledged Possible { acked: Some(Entry { kind: 1, key: 3, flagged: false, content: 1, ext: [] }), maybe: [] }", at: 28 })
+[1] Publish
+[2] Load { client: 0, fetch: Newest, ops: [Generate { slot: 0, seed: 260974 }, PutExt { key: 0, content: 1 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[3] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[4] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[5] Load { client: 2, fetch: Newest, ops: [Import { slot: 1, seed: 2, replace: false }, Import { slot: 3, seed: 1, replace: false }, Generate { slot: 3, seed: 106266 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[6] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[7] Step { pick: 55, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[8] Step { pick: 17, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[9] Publish
+[10] Publish
+[11] Step { pick: 17, fate: Deliver }
+  courier client 2 route Create(10)
+  10 Poke { flags: 2, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [] state NONE -> NONE(armed)
+[12] ReindexAt { b: 5, newest: false }
+  60 Op(Reindex { slots: [] }) -> "Refused(8)" hops [] state NONE -> NONE
+  op Reindex { slots: [] } at 60 -> Refused(8)
+[13] Step { pick: 58, fate: Deliver }
+  10 Op(Import { slot: 1, seed: 2, replace: false }) -> "Key(2)" hops [] state NONE(armed) -> WRITER
+  op Import { slot: 1, seed: 2, replace: false } at 10 -> Key(2)
+[14] Step { pick: 28, fate: Deliver }
+  10 Op(Import { slot: 3, seed: 1, replace: false }) -> "Key(1)" hops [] state WRITER -> WRITER
+  op Import { slot: 3, seed: 1, replace: false } at 10 -> Key(1)
+[15] Publish
+[16] Crash
+[17] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state WRITER -> WRITER
+[18] Load { client: 1, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 40, withdrawal: false }) } -> "Status(WRITER, rec 2)" hops [40:Chunk(rec 40, 2 entries)] state WRITER -> WRITER
+[19] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state NONE -> NONE
+[20] Step { pick: 7, fate: Deliver }
+[21] Step { pick: 0, fate: Deliver }
+  40 Hop { from: 10, frame: Chunk { rec: Rec { v: 40, withdrawal: false }, entries: [Entry { kind: 1, key: 1, flagged: false, content: 2, ext: [] }, Entry { kind: 1, key: 3, flagged: false, content: 1, ext: [] }], malformed: false } } -> "Ack(Processed, [(16868627156969863618, Stored), (13983998104588804593, Stored)], succ None)" hops [] state NONE -> RECEIVING
+[22] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 40, frame: Ack { tid: (10, Rec { v: 40, withdrawal: false }), status: Processed, succ: None, outcomes: [(16868627156969863618, Stored), (13983998104588804593, Stored)] } } -> "-" hops [40:Complete(m 6bbe, 2 digests)] state WRITER -> SEALED
+[23] Step { pick: 0, fate: Deliver }
+  40 Hop { from: 10, frame: Complete { rec: Rec { v: 40, withdrawal: false }, m: 7013118518600428478, digests: [13983998104588804593, 16868627156969863618], malformed: false } } -> "CompleteAck(Accepted, m 6bbe, missing 0, succ None)" hops [] state RECEIVING -> WRITER(awaiting)
+[24] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 40, frame: CompleteAck { tid: (10, Rec { v: 40, withdrawal: false }), m: 7013118518600428478, status: Accepted, succ: None, missing: [] } } -> "-" hops [40:Retired(m 6bbe)] state SEALED -> RETIRED
+[25] Step { pick: 0, fate: Deliver }
+  40 Hop { from: 10, frame: Retired { rec: Rec { v: 40, withdrawal: false }, m: 7013118518600428478, malformed: false } } -> "CompleteAck(Noted, m 6bbe, missing 0, succ None)" hops [] state WRITER(awaiting) -> WRITER
+[26] ArmWriteFault { after: 0, fault: LandedButError }
+[27] Cached { op: Delete { slot: 3 }, b: Some(3) }
+  40 Op(Delete { slot: 3 }) -> "Refused(12)" hops [] state WRITER -> WRITER
+  op Delete { slot: 3 } at 40 -> Refused(12)
+[28] GarbleIndex { b: 3, undecryptable: false }
+!! I2-incomplete-delete: writer 40 holds None for (1, 3); acknowledged Possible { acked: Some(Entry { kind: 1, key: 3, flagged: false, content: 1, ext: [] }), maybe: [] }

@@ -146,6 +146,22 @@ fn page(h: &mut MemHost, payload: Vec<u8>) -> Reply {
     single_app_reply(from_page_as(h, page_id(), payload))
 }
 
+/// Sends a Poke from the domain's page and returns its reply. Unlike `page`,
+/// it allows the vault-to-vault hops a Poke may start (a copy toward a newer
+/// record, 7.7); each must be a delegate message.
+fn page_poke(h: &mut MemHost, payload: Vec<u8>) -> Reply {
+    let mut out = from_page_as(h, page_id(), payload);
+    assert!(!out.is_empty());
+    for m in &out[1..] {
+        assert!(
+            matches!(m, OutboundDelegateMsg::SendDelegateMessage(_)),
+            "{m:?}"
+        );
+    }
+    out.truncate(1);
+    single_app_reply(out)
+}
+
 fn single_app_reply(out: Vec<OutboundDelegateMsg>) -> Reply {
     assert_eq!(out.len(), 1, "{out:?}");
     match &out[0] {
@@ -736,10 +752,15 @@ fn a_malformed_stored_record_refuses_record_handling() {
         page(&mut h, sub(forged)),
         refused(4, refused::STORED_RECORD_MALFORMED)
     );
-    // One that verifies and is newer replaces it: the vault is not stuck.
-    let s = handover(page(&mut h, sub(domain_record(2, [2; 32]))));
-    assert_eq!(s.step_result, step_result::RECORD_ACCEPTED);
-    assert_eq!(s.record_state, record_state::SUCCESSOR);
+    // One that verifies and is newer does not replace it either: a malformed
+    // stored record is never read as "no record" (protocol 3; the model has
+    // no repair). The floor it held is unknown.
+    assert_eq!(
+        page(&mut h, sub(domain_record(2, [2; 32]))),
+        refused(4, refused::STORED_RECORD_MALFORMED)
+    );
+    let s = handover(page(&mut h, poke(0, None)));
+    assert_eq!(s.record_state, record_state::STORED_MALFORMED);
 }
 
 #[test]

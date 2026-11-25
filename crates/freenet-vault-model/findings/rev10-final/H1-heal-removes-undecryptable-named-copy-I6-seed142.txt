@@ -1,0 +1,35 @@
+seed 142: Some(Violation { inv: "I6-heal-remove-before-write", msg: "build 10 deleted E((1, 0), false), which its committed index names", at: 269 })
+
+==== seed 142: shrunk to 11 actions; ledger [Rec { v: 10, withdrawal: false }, Rec { v: 20, withdrawal: false }, Rec { v: 30, withdrawal: false }, Rec { v: 40, withdrawal: false }, Rec { v: 50, withdrawal: false }, Rec { v: 60, withdrawal: false }]
+violation: Some(Violation { inv: "I6-heal-remove-before-write", msg: "build 10 deleted E((1, 0), false), which its committed index names", at: 12 })
+[1] Publish
+[2] Load { client: 0, fetch: Newest, ops: [Generate { slot: 0, seed: 273525 }, PutExt { key: 0, content: 1 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[3] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[4] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[5] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[6] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[7] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[8] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(10)
+  10 Poke { flags: 2, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [] state NONE -> NONE(armed)
+[9] Step { pick: 0, fate: Deliver }
+  10 Op(Generate { slot: 0, seed: 273525 }) -> "Key(273525)" hops [] state NONE(armed) -> WRITER
+  op Generate { slot: 0, seed: 273525 } at 10 -> Key(273525)
+[10] Garble { b: 0, pick: 42, undecryptable: true }
+[11] Publish
+== quiescence
+[12] Load { client: 0, fetch: Newest, ops: [] }
+!! I6-heal-remove-before-write: build 10 deleted E((1, 0), false), which its committed index names
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 2)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[13] Wakeup { b: 0 }
+[14] Wakeup { b: 1 }
+[15] Wakeup { b: 2 }
+[16] Wakeup { b: 3 }
+[17] Wakeup { b: 4 }
+[18] Wakeup { b: 5 }

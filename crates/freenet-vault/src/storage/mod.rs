@@ -33,8 +33,9 @@ pub mod names;
 #[cfg(test)]
 mod tests;
 
+use crate::hit;
 use crate::host::Host;
-use freenet_vault_common::bounds::{MAX_PARTITION_BYTES, MAX_PARTITION_ENTRIES};
+use crate::trace::{self, Mutant, Note};
 use freenet_vault_common::codec::{Malformed, Reader, Writer};
 use freenet_vault_common::entry::{Entry, EFLAG_CORRUPT, KIND_CALLER_MARK, KIND_KEY};
 use freenet_vault_common::hash::entry_digest;
@@ -204,12 +205,28 @@ impl<'a, H: Host> Store<'a, H> {
             Some(l) if l.len() % 32 != 0 => (false, true),
             Some(l) => (l.chunks(32).any(|c| c == partition), false),
         };
+        if index.is_some() {
+            if trace::mutant(Mutant::MalformedUnlistedIsLost) && !listed && !malformed {
+                hit!("mutant/malformed-unlisted-index-read-as-lost");
+                return Some(StoredIndexMalformed(IndexFault::Damaged));
+            }
+            if trace::mutant(Mutant::MalformedListedIsNone) && listed {
+                hit!("mutant/malformed-listed-index-read-as-none");
+                return None;
+            }
+        }
         match index {
             None if malformed => Some(StoredIndexMalformed(IndexFault::PartsUnreadable)),
             None if listed => Some(StoredIndexMalformed(IndexFault::LostWhileListed)),
             Some(_) if listed => Some(StoredIndexMalformed(IndexFault::Damaged)),
             Some(_) if malformed => Some(StoredIndexMalformed(IndexFault::DamagedPartsMalformed)),
-            _ => None,
+            Some(_) => {
+                // revision 10, F14: a malformed index of an unlisted partition
+                // is NONE
+                hit!("4.5/malformed-index-unlisted-reads-none");
+                None
+            }
+            None => None,
         }
     }
 
@@ -277,6 +294,18 @@ impl<'a, H: Host> Store<'a, H> {
         }
         let name = names::index(&self.partition);
         let bytes = new.encode();
+        let listable = |st: index::State| {
+            matches!(st, index::State::Writer | index::State::Sealed)
+                || (trace::mutant(Mutant::ListNoneOrReceiving)
+                    && matches!(st, index::State::None | index::State::Receiving))
+        };
+        let lists = listable(new.state) && !listable(self.index.state);
+        if lists && !self.listed && trace::mutant(Mutant::PartsBeforeIndex) {
+            hit!("mutant/parts-written-before-index");
+            if ensure_part_listed(self.host, &self.partition).is_ok() {
+                self.listed = true;
+            }
+        }
         // The index of a listed partition is never written while it reads as
         // absent (read-only mode). The index of an unlisted one is written with
         // remove before write (it may hold an undecryptable blob, spec 4.2).
@@ -286,7 +315,11 @@ impl<'a, H: Host> Store<'a, H> {
             crate::host::replace_secret(self.host, &name, &bytes)
         };
         if !wrote {
+            hit!("4.2/commit-failed-read-back");
             let back = self.host.get_secret(&name);
+            if back.as_deref() == Some(bytes.as_slice()) {
+                hit!("4.2/commit-failed-but-landed");
+            }
             if back.as_deref() != Some(bytes.as_slice()) {
                 self.mode = Mode::ReadOnly;
                 // Answer from what is on disk (4.2).
@@ -294,11 +327,12 @@ impl<'a, H: Host> Store<'a, H> {
                 return Err(CommitFailure { old_intact });
             }
         }
-        let listable = |st: index::State| matches!(st, index::State::Writer | index::State::Sealed);
         // Only the commit that makes the index WRITER (or SEALED) lists it; an
         // index that already was needs nothing here (the catch-all lists it
         // when it is not listed, overwriting a malformed list, revision 10.2).
-        let lists = listable(new.state) && !listable(self.index.state);
+        if lists && !matches!(new.state, index::State::Writer | index::State::Sealed) {
+            hit!("mutant/none-or-receiving-index-listed");
+        }
         self.index = new;
         self.on_disk = Some(bytes.clone());
         self.exists = true;
@@ -310,9 +344,19 @@ impl<'a, H: Host> Store<'a, H> {
             // reads back (spec 4.2, F16): if either fails the change answers
             // storage failure, and the next call's catch-all lists it.
             let read_back = self.host.get_secret(&name).as_deref() == Some(bytes.as_slice());
-            if read_back && ensure_part_listed(self.host, &self.partition).is_ok() {
+            if !read_back {
+                hit!("4.2/first-index-read-back-failed-not-listed");
+            } else {
+                trace::note(Note::Listed);
+            }
+            let listed = read_back && ensure_part_listed(self.host, &self.partition).is_ok();
+            if listed {
+                hit!("4.2/listed-after-first-writer-index");
                 self.listed = true;
             } else {
+                if read_back {
+                    hit!("4.2/listing-write-failed");
+                }
                 self.mode = Mode::ReadOnly;
                 return Err(CommitFailure { old_intact: false });
             }
@@ -364,7 +408,7 @@ impl<'a, H: Host> Store<'a, H> {
 
     /// Adds names to the gc list. Fails, writing nothing further, when the list
     /// would exceed [`MAX_GC_NAMES`] or a copy cannot be written.
-    fn add_gc(&mut self, add: &[Vec<u8>]) -> Result<(), StorageFailure> {
+    pub(crate) fn add_gc(&mut self, add: &[Vec<u8>]) -> Result<(), StorageFailure> {
         let mut list = self.read_gc();
         for n in add {
             if !list.contains(n) {
@@ -386,6 +430,7 @@ impl<'a, H: Host> Store<'a, H> {
         if list.is_empty() {
             return;
         }
+        hit!("4.2/gc-processed");
         let prefix = names::entry_prefix(&self.partition);
         // By identity (spec 4.2): both parity names of an identity the committed
         // index names are in use, one as the copy and one as its mirror.
@@ -402,13 +447,22 @@ impl<'a, H: Host> Store<'a, H> {
             .collect();
         let mut keep: Vec<Vec<u8>> = Vec::new();
         for name in list {
-            if !name.starts_with(&prefix) || referenced.contains(&name) {
+            if !name.starts_with(&prefix) {
                 continue;
+            }
+            if referenced.contains(&name) {
+                if trace::mutant(Mutant::GcWithoutIndexCheck) {
+                    hit!("mutant/gc-without-index-check");
+                } else {
+                    hit!("4.2/gc-dropped-named-by-commit");
+                    continue;
+                }
             }
             // The result is not trusted (a failed removal may have landed); the
             // read back is.
             let _ = self.host.remove_secret(&name);
             if self.host.get_secret(&name).is_some() {
+                hit!("4.2/gc-name-kept-not-absent");
                 keep.push(name);
             }
         }
@@ -459,36 +513,103 @@ impl<'a, H: Host> Store<'a, H> {
         // present and will not clear refuses the change. (A name that reads as
         // absent may hold an undecryptable blob; the write below removes it.)
         if existing.is_none() {
-            for parity in 0..2u8 {
-                let name = self.entry_name(kind, key, parity);
-                if self.host.get_secret(&name).is_some() {
-                    let _ = self.host.remove_secret(&name);
-                    if self.host.get_secret(&name).is_some() {
-                        return Err(StorageFailure);
-                    }
-                }
-            }
+            self.clear_both(kind, key)?;
         }
         // Step 2: the parity the index does not name. For a named identity that
         // held the mirror of the old value, so from here until step 4 the two
         // copies disagree.
         let new_name = self.entry_name(kind, key, parity);
+        trace::note(Note::EntryStep(2, kind, key.to_vec()));
         if !crate::host::replace_secret(self.host, &new_name, bytes) {
             return Err(StorageFailure);
         }
+        let mirror_name = self.entry_name(kind, key, 1 - parity);
+        let mirrors = staged.state == index::State::Writer;
+        let early = mirrors && trace::mutant(Mutant::MirrorBeforeCommit);
+        if early {
+            hit!("mutant/mirror-before-commit");
+            trace::note(Note::EntryStep(4, kind, key.to_vec()));
+            if !crate::host::replace_secret(self.host, &mirror_name, bytes) {
+                return Err(StorageFailure);
+            }
+        }
         // Step 3: the index naming it. The answer depends on this step.
+        trace::note(Note::EntryStep(3, kind, key.to_vec()));
         self.commit(staged).map_err(|_| StorageFailure)?;
+        if early {
+            trace::note(Note::Mirrored(kind, key.to_vec()));
+            self.process_gc();
+            return Ok(());
+        }
         // Step 4: the same bytes to the other parity (the mirror), for a listed
         // build (WRITER). A failed write here is not an error: the slot is
         // served from the index while it is intact, and unavailable to direct
         // read until the mirror sweep or the slot's next change repairs it. The
         // failed write leaves the call read-only.
         if self.index.state == index::State::Writer {
-            let mirror = self.entry_name(kind, key, 1 - parity);
-            let _ = crate::host::replace_secret(self.host, &mirror, bytes);
+            trace::note(Note::EntryStep(4, kind, key.to_vec()));
+            if crate::host::replace_secret(self.host, &mirror_name, bytes) {
+                hit!("4.2/entry-write/step-4");
+                trace::note(Note::Mirrored(kind, key.to_vec()));
+            } else {
+                hit!("4.2/entry-write/mirror-failed-committed");
+            }
         }
         self.process_gc();
         Ok(())
+    }
+
+    /// Step 1 of an entry write (spec 4.2): an identity the index does not
+    /// name (a new slot, or one deleted earlier) starts with both parity names
+    /// removed and read back as absent, so a leftover copy of a failed write or
+    /// an unfinished Delete cannot pair with the new one. A name that reads as
+    /// present and will not clear refuses the change. (A name that reads as
+    /// absent may hold an undecryptable blob; the write that follows removes
+    /// it.) Receivers use it too, answering 0x13 for a name that will not
+    /// clear.
+    pub(crate) fn clear_both(&mut self, kind: u8, key: &[u8]) -> Result<(), StorageFailure> {
+        if trace::mutant(Mutant::NoStep1) {
+            hit!("mutant/no-step-1-leftover-kept");
+            return Ok(());
+        }
+        trace::note(Note::EntryStep(1, kind, key.to_vec()));
+        for parity in 0..2u8 {
+            let name = self.entry_name(kind, key, parity);
+            if self.host.get_secret(&name).is_some() {
+                hit!("4.2/step-1/leftover-found");
+                let _ = self.host.remove_secret(&name);
+                if self.host.get_secret(&name).is_some() {
+                    hit!("4.2/step-1/still-present-refused");
+                    return Err(StorageFailure);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Writes one received entry as a single copy (spec 4.2, receivers): to
+    /// the parity the index does not name, after step 1 for an identity the
+    /// index does not name. Never a mirror. The caller commits the index once
+    /// for the whole chunk. Returns the parity written.
+    pub(crate) fn receive_entry(
+        &mut self,
+        kind: u8,
+        key: &[u8],
+        bytes: &[u8],
+        named: Option<u8>,
+    ) -> Result<u8, StorageFailure> {
+        self.writable()?;
+        if named.is_none() {
+            self.clear_both(kind, key)?;
+        }
+        let parity = named.map(|p| 1 - p).unwrap_or(0);
+        trace::note(Note::EntryStep(2, kind, key.to_vec()));
+        let name = self.entry_name(kind, key, parity);
+        if crate::host::replace_secret(self.host, &name, bytes) {
+            Ok(parity)
+        } else {
+            Err(StorageFailure)
+        }
     }
 
     /// Stores `entry`, enforcing the quotas when it adds an identity.
@@ -511,11 +632,15 @@ impl<'a, H: Host> Store<'a, H> {
                 }
                 _ => false,
             };
-            if full || self.index.entries.len() >= MAX_PARTITION_ENTRIES {
+            // The same maximums a receiver stages against (8, 11): a writer
+            // never holds more than its successor can take.
+            if full || self.index.entries.len() >= crate::limits::get().max_entries {
                 return Err(PutError::Quota);
             }
         }
-        if self.index.total_bytes() - existing.unwrap_or(0) + bytes.len() > MAX_PARTITION_BYTES {
+        if self.index.total_bytes() - existing.unwrap_or(0) + bytes.len()
+            > crate::limits::get().max_bytes
+        {
             return Err(PutError::Quota);
         }
         self.write_entry(entry.kind, &entry.key, &bytes, meta)?;
@@ -546,44 +671,128 @@ impl<'a, H: Host> Store<'a, H> {
         let parity = self.index.entries[i].parity;
         let named = self.entry_name(kind, key, parity);
         let mirror = self.entry_name(kind, key, 1 - parity);
+        trace::note(Note::DeleteStep(1, kind, key.to_vec()));
         self.add_gc(&[named, mirror.clone()])?;
-        let _ = self.host.remove_secret(&mirror);
-        if self.host.get_secret(&mirror).is_some() {
-            return Err(StorageFailure);
+        if trace::mutant(Mutant::DeleteCommitBeforeMirrorAbsent) {
+            if self.host.get_secret(&mirror).is_some() {
+                hit!("mutant/delete-committed-before-mirror-absent");
+            }
+        } else {
+            trace::note(Note::DeleteStep(2, kind, key.to_vec()));
+            let _ = self.host.remove_secret(&mirror);
+            if self.host.get_secret(&mirror).is_some() {
+                hit!("4.2/delete/step-2-refused");
+                return Err(StorageFailure);
+            }
         }
         let mut new = self.index.clone();
         new.remove(kind, key);
         meta(&mut new);
+        trace::note(Note::DeleteStep(3, kind, key.to_vec()));
         self.commit(new).map_err(|_| StorageFailure)?;
+        trace::note(Note::DeleteStep(4, kind, key.to_vec()));
         self.process_gc();
         Ok(())
     }
 
-    /// The mirror sweep (spec 7.7): for a listed WRITER build, writes the
-    /// mirror of every entry the index names whose mirror is missing or
-    /// differs, from the named copy, after checking that copy against the
-    /// index digest. A sealed build does not sweep. Progress is not kept (it is
-    /// volatile in the spec), so nothing is ever marked finished; the sweep
-    /// stops at the first failed write, which leaves the call read-only.
-    pub fn mirror_sweep(&mut self) {
+    /// The mirror sweep (spec 7.7): for every entry the index names whose
+    /// mirror is missing or differs, writes the mirror from the named copy,
+    /// after checking that copy against the index digest. The caller runs it
+    /// only for a listed WRITER whose sweep has not finished since it started
+    /// or took over (a sealed build does not sweep). It examines at most
+    /// `budget` identities, starting after `cursor`, and stops at the first
+    /// failed write (which leaves the call read-only).
+    pub fn mirror_sweep(&mut self, budget: usize, cursor: Option<&(u8, Vec<u8>)>) -> Sweep {
+        // Only a WRITER sweeps (7.7: never while sealed); the caller checks
+        // too, this keeps the store from being driven into it.
         if self.is_read_only() || !self.verified || self.index.state != index::State::Writer {
-            return;
+            return Sweep::Stopped;
         }
+        let mut examined = 0usize;
+        let budget = budget.max(1);
+        let mut last: Option<(u8, Vec<u8>)> = None;
         for ie in self.index.entries.clone() {
+            if cursor.is_some_and(|c| (ie.kind, &ie.key) <= (c.0, &c.1)) {
+                continue;
+            }
+            if examined == budget {
+                return Sweep::Budget(last.expect("budget is at least 1"));
+            }
+            examined += 1;
+            last = Some((ie.kind, ie.key.clone()));
             let named = self.entry_name(ie.kind, &ie.key, ie.parity);
             let mirror = self.entry_name(ie.kind, &ie.key, 1 - ie.parity);
-            let Some(bytes) = self.host.get_secret(&named) else {
+            let nv = self.host.get_secret(&named);
+            let mv = self.host.get_secret(&mirror);
+            if mv.is_some() && mv == nv {
+                continue;
+            }
+            let Some(bytes) = nv else {
                 self.saw_missing = true;
+                hit!("7.7/sweep-skipped-named-copy-fails-digest");
                 continue;
             };
-            if entry_digest(&bytes) != ie.digest {
-                continue;
+            if entry_digest(&bytes) != ie.digest || Entry::decode(&bytes).is_err() {
+                if trace::mutant(Mutant::SweepUncheckedDigest) && Entry::decode(&bytes).is_ok() {
+                    hit!("mutant/sweep-mirrored-unchecked-copy");
+                } else {
+                    hit!("7.7/sweep-skipped-named-copy-fails-digest");
+                    continue;
+                }
             }
-            if self.host.get_secret(&mirror).as_deref() != Some(bytes.as_slice())
-                && !crate::host::replace_secret(self.host, &mirror, &bytes)
-            {
-                return;
+            if !crate::host::replace_secret(self.host, &mirror, &bytes) {
+                hit!("7.7/sweep-write-failed");
+                return Sweep::Stopped;
             }
+            hit!("7.7/sweep-repair");
+        }
+        Sweep::Finished
+    }
+
+    /// The entry the index names for `(kind, key)`, for copying it to a
+    /// successor (7.2): the stored bytes, verbatim. A copy that fails its
+    /// digest is handled as in [`read`](Self::read) (4.3): flagged and
+    /// rewritten, or dropped, while not sealed; while sealed it is sent as it
+    /// is on disk, if it parses.
+    pub fn read_for_copy(&mut self, kind: u8, key: &[u8], sealed: bool) -> CopyRead {
+        let Some(i) = self.index.find(kind, key) else {
+            return CopyRead::Absent;
+        };
+        let ie = self.index.entries[i].clone();
+        let Some(got) = self.host.get_secret(&self.entry_name(kind, key, ie.parity)) else {
+            hit!("4.3/entry-absent-answers-missing-kept");
+            self.saw_missing = true;
+            return CopyRead::Missing;
+        };
+        if entry_digest(&got) == ie.digest {
+            return CopyRead::Bytes(got);
+        }
+        if sealed || self.mode == Mode::ReadOnly {
+            if Entry::decode(&got).is_ok() {
+                hit!("4.3/corrupt-while-sealed");
+                trace::note(Note::SealedCorruptSent);
+                return CopyRead::Bytes(got);
+            }
+            return CopyRead::Missing;
+        }
+        match self.read(kind, key, false) {
+            Read::Corrupt(Some(_)) | Read::Ok(_) => {
+                match self
+                    .index
+                    .find(kind, key)
+                    .map(|i| self.index.entries[i].clone())
+                {
+                    Some(ie) => {
+                        match self.host.get_secret(&self.entry_name(kind, key, ie.parity)) {
+                            Some(b) if entry_digest(&b) == ie.digest => CopyRead::Bytes(b),
+                            _ => CopyRead::Missing,
+                        }
+                    }
+                    None => CopyRead::Absent,
+                }
+            }
+            Read::Absent => CopyRead::Absent,
+            _ => CopyRead::Missing,
         }
     }
 
@@ -596,10 +805,11 @@ impl<'a, H: Host> Store<'a, H> {
     pub fn read(&mut self, kind: u8, key: &[u8], sealed: bool) -> Read {
         if self.blind {
             return match direct_entry(self.host, &self.partition, kind, key) {
-                Some(e) => Read::Ok(e),
+                DirectRead::Served(e) => Read::Ok(e),
+                DirectRead::Absent => Read::Absent,
                 // A missing copy, a copy that does not authenticate or two
                 // copies that differ: storage failure. Never Absent.
-                None => Read::Missing,
+                DirectRead::Unavailable => Read::Missing,
             };
         }
         // A read-only store changes nothing, like a sealed one.
@@ -613,6 +823,7 @@ impl<'a, H: Host> Store<'a, H> {
         // judge, and dropping the entry would destroy what a restore could
         // bring back.
         if got.is_none() {
+            hit!("4.3/entry-absent-answers-missing-kept");
             self.saw_missing = true;
             return Read::Missing;
         }
@@ -647,6 +858,7 @@ impl<'a, H: Host> Store<'a, H> {
         match parsed {
             Some((mut e, mut raw)) => {
                 // Flag in place: every other byte stays as it was.
+                hit!("4.3/corrupt-rewritten-flagged");
                 raw[1] |= EFLAG_CORRUPT;
                 e.eflags |= EFLAG_CORRUPT;
                 let _ = self.write_entry(kind, key, &raw, |idx| {
@@ -657,6 +869,7 @@ impl<'a, H: Host> Store<'a, H> {
             None => {
                 // Bytes that do not parse: the entry leaves the index and is
                 // counted (4.3), by the steps of a Delete.
+                hit!("4.3/corrupt-unparseable-removed");
                 let _ = self.drop_identity(kind, key, |ix| {
                     ix.lost_entries = ix.lost_entries.saturating_add(1);
                     ix.problems |= problems::CORRUPT_OR_LOST;
@@ -666,6 +879,27 @@ impl<'a, H: Host> Store<'a, H> {
             }
         }
     }
+}
+
+/// The outcome of [`Store::mirror_sweep`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sweep {
+    /// Every identity the index names was examined.
+    Finished,
+    /// The budget ran out; the next step continues after this identity.
+    Budget((u8, Vec<u8>)),
+    /// It did not run, or a write failed.
+    Stopped,
+}
+
+/// What [`Store::read_for_copy`] found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CopyRead {
+    Bytes(Vec<u8>),
+    /// Not named (or dropped as unparseable just now).
+    Absent,
+    /// Named, but no usable bytes: not sent this time.
+    Missing,
 }
 
 /// An index write that did not land.
@@ -678,7 +912,7 @@ pub struct CommitFailure {
 /// `"FVGC" 4 ; count 2 ; count x { len 2 ; name }`. Fails above
 /// [`MAX_GC_NAMES`] names, so the count always fits and a full list is
 /// refused rather than truncated.
-fn encode_names(names: &[Vec<u8>]) -> Result<Vec<u8>, StorageFailure> {
+pub fn encode_names(names: &[Vec<u8>]) -> Result<Vec<u8>, StorageFailure> {
     if names.len() > MAX_GC_NAMES {
         return Err(StorageFailure);
     }
@@ -691,7 +925,7 @@ fn encode_names(names: &[Vec<u8>]) -> Result<Vec<u8>, StorageFailure> {
 }
 
 /// `None` when the bytes are not a gc list this build wrote.
-fn decode_names(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
+pub fn decode_names(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
     let parse = || -> Result<Vec<Vec<u8>>, Malformed> {
         let mut r = Reader::new(bytes);
         if r.take(4, "gc magic")? != b"FVGC" {
@@ -712,8 +946,7 @@ fn decode_names(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
     parse().ok()
 }
 
-/// The names pending in the gc list (either copy), for tests.
-#[cfg(any(test, feature = "testing"))]
+/// The names pending in the gc list (either copy).
 pub fn pending_gc_names<H: Host>(host: &H, partition: &[u8; 32]) -> Vec<Vec<u8>> {
     let mut out: Vec<Vec<u8>> = Vec::new();
     for n in [names::gc(partition), names::gc2(partition)] {
@@ -742,33 +975,97 @@ pub fn encode_gc_for_test(names: &[Vec<u8>]) -> Vec<u8> {
 /// mark). Anything else, including one copy, two copies that differ and no
 /// copy, is unavailable (`None`): nothing chooses between copies, and
 /// `vault:gc` is never consulted.
-fn direct_entry<H: Host>(host: &H, partition: &[u8; 32], kind: u8, key: &[u8]) -> Option<Entry> {
-    let c0 = host.get_secret(&names::entry(partition, kind, key, 0))?;
-    let c1 = host.get_secret(&names::entry(partition, kind, key, 1))?;
-    if c0 != c1 {
-        return None;
-    }
-    let e = Entry::decode(&c0).ok()?;
+fn direct_entry<H: Host>(host: &H, partition: &[u8; 32], kind: u8, key: &[u8]) -> DirectRead {
     let want_len = match kind {
         KIND_KEY => 32,
         KIND_CALLER_MARK => 100,
-        _ => return None,
+        _ => return DirectRead::Unavailable,
     };
-    if e.kind != kind || e.eflags != 0 || e.key != key || e.content.len() != want_len {
-        return None;
+    let ignore = trace::mutant(Mutant::DirectReadIgnoresEflagsOrKey);
+    let c0 = host.get_secret(&names::entry(partition, kind, key, 0));
+    let c1 = host.get_secret(&names::entry(partition, kind, key, 1));
+    let auth = |c: &Option<Vec<u8>>| -> Option<Entry> {
+        let e = Entry::decode(c.as_deref()?).ok()?;
+        let strict = e.eflags == 0 && e.key == key;
+        (e.kind == kind && e.content.len() == want_len && (strict || ignore)).then_some(e)
+    };
+    let (a0, a1) = (auth(&c0), auth(&c1));
+    let unavailable = |why: &str| {
+        let _ = why;
+        hit!("4.5/direct-read-unavailable/{why}");
+        hit!("4.5/direct-read-storage-failure");
+        DirectRead::Unavailable
+    };
+    match (a0, a1) {
+        (Some(x), Some(_)) if c0 == c1 => {
+            if ignore && (x.eflags != 0 || x.key != key) {
+                hit!("mutant/direct-read-ignored-eflags-or-key");
+            }
+            hit!("4.5/direct-read-served");
+            let mut x = x;
+            x.eflags = 0;
+            DirectRead::Served(x)
+        }
+        (Some(x), Some(_)) => {
+            if trace::mutant(Mutant::DirectReadChooses) {
+                hit!("mutant/direct-read-chose-between-copies");
+                return DirectRead::Served(x);
+            }
+            unavailable("disagreement")
+        }
+        (Some(x), None) | (None, Some(x)) => {
+            let other_absent = if c0.is_some() {
+                c1.is_none()
+            } else {
+                c0.is_none()
+            };
+            if other_absent && trace::mutant(Mutant::DirectReadSingleCopy) {
+                hit!("mutant/direct-read-served-single-copy");
+                return DirectRead::Served(x);
+            }
+            unavailable(if other_absent {
+                "missing-copy"
+            } else {
+                "authentication-failure"
+            })
+        }
+        (None, None) if c0.is_none() && c1.is_none() => {
+            if trace::mutant(Mutant::DirectReadAbsent) {
+                hit!("mutant/direct-read-answered-absent");
+                return DirectRead::Absent;
+            }
+            hit!("4.5/direct-read-unavailable/no-copy");
+            unavailable("missing-copy")
+        }
+        (None, None) => unavailable("authentication-failure"),
     }
-    Some(e)
+}
+
+/// What direct read (4.5) finds for a slot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DirectRead {
+    Served(Entry),
+    /// Storage failure: the slot is unavailable. Never Absent.
+    Unavailable,
+    /// Only under the mutant `DirectReadAbsent`.
+    Absent,
 }
 
 /// Export while the index state is unknown: the seed of the slot's entry found
 /// by [`direct_entry`]. A slot that is unavailable cannot be exported in v1.
+/// `Ok(None)` only under the mutant `DirectReadAbsent`.
 pub fn rescue_export_seed<H: Host>(
     host: &H,
     partition: &[u8; 32],
     slot: &[u8],
-) -> Option<[u8; 32]> {
-    let e = direct_entry(host, partition, KIND_KEY, slot)?;
-    <[u8; 32]>::try_from(e.content.as_slice()).ok()
+) -> Result<Option<[u8; 32]>, StorageFailure> {
+    match direct_entry(host, partition, KIND_KEY, slot) {
+        DirectRead::Served(e) => <[u8; 32]>::try_from(e.content.as_slice())
+            .map(Some)
+            .map_err(|_| StorageFailure),
+        DirectRead::Absent => Ok(None),
+        DirectRead::Unavailable => Err(StorageFailure),
+    }
 }
 
 /// `vault:parts`: the partition ids this build holds state for.
@@ -802,12 +1099,17 @@ pub fn ensure_part_listed<H: Host>(
     }
 }
 
-/// The catch-all (spec 4.2, rev 10.1 G3): a valid WRITER or SEALED index for a
-/// partition `vault:parts` does not list is listed before the call does
-/// anything else. `Err` means the write reported failure or its read-back
-/// failed: the call answers nothing. A malformed `vault:parts` is overwritten
-/// by a list naming the partition (revision 10.2).
-pub fn ensure_listed<H: Host>(host: &mut H, partition: &[u8; 32]) -> Result<(), StorageFailure> {
+/// The listing rules applied at the start of every call (spec 4.2):
+///
+/// - a RETIRED build still listed (a crash between the RETIRED index write and
+///   the unlist) unlists before answering anything;
+/// - the catch-all (rev 10.1 G3): a valid WRITER or SEALED index for a
+///   partition `vault:parts` does not list is listed first, overwriting a
+///   malformed list (revision 10.2).
+///
+/// `Err` means the write reported failure or its read-back failed: the call
+/// answers nothing (the sender or client retries).
+pub fn fix_listing<H: Host>(host: &mut H, partition: &[u8; 32]) -> Result<(), StorageFailure> {
     let Some(Ok(ix)) = host
         .get_secret(&names::index(partition))
         .as_deref()
@@ -815,8 +1117,70 @@ pub fn ensure_listed<H: Host>(host: &mut H, partition: &[u8; 32]) -> Result<(), 
     else {
         return Ok(());
     };
-    if !matches!(ix.state, index::State::Writer | index::State::Sealed) {
+    let listed = parts_lists(host, partition);
+    if ix.state == index::State::Retired {
+        let keep = trace::mutant(Mutant::NeverUnlist) || trace::mutant(Mutant::RelistRetired);
+        if listed && !keep {
+            hit!("4.2/retired-still-listed-unlists-first");
+            return unlist(host, partition);
+        }
+        if !listed && trace::mutant(Mutant::RelistRetired) {
+            hit!("mutant/retired-index-relisted");
+            let _ = ensure_part_listed(host, partition);
+        }
         return Ok(());
     }
-    ensure_part_listed(host, partition)
+    let listable = matches!(ix.state, index::State::Writer | index::State::Sealed)
+        || (trace::mutant(Mutant::ListNoneOrReceiving)
+            && matches!(ix.state, index::State::None | index::State::Receiving));
+    if listed || !listable {
+        return Ok(());
+    }
+    if matches!(ix.state, index::State::Writer | index::State::Sealed) {
+        hit!("4.2/valid-index-unlisted-listed-first");
+    } else {
+        hit!("mutant/none-or-receiving-index-listed");
+    }
+    trace::note(Note::Listed);
+    let r = ensure_part_listed(host, partition);
+    if r.is_err() {
+        hit!("4.2/catch-all-listing-failed");
+        hit!("4.2/listing-fix-failed-answers-nothing");
+    }
+    r
+}
+
+/// `vault:parts` reads as a valid list naming the partition.
+pub fn parts_lists<H: Host>(host: &H, partition: &[u8; 32]) -> bool {
+    host.get_secret(names::PARTS)
+        .is_some_and(|l| l.len() % 32 == 0 && l.chunks(32).any(|c| c == partition))
+}
+
+/// Unlisting on retire (spec 4.2, revision 9 F7; revision 10: the list is
+/// never removed): rewrites `vault:parts` without the partition and reads that
+/// back. `Ok` once the list no longer names the partition; a list that reads
+/// as absent or does not parse does not name it, and nothing is written.
+pub fn unlist<H: Host>(host: &mut H, partition: &[u8; 32]) -> Result<(), StorageFailure> {
+    let Some(list) = host.get_secret(names::PARTS) else {
+        hit!("4.2/unlist-parts-absent-no-write");
+        return Ok(());
+    };
+    if list.len() % 32 != 0 || !list.chunks(32).any(|c| c == partition) {
+        return Ok(());
+    }
+    let shorter: Vec<u8> = list
+        .chunks(32)
+        .filter(|c| *c != partition)
+        .flatten()
+        .copied()
+        .collect();
+    if !crate::host::replace_secret(host, names::PARTS, &shorter) {
+        hit!("4.2/unlist-failed");
+        return Err(StorageFailure);
+    }
+    if parts_lists(host, partition) {
+        return Err(StorageFailure);
+    }
+    hit!("4.2/unlisted-on-retire");
+    Ok(())
 }

@@ -10,7 +10,7 @@
 //! [armed record 100]      if flags bit 0
 //! [peer record 100]       if flags bit 2
 //! problems 1 ; lost_entries 2
-//! handover_len 4 ; handover    (reserved for the handover module; empty now)
+//! handover_len 4 ; handover    (the handover fields, `Handover`; empty = none)
 //! count 2 ; count x { kind 1 ; key_len 2 ; key ; parity 1 ; len 2 ; digest 32 }
 //! checksum 32     BLAKE3 of every byte above
 //! ```
@@ -68,9 +68,9 @@ pub struct Index {
     pub peer_record: Option<[u8; 100]>,
     pub problems: u8,
     pub lost_entries: u16,
-    /// Opaque fields owned by the handover (outgoing attempt, taken-over-from,
-    /// fences). Carried unread until that module exists.
-    pub handover: Vec<u8>,
+    /// The handover fields of protocol 5.1 that have no field of their own
+    /// above, carried in the reserved `handover` bytes of the layout.
+    pub ho: Handover,
     pub entries: Vec<IndexEntry>,
 }
 
@@ -83,7 +83,7 @@ impl Index {
             peer_record: None,
             problems: 0,
             lost_entries: 0,
-            handover: Vec::new(),
+            ho: Handover::default(),
             entries: Vec::new(),
         }
     }
@@ -129,10 +129,11 @@ impl Index {
         if let Some(p) = &self.peer_record {
             w.bytes(p);
         }
+        let ho = self.ho.encode();
         w.u8(self.problems)
             .u16(self.lost_entries)
-            .len_u32(self.handover.len(), "handover length")
-            .bytes(&self.handover)
+            .len_u32(ho.len(), "handover length")
+            .bytes(&ho)
             .len_u16(self.entries.len(), "entry count");
         for e in &self.entries {
             w.u8(e.kind)
@@ -189,7 +190,7 @@ impl Index {
         let problems = r.u8("problems")?;
         let lost_entries = r.u16("lost")?;
         let hlen = r.u32("handover_len")? as usize;
-        let handover = r.take(hlen, "handover")?.to_vec();
+        let ho = Handover::decode(r.take(hlen, "handover")?)?;
         let count = r.u16("count")? as usize;
         if count > MAX_PARTITION_ENTRIES {
             return Err(Malformed("entry count"));
@@ -235,9 +236,140 @@ impl Index {
             peer_record,
             problems,
             lost_entries,
-            handover,
+            ho,
             entries,
         })
+    }
+}
+
+/// The handover fields (protocol 5.1) kept in the index's reserved
+/// `handover` bytes:
+///
+/// ```text
+/// format 1 (= 1) ; flags 1 (bit 0 taken_over, 1 m, 2 paused, 3 store_failed,
+///                           4 own_record)
+/// [taken_over_version 4 ; taken_over_m 32]   if bit 0
+/// [own_record 100]                           if bit 4 (with taken_over: the
+///                                            record naming this build that the
+///                                            Complete it took over at carried;
+///                                            its Query sends it, 12.3)
+/// [m 32]                                     if bit 1 (SEALED: the sealed manifest;
+///                                                     RETIRED: the m it retired at)
+/// [paused_version 4]                         if bit 2
+/// receiving_from 4                           (RECEIVING: the sender's version; else 0)
+/// confirmed_count 2 ; confirmed_count x version 4 (ascending; NONE armed, 5.3)
+/// ```
+///
+/// All-default fields encode as zero bytes, so an index written before the
+/// handover existed reads as having none of them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Handover {
+    /// WRITER, SEALED, RETIRED: took over from (version, m).
+    pub taken_over: Option<(u32, [u8; 32])>,
+    /// With `taken_over`: the record naming this build (from the Complete).
+    pub own_record: Option<[u8; 100]>,
+    /// SEALED: the manifest digest sealed at; RETIRED: the m retired at.
+    pub m: Option<[u8; 32]>,
+    /// WRITER: copying toward this target version is paused (Poke bit 0, or
+    /// Ack 0x04/0x06, 7.3, 7.5).
+    pub paused: Option<u32>,
+    /// RECEIVING: the sender's version.
+    pub receiving_from: u32,
+    /// RECEIVING: an entry failed to store since the last Complete (7.4).
+    pub store_failed: bool,
+    /// NONE armed: predecessor versions that confirmed (5.3), ascending.
+    pub confirmed: Vec<u32>,
+}
+
+impl Handover {
+    pub fn encode(&self) -> Vec<u8> {
+        if self == &Self::default() {
+            return Vec::new();
+        }
+        let flags = (self.taken_over.is_some() as u8)
+            | ((self.m.is_some() as u8) << 1)
+            | ((self.paused.is_some() as u8) << 2)
+            | ((self.store_failed as u8) << 3)
+            | ((self.own_record.is_some() as u8) << 4);
+        let mut w = Writer::new();
+        w.u8(1).u8(flags);
+        if let Some((v, m)) = &self.taken_over {
+            w.u32(*v).bytes(m);
+        }
+        if let Some(r) = &self.own_record {
+            w.bytes(r);
+        }
+        if let Some(m) = &self.m {
+            w.bytes(m);
+        }
+        if let Some(p) = self.paused {
+            w.u32(p);
+        }
+        w.u32(self.receiving_from)
+            .len_u16(self.confirmed.len(), "confirmed count");
+        for c in &self.confirmed {
+            w.u32(*c);
+        }
+        w.into_vec()
+    }
+
+    pub fn decode(b: &[u8]) -> Result<Self, Malformed> {
+        if b.is_empty() {
+            return Ok(Self::default());
+        }
+        let mut r = Reader::new(b);
+        if r.u8("handover format")? != 1 {
+            return Err(Malformed("handover format"));
+        }
+        let flags = r.u8("handover flags")?;
+        if flags & !0b1_1111 != 0 {
+            return Err(Malformed("handover flags"));
+        }
+        let taken_over = if flags & 1 != 0 {
+            Some((r.u32("taken_over_version")?, r.array("taken_over_m")?))
+        } else {
+            None
+        };
+        let own_record = if flags & 16 != 0 {
+            Some(r.array("own_record")?)
+        } else {
+            None
+        };
+        let m = if flags & 2 != 0 {
+            Some(r.array("m")?)
+        } else {
+            None
+        };
+        let paused = if flags & 4 != 0 {
+            Some(r.u32("paused")?)
+        } else {
+            None
+        };
+        let receiving_from = r.u32("receiving_from")?;
+        let n = r.u16("confirmed_count")? as usize;
+        let mut confirmed: Vec<u32> = Vec::with_capacity(n.min(64));
+        for _ in 0..n {
+            let v = r.u32("confirmed")?;
+            if confirmed.last().is_some_and(|p| *p >= v) {
+                return Err(Malformed("confirmed order"));
+            }
+            confirmed.push(v);
+        }
+        r.finish()?;
+        let h = Self {
+            taken_over,
+            own_record,
+            m,
+            paused,
+            receiving_from,
+            store_failed: flags & 8 != 0,
+            confirmed,
+        };
+        // Canonical: the all-default value is written as zero bytes.
+        if h == Self::default() {
+            return Err(Malformed("handover not canonical"));
+        }
+        Ok(h)
     }
 }
 
@@ -254,7 +386,15 @@ mod tests {
         i.awaiting_retirement = true;
         i.problems = 3;
         i.lost_entries = 4;
-        i.handover = vec![5; 10];
+        i.ho = Handover {
+            taken_over: Some((7, [8; 32])),
+            own_record: Some([6; 100]),
+            m: Some([9; 32]),
+            paused: Some(11),
+            receiving_from: 12,
+            store_failed: true,
+            confirmed: vec![1, 3],
+        };
         i.upsert(IndexEntry {
             kind: 2,
             key: vec![1],

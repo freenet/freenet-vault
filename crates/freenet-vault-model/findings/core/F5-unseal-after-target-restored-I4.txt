@@ -1,0 +1,58 @@
+seed 14790: Some(Violation { inv: "I4", msg: "build 10 unsealed while its target 20 has taken over from it at the same manifest", at: 99 })
+
+==== seed 14790: shrunk to 25 actions; ledger [Rec { v: 10, withdrawal: false }, Rec { v: 20, withdrawal: false }, Rec { v: 25, withdrawal: true }, Rec { v: 30, withdrawal: false }, Rec { v: 40, withdrawal: false }, Rec { v: 50, withdrawal: false }, Rec { v: 55, withdrawal: true }, Rec { v: 60, withdrawal: false }]
+violation: Some(Violation { inv: "I4", msg: "build 10 unsealed while its target 20 has taken over from it at the same manifest", at: 27 })
+[1] Publish
+[2] Load { client: 2, fetch: Newest, ops: [Import { slot: 3, seed: 2, replace: true }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[3] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[4] Publish
+[5] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[6] Step { pick: 0, fate: Deliver }
+  courier client 2 route Create(10)
+  10 Poke { flags: 2, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [] state NONE -> NONE(armed)
+[7] Step { pick: 0, fate: Deliver }
+  10 Op(Import { slot: 3, seed: 2, replace: true }) -> "Key(2)" hops [] state NONE(armed) -> WRITER
+  op Import { slot: 3, seed: 2, replace: true } at 10 -> Key(2)
+[8] Load { client: 0, fetch: Newest, ops: [Import { slot: 2, seed: 3, replace: false }, PutExt { key: 1, content: 887 }, Import { slot: 1, seed: 3, replace: false }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(WRITER, rec 2)" hops [20:Chunk(rec 20, 1 entries)] state WRITER -> WRITER
+[9] Step { pick: 0, fate: Deliver }
+[10] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Chunk { rec: Rec { v: 20, withdrawal: false }, entries: [Entry { kind: 1, key: 3, flagged: false, content: 2, ext: [] }], malformed: false } } -> "Ack(Processed, [(7225002292986875869, Stored)], succ None)" hops [] state NONE -> RECEIVING
+[11] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: Ack { tid: (10, Rec { v: 20, withdrawal: false }), status: Processed, succ: None, outcomes: [(7225002292986875869, Stored)] } } -> "-" hops [20:Complete(m 79c6, 1 digests)] state WRITER -> SEALED
+[12] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Complete { rec: Rec { v: 20, withdrawal: false }, m: 5640840208571791814, digests: [7225002292986875869], malformed: false } } -> "CompleteAck(Accepted, m 79c6, missing 0, succ None)" hops [] state RECEIVING -> WRITER(awaiting)
+[13] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 5640840208571791814, status: Accepted, succ: None, missing: [] } } -> "-" hops [20:Retired(m 79c6)] state SEALED -> RETIRED
+[14] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Retired { rec: Rec { v: 20, withdrawal: false }, m: 5640840208571791814, malformed: false } } -> "CompleteAck(Noted, m 79c6, missing 0, succ None)" hops [] state WRITER(awaiting) -> WRITER
+[15] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 5640840208571791814, status: Noted, succ: None, missing: [] } } -> "-" hops [] state RETIRED -> RETIRED
+[16] Publish
+[17] Crash
+[18] Step { pick: 0, fate: Deliver }
+  10 Wakeup -> "-" hops [] state RETIRED -> RETIRED
+[19] Step { pick: 0, fate: Deliver }
+  20 Wakeup -> "-" hops [] state WRITER -> WRITER
+[20] Restore { b: 0, snap: 48, secret: None }
+[21] Load { client: 1, fetch: Newest, ops: [RaiseMark { caller: 0, rec: 9 }, PublicKey { slot: 1 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(SEALED, rec 2)" hops [20:Abort(m 79c6)] state SEALED -> SEALED
+[22] Step { pick: 31, fate: Deliver }
+[23] Restore { b: 1, snap: 8, secret: None }
+[24] Step { pick: 0, fate: Deliver }
+  20 Hop { from: 10, frame: Abort { rec: Rec { v: 20, withdrawal: false }, m: 5640840208571791814, malformed: false } } -> "CompleteAck(Aborted, m 79c6, missing 0, succ None)" hops [] state NONE -> NONE
+[25] Restore { b: 1, snap: 14, secret: None }
+== quiescence
+[26] Load { client: 0, fetch: Newest, ops: [] }
+[27] Step { pick: 0, fate: Deliver }
+  10 Hop { from: 20, frame: CompleteAck { tid: (10, Rec { v: 20, withdrawal: false }), m: 5640840208571791814, status: Aborted, succ: None, missing: [] } } -> "-" hops [] state SEALED -> WRITER
+!! I4: build 10 unsealed while its target 20 has taken over from it at the same manifest
+[28] Wakeup { b: 0 }
+[29] Wakeup { b: 1 }
+[30] Wakeup { b: 2 }
+[31] Wakeup { b: 3 }
+[32] Wakeup { b: 4 }
+[33] Wakeup { b: 5 }

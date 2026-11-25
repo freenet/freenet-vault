@@ -133,7 +133,7 @@ fn failed_index_write_leaves_the_old_value_served_and_the_sweep_repairs_the_mirr
     assert_ne!(h.secrets[&entry_name(1, 1)], old, "the candidate");
     // The sweep rewrites the mirror from the named copy.
     let mut s = Store::open(&mut h, P).unwrap();
-    s.mirror_sweep();
+    s.mirror_sweep(usize::MAX, None);
     drop(s);
     assert_eq!(h.secrets[&entry_name(1, 1)], old);
 }
@@ -343,7 +343,7 @@ fn an_interrupted_entry_write_leaves_the_old_value_served() {
     let mut h = h.restart();
     assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 9)));
     let mut s = Store::open(&mut h, P).unwrap();
-    s.mirror_sweep();
+    s.mirror_sweep(usize::MAX, None);
     drop(s);
     assert_eq!(h.secrets[&entry_name(1, 1)], old);
     assert_eq!(h.secrets[&entry_name(1, 0)], old);
@@ -616,7 +616,7 @@ fn unknown_kinds_and_extensions_are_stored_verbatim_and_never_served() {
     k.eflags = 0b0100_0000;
     put(&mut h, &k).unwrap();
     assert_eq!(read(&mut h, 1), Read::Corrupt(None));
-    assert_eq!(rescue_export_seed(&h, &P, &[1; 32]), None);
+    assert_eq!(rescue_export_seed(&h, &P, &[1; 32]).ok().flatten(), None);
 }
 
 #[test]
@@ -799,7 +799,7 @@ fn the_catch_all_lists_a_writer_index_and_open_does_not() {
     h.secrets.remove(names::PARTS);
     assert!(Store::open(&mut h, P).is_ok());
     assert!(!h.secrets.contains_key(names::PARTS), "open listed");
-    ensure_listed(&mut h, &P).unwrap();
+    fix_listing(&mut h, &P).unwrap();
     assert!(h.secrets[names::PARTS].chunks(32).any(|c| c == P));
 }
 
@@ -859,23 +859,29 @@ fn rescue_export_needs_exactly_one_decodable_copy() {
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
     let slot = [1u8; 32];
-    assert_eq!(rescue_export_seed(&h, &P, &slot), Some([9; 32]));
+    assert_eq!(
+        rescue_export_seed(&h, &P, &slot).ok().flatten(),
+        Some([9; 32])
+    );
     // Two identical copies are one value.
     let same = h.secrets[&entry_name(1, 0)].clone();
     h.secrets.insert(entry_name(1, 1), same);
-    assert_eq!(rescue_export_seed(&h, &P, &slot), Some([9; 32]));
+    assert_eq!(
+        rescue_export_seed(&h, &P, &slot).ok().flatten(),
+        Some([9; 32])
+    );
     // Two that differ: refused.
     let other = key_entry(1, 8).encode().unwrap();
     h.secrets.insert(entry_name(1, 1), other);
-    assert_eq!(rescue_export_seed(&h, &P, &slot), None);
+    assert_eq!(rescue_export_seed(&h, &P, &slot).ok().flatten(), None);
     // None decodable.
     h.secrets.insert(entry_name(1, 0), vec![0xFF; 4]);
     h.secrets.insert(entry_name(1, 1), vec![0xFF; 4]);
-    assert_eq!(rescue_export_seed(&h, &P, &slot), None);
+    assert_eq!(rescue_export_seed(&h, &P, &slot).ok().flatten(), None);
     // A copy for another slot does not count.
     let wrong = key_entry(2, 5).encode().unwrap();
     h.secrets.insert(entry_name(1, 0), wrong);
-    assert_eq!(rescue_export_seed(&h, &P, &slot), None);
+    assert_eq!(rescue_export_seed(&h, &P, &slot).ok().flatten(), None);
 }
 
 /// Step 1 of a change to a new identity removes both parity names first, so a
@@ -903,7 +909,7 @@ fn a_new_identity_clears_a_stale_copy_at_the_other_parity_first() {
 /// What direct read would serve for slot `slot`, against what the committed
 /// index names: direct read may only ever serve the committed value.
 fn assert_direct_read_is_committed(h: &mut MemHost, slot: u8, what: &str) {
-    let served = rescue_export_seed(h, &P, &[slot; 32]);
+    let served = rescue_export_seed(h, &P, &[slot; 32]).ok().flatten();
     let committed = match Store::open(h, P) {
         Ok(mut s) => match s.read(KIND_KEY, &[slot; 32], true) {
             Read::Ok(e) => Some(<[u8; 32]>::try_from(e.content.as_slice()).unwrap()),
@@ -958,7 +964,7 @@ fn a_crash_at_every_step_never_lets_direct_read_serve_an_uncommitted_value() {
             // And after the next call's sweep and gc too.
             let mut s = Store::open(&mut h, P).unwrap();
             s.process_gc();
-            s.mirror_sweep();
+            s.mirror_sweep(usize::MAX, None);
             drop(s);
             for slot in [1, 2] {
                 assert_direct_read_is_committed(
@@ -987,7 +993,7 @@ fn step_one_refuses_a_new_identity_whose_leftover_will_not_clear() {
     assert_eq!(put(&mut h, &key_entry(1, 9)), Err(PutError::Storage));
     assert_eq!(read(&mut h, 1), Read::Absent);
     assert_eq!(
-        rescue_export_seed(&h, &P, &[1; 32]),
+        rescue_export_seed(&h, &P, &[1; 32]).ok().flatten(),
         None,
         "a deleted key was served"
     );
@@ -1034,7 +1040,11 @@ fn a_delete_leaves_no_pair_whatever_happens_to_its_commit() {
         let both =
             h.secrets.contains_key(&entry_name(1, 0)) && h.secrets.contains_key(&entry_name(1, 1));
         assert!(!both, "{fault:?}: a pair survived the Delete");
-        assert_eq!(rescue_export_seed(&h, &P, &[1; 32]), None, "{fault:?}");
+        assert_eq!(
+            rescue_export_seed(&h, &P, &[1; 32]).ok().flatten(),
+            None,
+            "{fault:?}"
+        );
     }
 }
 
@@ -1051,7 +1061,10 @@ fn gc_never_removes_a_name_whose_identity_the_index_names() {
     assert!(h.secrets.contains_key(&entry_name(1, 0)));
     assert!(h.secrets.contains_key(&entry_name(1, 1)));
     assert!(gc_names(&h).is_empty(), "the named names stay listed");
-    assert_eq!(rescue_export_seed(&h, &P, &[1; 32]), Some([9; 32]));
+    assert_eq!(
+        rescue_export_seed(&h, &P, &[1; 32]).ok().flatten(),
+        Some([9; 32])
+    );
 }
 
 /// The mirror sweep writes a missing or different mirror from the named copy,
@@ -1074,13 +1087,13 @@ fn the_mirror_sweep_checks_the_digest_and_does_not_run_while_sealed() {
     s.update(|ix| ix.state = State::Sealed).unwrap();
     let before = h.secrets.clone();
     let mut s = Store::open(&mut h, P).unwrap();
-    s.mirror_sweep();
+    s.mirror_sweep(usize::MAX, None);
     drop(s);
     assert_eq!(h.secrets, before, "a sealed build swept");
     // Writer: slot 1's mirror is written; slot 2's corrupt copy is not copied.
     let mut s = Store::open(&mut h, P).unwrap();
     s.update(|ix| ix.state = State::Writer).unwrap();
-    s.mirror_sweep();
+    s.mirror_sweep(usize::MAX, None);
     drop(s);
     assert_eq!(h.secrets[&entry_name(1, 1)], good1);
     assert_eq!(
@@ -1107,7 +1120,7 @@ fn direct_read_needs_two_authenticating_identical_copies() {
         }
         h
     };
-    let served = |h: &MemHost| rescue_export_seed(h, &P, &slot);
+    let served = |h: &MemHost| rescue_export_seed(h, &P, &slot).ok().flatten();
     assert_eq!(
         served(&with(Some(good.clone()), Some(good.clone()))),
         Some([9; 32])
@@ -1204,7 +1217,7 @@ fn a_failed_listing_refuses_the_creating_change_and_the_catch_all_lists_it() {
         Store::open(&mut h.restart(), P).unwrap().index.state,
         State::Writer
     );
-    ensure_listed(&mut h, &P).unwrap();
+    fix_listing(&mut h, &P).unwrap();
     assert!(h.secrets[names::PARTS].chunks(32).any(|c| c == P));
     // And a catch-all whose write fails reports it (the call answers nothing).
     let mut h2 = MemHost::new();
@@ -1216,7 +1229,7 @@ fn a_failed_listing_refuses_the_creating_change_and_the_catch_all_lists_it() {
         }
     });
     let _ = put(&mut h2, &key_entry(1, 9));
-    assert!(ensure_listed(&mut h2, &P).is_err());
+    assert!(fix_listing(&mut h2, &P).is_err());
 }
 
 /// A malformed index counts as index loss only while `vault:parts` lists the
@@ -1305,7 +1318,7 @@ fn a_missing_named_entry_is_reported_but_not_counted_as_dropped() {
     drop(s);
     // The sweep sees it too.
     let mut s = Store::open(&mut h, P).unwrap();
-    s.mirror_sweep();
+    s.mirror_sweep(usize::MAX, None);
     assert!(s.saw_missing());
 }
 
@@ -1323,7 +1336,7 @@ fn step_one_with_a_parity_one_leftover() {
     drop(s);
     assert_eq!(put(&mut h, &key_entry(1, 8)), Err(PutError::Storage));
     assert_eq!(
-        rescue_export_seed(&h, &P, &[1; 32]),
+        rescue_export_seed(&h, &P, &[1; 32]).ok().flatten(),
         None,
         "a deleted key was served"
     );
@@ -1340,7 +1353,7 @@ fn the_catch_all_never_lists_a_non_writer_index() {
         let mut s = Store::open(&mut h, P).unwrap();
         s.update(|ix| ix.state = state).unwrap();
         drop(s);
-        ensure_listed(&mut h, &P).unwrap();
+        fix_listing(&mut h, &P).unwrap();
         assert!(
             !h.secrets.contains_key(names::PARTS),
             "{state:?} was listed"
@@ -1353,7 +1366,7 @@ fn the_catch_all_never_lists_a_non_writer_index() {
         s.update(|ix| ix.state = state).unwrap();
         drop(s);
         h.secrets.remove(names::PARTS);
-        ensure_listed(&mut h, &P).unwrap();
+        fix_listing(&mut h, &P).unwrap();
         assert!(
             h.secrets[names::PARTS].chunks(32).any(|c| c == P),
             "{state:?}"
@@ -1406,7 +1419,7 @@ fn remove_before_write_at_every_site() {
     h.secrets.insert(entry_name(1, 1), b"x".to_vec());
     h.undecryptable.insert(entry_name(1, 1));
     let mut s = Store::open(&mut h, P).unwrap();
-    s.mirror_sweep();
+    s.mirror_sweep(usize::MAX, None);
     drop(s);
     assert_eq!(
         h.secrets[&entry_name(1, 1)],
@@ -1455,11 +1468,14 @@ fn step_four_failure_and_a_landed_index_write_during_a_replace() {
     put(&mut h, &key_entry(1, 8)).unwrap();
     h.clear_fault();
     assert_eq!(read(&mut h, 1), Read::Ok(key_entry(1, 8)));
-    assert_eq!(rescue_export_seed(&h, &P, &[1; 32]), None);
+    assert_eq!(rescue_export_seed(&h, &P, &[1; 32]).ok().flatten(), None);
     let mut s = Store::open(&mut h, P).unwrap();
-    s.mirror_sweep();
+    s.mirror_sweep(usize::MAX, None);
     drop(s);
-    assert_eq!(rescue_export_seed(&h, &P, &[1; 32]), Some([8; 32]));
+    assert_eq!(
+        rescue_export_seed(&h, &P, &[1; 32]).ok().flatten(),
+        Some([8; 32])
+    );
     // The index write lands but reports an error: the read-back confirms it.
     let mut h = MemHost::new();
     put(&mut h, &key_entry(1, 9)).unwrap();
@@ -1505,10 +1521,45 @@ fn gc_needs_a_verified_index_and_the_sweep_stops_after_an_uncertain_commit() {
     });
     let mut s = Store::open(&mut h, P).unwrap();
     assert!(s.update(|ix| ix.problems = 1).is_err());
-    s.mirror_sweep();
+    s.mirror_sweep(usize::MAX, None);
     drop(s);
     assert!(
         !h.secrets.contains_key(&entry_name(1, 1)),
         "swept after an uncertain commit"
     );
+}
+
+/// A writer is held to the same maximums its successor stages against
+/// (`limits`, protocol 8 and 11), for every kind including one this build
+/// does not serve. Found by the conformance harness: with the receiver's
+/// maximum lowered, a writer that counted only the frozen constant held
+/// more entries than its successor could stage, and the copy never
+/// completed (I7).
+#[test]
+fn the_writer_quota_is_the_staging_maximum() {
+    let lim = crate::limits::Limits {
+        max_entries: 3,
+        ..crate::limits::V1
+    };
+    crate::limits::set_for_tests(Some(lim));
+    let big = Quota {
+        max_key_slots: usize::MAX,
+        max_caller_marks: usize::MAX,
+    };
+    let mut h = MemHost::new();
+    let mut s = Store::open(&mut h, P).unwrap();
+    for i in 0..3u8 {
+        s.put(&Entry::new(0x10, vec![i], vec![1]), &big, |ix| {
+            ix.state = State::Writer
+        })
+        .unwrap();
+    }
+    assert_eq!(
+        s.put(&Entry::new(0x10, vec![9], vec![1]), &big, |_| {}),
+        Err(PutError::Quota)
+    );
+    // A replace of an existing identity still fits.
+    s.put(&Entry::new(0x10, vec![0], vec![2]), &big, |_| {})
+        .unwrap();
+    crate::limits::set_for_tests(None);
 }

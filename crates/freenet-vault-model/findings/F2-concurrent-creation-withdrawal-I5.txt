@@ -1,0 +1,63 @@
+seed 68: Some(Violation { inv: "I5", msg: "build 10 created the partition while build 20 holds state (WRITER)", at: 26 })
+
+==== seed 68: shrunk to 5 actions; ledger [Rec { v: 10, withdrawal: false }, Rec { v: 20, withdrawal: false }, Rec { v: 25, withdrawal: true }, Rec { v: 30, withdrawal: false }, Rec { v: 40, withdrawal: false }, Rec { v: 50, withdrawal: false }]
+violation: Some(Violation { inv: "I5", msg: "build 20 created the partition while build 10 holds state (WRITER)", at: 22 })
+[1] Publish
+[2] Load { client: 0, fetch: Newest, ops: [Generate { slot: 0, seed: 167644 }, PutExt { key: 0, content: 1 }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[3] Publish
+[4] Publish
+[5] Load { client: 0, fetch: Newest, ops: [Import { slot: 3, seed: 2, replace: false }] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 2)" hops [] state NONE -> NONE
+== quiescence
+[6] Load { client: 0, fetch: Newest, ops: [] }
+  10 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 0)" hops [] state NONE -> NONE
+[7] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[8] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[9] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[10] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[11] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[12] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(10)
+  10 Poke { flags: 2, rec: Some(Rec { v: 10, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [] state NONE -> NONE(armed)
+[13] Step { pick: 0, fate: Deliver }
+  10 Op(Generate { slot: 0, seed: 167644 }) -> "Key(167644)" hops [] state NONE(armed) -> WRITER
+  op Generate { slot: 0, seed: 167644 } at 10 -> Key(167644)
+[14] Step { pick: 0, fate: Deliver }
+  10 Op(PutExt { key: 0, content: 1 }) -> "Refused(10)" hops [] state WRITER -> WRITER
+  op PutExt { key: 0, content: 1 } at 10 -> Refused(10)
+[15] Step { pick: 0, fate: Deliver }
+[16] Step { pick: 0, fate: Deliver }
+  20 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 2)" hops [] state NONE -> NONE
+[17] Step { pick: 0, fate: Deliver }
+  30 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[18] Step { pick: 0, fate: Deliver }
+  40 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[19] Step { pick: 0, fate: Deliver }
+  50 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[20] Step { pick: 0, fate: Deliver }
+  60 Poke { flags: 0, rec: Some(Rec { v: 25, withdrawal: true }) } -> "Status(NONE, rec 3)" hops [] state NONE -> NONE
+[21] Step { pick: 0, fate: Deliver }
+  courier client 0 route Create(20)
+  20 Poke { flags: 2, rec: Some(Rec { v: 20, withdrawal: false }) } -> "Status(NONE(armed), rec 3)" hops [] state NONE -> NONE(armed)
+[22] Step { pick: 0, fate: Deliver }
+  20 Op(Import { slot: 3, seed: 2, replace: false }) -> "Key(2)" hops [] state NONE(armed) -> WRITER
+!! I5: build 20 created the partition while build 10 holds state (WRITER)
+  op Import { slot: 3, seed: 2, replace: false } at 20 -> Key(2)
+[23] Wakeup { b: 0 }
+  10 Wakeup -> "-" hops [] state WRITER -> WRITER
+[24] Wakeup { b: 1 }
+  20 Wakeup -> "-" hops [] state WRITER -> WRITER
+[25] Wakeup { b: 2 }
+  30 Wakeup -> "-" hops [] state NONE -> NONE
+[26] Wakeup { b: 3 }
+  40 Wakeup -> "-" hops [] state NONE -> NONE
+[27] Wakeup { b: 4 }
+  50 Wakeup -> "-" hops [] state NONE -> NONE
+[28] Wakeup { b: 5 }
+  60 Wakeup -> "-" hops [] state NONE -> NONE

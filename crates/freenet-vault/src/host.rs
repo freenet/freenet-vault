@@ -38,7 +38,9 @@ pub trait Host {
 /// really is absent the removal changes nothing. Never used for the index of an
 /// existing partition (a verified index decrypts).
 pub fn replace_secret<H: Host>(host: &mut H, name: &[u8], value: &[u8]) -> bool {
-    if host.get_secret(name).is_none() {
+    if host.get_secret(name).is_none()
+        && !crate::trace::mutant(crate::trace::Mutant::WriteWithoutRemove)
+    {
         let _ = host.remove_secret(name);
     }
     host.set_secret(name, value)
@@ -73,6 +75,7 @@ impl<H: Host> Host for WriteLatch<'_, H> {
     }
     fn set_secret(&mut self, key: &[u8], value: &[u8]) -> bool {
         if self.failed {
+            crate::hit!("4.5/write-refused-after-failed-write");
             return false;
         }
         let ok = self.inner.set_secret(key, value);
@@ -80,7 +83,11 @@ impl<H: Host> Host for WriteLatch<'_, H> {
         ok
     }
     fn remove_secret(&mut self, key: &[u8]) -> bool {
-        !self.failed && self.inner.remove_secret(key)
+        if self.failed {
+            crate::hit!("4.5/write-refused-after-failed-write");
+            return false;
+        }
+        self.inner.remove_secret(key)
     }
     fn read_context(&self) -> Vec<u8> {
         self.inner.read_context()
