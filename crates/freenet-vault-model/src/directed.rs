@@ -1453,7 +1453,7 @@ pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
         v.push(("7.2/outcome-staging-full", sc));
     }
     if let Some(sc) = awaiting_does_not_copy(cfg) {
-        v.push(("7/awaiting-does-not-copy", sc));
+        v.push(("variant/7/awaiting-does-not-copy", sc));
     }
     if let Some(sc) = other_writer_retired(cfg) {
         v.push(("7.6/other-writer-or-not-from-P/Retired", sc));
@@ -1502,10 +1502,11 @@ pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
                 for d in [3u8, 4] {
                     for j in 0..3u8 {
                         v.push((
-                            if j == 0 {
-                                "4.2/entry-write/fault-at-step-1"
-                            } else {
-                                "4.2/step-1/leftover-found"
+                            match (d, j) {
+                                (3, 0) => "4.2/entry-write/fault-at-step-1",
+                                (3, _) => "4.2/step-1/leftover-found",
+                                (_, 0) => "variant/4.2/entry-write/fault-at-step-1",
+                                _ => "variant/4.2/step-1/leftover-found",
                             },
                             delete_then_recreate_same_seed(cfg, d, j, f),
                         ));
@@ -1532,7 +1533,7 @@ pub fn directed(cfg: &Cfg) -> Vec<(&'static str, Scenario)> {
             retired_index_lost(cfg, malformed),
         ));
         v.push((
-            "4.5/g2-condition-3-successor-moved",
+            "variant/4.5/g2-condition-3-successor-moved",
             retired_parts_and_index_damaged(cfg, malformed),
         ));
         for f in [

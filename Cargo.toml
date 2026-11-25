@@ -43,3 +43,27 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = "debuginfo"
+
+# `cargo test` runs the conformance gate over the library and the model, which
+# hash, sign and verify records for every simulated hop. Unoptimised, that took
+# 691 s; these packages (and the crypto they call) are optimised in the dev
+# profile so CI runs it in a couple of minutes. Debug assertions and overflow
+# checks stay on, and the release and wasm profiles are untouched.
+[profile.dev.package.freenet-vault-common]
+opt-level = 3
+[profile.dev.package.freenet-vault]
+opt-level = 3
+[profile.dev.package.freenet-vault-model]
+opt-level = 3
+[profile.dev.package.freenet-vault-conformance]
+opt-level = 3
+[profile.dev.package.blake3]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.curve25519-dalek]
+opt-level = 3
+[profile.dev.package.ed25519-dalek]
+opt-level = 3
+[profile.dev.package.x25519-dalek]
+opt-level = 3

@@ -56,6 +56,16 @@ fn directed_scenarios_hit_their_rows() {
             // revision 9 finding traces, replayed for the report
             continue;
         }
+        if k.starts_with("variant/") {
+            // a scenario that reaches its row only in an implementation
+            // whose write sequence differs from the model's (the library
+            // keeps vault:gc in two copies); the conformance runner replays it
+            continue;
+        }
+        if k.starts_with("4.3/heal") && !cfg.params.heal {
+            // the heal from the mirror is off by default (on hold, 4.3)
+            continue;
+        }
         let o = run(&cfg, &sc);
         if let Some(inv) = k.strip_prefix("finding/") {
             // a finding against revision 9: the scenario must still fail
