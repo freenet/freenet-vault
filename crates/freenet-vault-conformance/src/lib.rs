@@ -308,18 +308,23 @@ impl BuildImpl for LibBuild {
             Err(payload) if payload.is::<CrashSignal>() => return Err(Crash),
             Err(payload) => resume_unwind(payload),
         };
-        // the volatile state: the library's context
-        let c = freenet_vault::ctx::Ctx::decode(&ctx).unwrap_or_default();
-        vol.swept = c.vol.swept;
-        vol.complete_in_flight = c.vol.complete_in_flight;
-        vol.in_flight = c
-            .vol
-            .in_flight
-            .iter()
-            .filter_map(|(k, key)| codec::key_of(*k, key).map(|x| (*k, x)))
-            .collect();
-        vol.ext = ctx;
+        // the volatile state: the library's context. A poisoned call (4.0)
+        // has its outputs discarded, the delegate context among them, so
+        // nothing it changed (a sweep marked done after a failed read, say)
+        // survives into the retry.
         let poisoned = host.poisoned.get();
+        if !poisoned {
+            let c = freenet_vault::ctx::Ctx::decode(&ctx).unwrap_or_default();
+            vol.swept = c.vol.swept;
+            vol.complete_in_flight = c.vol.complete_in_flight;
+            vol.in_flight = c
+                .vol
+                .in_flight
+                .iter()
+                .filter_map(|(k, key)| codec::key_of(*k, key).map(|x| (*k, x)))
+                .collect();
+            vol.ext = ctx;
+        }
         if poisoned {
             cov.hit("4.0/call-poisoned");
             if host.refused_poisoned > 0 {
